@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
+import TechSpecsModal from '@/components/TechSpecsModal';
 import { Product } from '@/lib/types';
 
 const products: Product[] = [
@@ -38,6 +39,7 @@ export default function Home() {
   const t = useTranslations();
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isTechSpecsOpen, setIsTechSpecsOpen] = useState(false);
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [currentLang, setCurrentLang] = useState('en');
@@ -45,6 +47,11 @@ export default function Home() {
   const openConfigurator = (product: Product) => {
     setSelectedProduct(product);
     setIsConfiguratorOpen(true);
+  };
+
+  const openTechSpecs = (product: Product) => {
+    setSelectedProduct(product);
+    setIsTechSpecsOpen(true);
   };
 
   const addToCart = (item: any) => {
@@ -60,22 +67,20 @@ export default function Home() {
   const handleQuoteRequest = () => {
     const company = prompt('Company name for quote request:');
     if (company) {
-      alert(`Thank you, ${company}. Our team will contact you within 24h with a custom quote.`);
+      alert(`Thank you, ${company}. Our sales team will contact you within 24 hours with a tailored quote and financing options.`);
     }
   };
 
-  // Simple lang switch (in real app use next-intl routing)
   const switchLang = (lang: string) => {
     setCurrentLang(lang);
-    // For demo: reload or in production use router.push(`/${lang}`)
     if (lang !== currentLang) {
-      window.location.href = `/${lang}`; // assumes locale routing works
+      window.location.href = `/${lang}`;
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      {/* Navbar - matches prototype */}
+      {/* Navbar */}
       <nav className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-screen-2xl mx-auto px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-x-3">
@@ -91,15 +96,14 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-x-8 text-sm">
-            {/* Language switcher */}
             <div className="flex border border-slate-700 rounded-3xl overflow-hidden text-xs font-semibold">
               <button 
                 onClick={() => switchLang('en')}
-                className={`px-4 py-1.5 ${currentLang === 'en' ? 'bg-slate-900 text-white' : ''}`}
+                className={`px-4 py-1.5 transition-colors ${currentLang === 'en' ? 'bg-slate-900 text-white' : 'hover:bg-slate-900'}`}
               >EN</button>
               <button 
                 onClick={() => switchLang('fr')}
-                className={`px-4 py-1.5 border-l border-slate-700 ${currentLang === 'fr' ? 'bg-slate-900 text-white' : ''}`}
+                className={`px-4 py-1.5 border-l border-slate-700 transition-colors ${currentLang === 'fr' ? 'bg-slate-900 text-white' : 'hover:bg-slate-900'}`}
               >FR</button>
             </div>
 
@@ -108,17 +112,17 @@ export default function Home() {
               className="flex items-center gap-x-2 px-5 py-2 border border-slate-700 rounded-3xl text-sm hover:bg-slate-900 transition-colors"
             >
               <span>🛒</span>
-              <span id="cart-count" className="font-mono text-xs bg-slate-800 px-1.5 rounded">{cart.length}</span>
+              <span className="font-mono text-xs bg-slate-800 px-1.5 rounded">{cart.length}</span>
             </button>
           </div>
         </div>
       </nav>
 
-      {/* Hero - inspired by prototype */}
+      {/* Hero */}
       <div className="max-w-screen-2xl mx-auto px-8 pt-14 pb-12">
         <div className="max-w-3xl">
           <div className="inline px-4 py-1.5 rounded-3xl bg-slate-900 border border-slate-800 text-sm mb-6">
-            {t('hero.badge') || 'Now shipping across Europe • 3-year warranty • B2B focused'}
+            Now shipping across Europe • 3-year warranty • B2B focused
           </div>
           <h1 className="text-6xl font-semibold tracking-tighter leading-none mb-5">
             Private Generative AI.<br />
@@ -144,7 +148,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Products Section */}
+      {/* Products */}
       <div id="products" className="max-w-screen-2xl mx-auto px-8 pb-16">
         <div className="mb-8">
           <div className="text-cyan-400 text-xs font-bold tracking-[3px]">HARDWARE APPLIANCES</div>
@@ -157,31 +161,40 @@ export default function Home() {
               key={product.id} 
               product={product} 
               onConfigure={() => openConfigurator(product)} 
+              onViewSpecs={() => openTechSpecs(product)}
             />
           ))}
         </div>
       </div>
 
-      {/* Services teaser */}
+      {/* Services */}
       <div id="services" className="bg-slate-900 border-y border-slate-800 py-14">
         <div className="max-w-screen-2xl mx-auto px-8">
           <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-2">OPTIONAL SERVICES</div>
-          <h3 className="text-3xl font-semibold tracking-tighter mb-8">Add management, backup or setup</h3>
+          <h3 className="text-3xl font-semibold tracking-tighter mb-8">Add management, backup or professional setup</h3>
           <div className="grid md:grid-cols-3 gap-5 text-sm">
-            <div className="bg-slate-950 p-6 rounded-3xl border border-slate-700">Managed Care — priority support & updates</div>
-            <div className="bg-slate-950 p-6 rounded-3xl border border-slate-700">SecureVault Backup — daily encrypted snapshots</div>
-            <div className="bg-slate-950 p-6 rounded-3xl border border-slate-700">Professional Setup — installation + training</div>
+            <div className="bg-slate-950 p-6 rounded-3xl border border-slate-700">
+              <div className="font-semibold mb-1">Managed Care</div>
+              <div className="text-slate-400 text-xs">€89/mo — Remote management, automatic updates, priority European support.</div>
+            </div>
+            <div className="bg-slate-950 p-6 rounded-3xl border border-slate-700">
+              <div className="font-semibold mb-1">SecureVault Backup</div>
+              <div className="text-slate-400 text-xs">€39/mo — Daily encrypted backups with one-click restore to any appliance.</div>
+            </div>
+            <div className="bg-slate-950 p-6 rounded-3xl border border-slate-700">
+              <div className="font-semibold mb-1">Professional Setup & Training</div>
+              <div className="text-slate-400 text-xs">€499 one-time — Full installation, configuration and team onboarding.</div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Footer simple */}
-      <footer className="max-w-screen-2xl mx-auto px-8 py-10 text-xs text-slate-500 flex justify-between border-t border-slate-800">
-        <div>© nocloud.ai — Private AI infrastructure for Europe</div>
-        <div className="flex gap-x-5">
-          <span>3-year warranty</span>
-          <span>EU data residency</span>
-          <span>Stripe secured</span>
+      <footer className="max-w-screen-2xl mx-auto px-8 py-10 text-xs text-slate-500 flex flex-col md:flex-row justify-between gap-y-2 border-t border-slate-800">
+        <div>© {new Date().getFullYear()} nocloud.ai — Private generative AI infrastructure for European organizations</div>
+        <div className="flex gap-x-6">
+          <span>3-year hardware warranty</span>
+          <span>EU sovereign infrastructure</span>
+          <span>Stripe • SEPA payments</span>
         </div>
       </footer>
 
@@ -191,6 +204,13 @@ export default function Home() {
           product={selectedProduct} 
           onClose={() => setIsConfiguratorOpen(false)} 
           onAddToCart={addToCart} 
+        />
+      )}
+
+      {isTechSpecsOpen && selectedProduct && (
+        <TechSpecsModal 
+          product={selectedProduct} 
+          onClose={() => setIsTechSpecsOpen(false)} 
         />
       )}
 
