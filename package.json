@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 443",
     "build": "next build",
-    "start": "next start -p 443",
+    "start": "next start -p 8080",
+    "deploy": "rm -rf .next && git pull && npm run build && pm2 restart nocloud",
     "lint": "next lint"
   },
   "dependencies": {
