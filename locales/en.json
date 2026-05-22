@@ -1,0 +1,23 @@
+{
+  "hero": {
+    "badge": "Now shipping across Europe • 3-year warranty • B2B focused",
+    "title1": "Private Generative AI.",
+    "title2": "Your infrastructure. Your rules.",
+    "subtitle": "High-performance appliances for European organizations. Fully private. No cloud. Built for B2B.",
+    "cta1": "Browse appliances",
+    "cta2": "Request a custom quote"
+  },
+  "products": {
+    "tag": "HARDWARE APPLIANCES",
+    "title": "Choose your performance level",
+    "from": "from",
+    "configure": "Configure & Buy"
+  },
+  "nav": {
+    "products": "Products",
+    "services": "Services"
+  },
+  "services": {
+    "title": "Optional services"
+  }
+}
