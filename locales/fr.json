@@ -1,0 +1,23 @@
+{
+  "hero": {
+    "badge": "Livraison en Europe • Garantie 3 ans • Mode B2B",
+    "title1": "IA Générative Privée.",
+    "title2": "Votre infrastructure. Vos règles.",
+    "subtitle": "Appareils haute performance pour les organisations européennes. Entièrement privé. Pas de cloud. Conçu pour le B2B.",
+    "cta1": "Parcourir les appareils",
+    "cta2": "Demander un devis personnalisé"
+  },
+  "products": {
+    "tag": "APPAREILS MATÉRIELS",
+    "title": "Choisissez votre niveau de performance",
+    "from": "à partir de",
+    "configure": "Configurer & Acheter"
+  },
+  "nav": {
+    "products": "Produits",
+    "services": "Services"
+  },
+  "services": {
+    "title": "Services optionnels"
+  }
+}
