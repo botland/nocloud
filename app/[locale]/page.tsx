@@ -99,14 +99,15 @@ export default function Home() {
   };
 
   const switchLanguage = (newLocale: string) => {
-    // Simple locale switch - works with next-intl middleware
-    const currentPath = window.location.pathname;
-    const newPath = currentPath.replace(`/${locale}`, `/${newLocale}`);
+    if (newLocale === locale) return;
+    // Simple and robust locale switch
+    const path = window.location.pathname;
+    const newPath = path.replace(`/${locale}`, `/${newLocale}`);
     window.location.href = newPath;
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-slate-950 text-slate-200">
       {/* Navbar */}
       <nav className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-screen-2xl mx-auto px-8 h-20 flex items-center justify-between">
@@ -120,34 +121,33 @@ export default function Home() {
               </span>
             </div>
             <div className="px-3 py-1 text-[10px] font-bold tracking-widest border border-slate-700 rounded-2xl text-slate-400">B2B</div>
-          </div>
+            </div>
 
-          <div className="flex items-center gap-x-8 text-sm">
-            {/* Language Switcher - matching prototype */}
-            <div className="flex border border-slate-700 rounded-3xl overflow-hidden">
+          <div className="flex items-center gap-x-6 text-sm">
+            {/* Language Switcher */}
+            <div className="flex border border-slate-700 rounded-3xl overflow-hidden text-xs">
               <button 
                 onClick={() => switchLanguage('en')}
-                className={`px-4 py-1.5 text-xs font-semibold transition-colors ${locale === 'en' ? 'bg-slate-900 text-white' : 'hover:bg-slate-800'}`}
+                className={`px-4 py-1.5 font-semibold transition-all ${locale === 'en' ? 'bg-slate-900 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
               >
                 EN
               </button>
               <button 
                 onClick={() => switchLanguage('fr')}
-                className={`px-4 py-1.5 text-xs font-semibold border-l border-slate-700 transition-colors ${locale === 'fr' ? 'bg-slate-900 text-white' : 'hover:bg-slate-800'}`}
+                className={`px-4 py-1.5 font-semibold border-l border-slate-700 transition-all ${locale === 'fr' ? 'bg-slate-900 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
               >
                 FR
               </button>
             </div>
 
-            <a href="#products" className="hover:text-cyan-400 transition-colors">{t('nav.products')}</a>
-            <a href="#services" className="hover:text-cyan-400 transition-colors">{t('nav.services')}</a>
+            <a href="#products" className="hover:text-cyan-400 transition-colors">Products</a>
+            <a href="#services" className="hover:text-cyan-400 transition-colors">Services</a>
 
             <button 
               onClick={() => setIsCartOpen(true)}
               className="flex items-center gap-x-2 px-5 py-2 border border-slate-700 rounded-3xl hover:bg-slate-900"
             >
-              <i className="fa-solid fa-shopping-cart"></i>
-              <span className="font-mono text-xs bg-slate-800 px-1.5 rounded">{cart.length}</span>
+              🛒 <span className="font-mono text-xs bg-slate-800 px-1.5 rounded">{cart.length}</span>
             </button>
           </div>
         </div>
@@ -157,27 +157,27 @@ export default function Home() {
       <div className="max-w-screen-2xl mx-auto px-8 pt-14 pb-12">
         <div className="max-w-3xl">
           <div className="inline px-4 py-1.5 rounded-3xl bg-slate-900 border border-slate-800 text-sm mb-6">
-            {t('hero.badge')}
+            Now shipping across Europe • 3-year warranty • B2B focused
           </div>
           <h1 className="text-6xl font-semibold tracking-tighter leading-none mb-5">
-            {t('hero.title1')}<br />
-            <span className="text-white">{t('hero.title2')}</span>
+            Private Generative AI.<br />
+            <span className="text-white">Your infrastructure.<br />Your rules.</span>
           </h1>
           <p className="max-w-md text-xl text-slate-400 mb-8">
-            {t('hero.subtitle')}
+            High-performance appliances for European organizations. Fully private. No cloud. Built for B2B.
           </p>
           <div className="flex gap-x-4">
             <button 
               onClick={() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })}
               className="px-8 h-14 bg-white text-slate-950 font-semibold rounded-3xl flex items-center gap-x-3 hover:bg-slate-100"
             >
-              {t('hero.cta1')}
+              Browse appliances
             </button>
             <button 
               onClick={() => alert('Quote request modal would open here (company + requirements).')}
               className="px-7 h-14 border border-slate-700 rounded-3xl font-semibold hover:bg-slate-900"
             >
-              {t('hero.cta2')}
+              Request a custom quote
             </button>
           </div>
         </div>
@@ -186,8 +186,8 @@ export default function Home() {
       {/* Products */}
       <div id="products" className="max-w-screen-2xl mx-auto px-8 pb-16">
         <div className="mb-8">
-          <div className="text-cyan-400 text-xs font-bold tracking-[3px]">{t('products.tag')}</div>
-          <h2 className="text-4xl font-semibold tracking-tighter">{t('products.title')}</h2>
+          <div className="text-cyan-400 text-xs font-bold tracking-[3px]">HARDWARE APPLIANCES</div>
+          <h2 className="text-4xl font-semibold tracking-tighter">Choose your performance level</h2>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
@@ -205,7 +205,7 @@ export default function Home() {
       {/* Services */}
       <div id="services" className="bg-slate-900 border-y border-slate-800 py-16">
         <div className="max-w-screen-2xl mx-auto px-8">
-          <h2 className="text-3xl font-semibold tracking-tighter mb-8">{t('services.title')}</h2>
+          <h2 className="text-3xl font-semibold tracking-tighter mb-8">Optional Services</h2>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-slate-950 p-7 rounded-3xl border border-slate-700">
               <h3 className="font-semibold text-xl mb-2">Managed Care — €89/mo</h3>
@@ -239,9 +239,7 @@ export default function Home() {
         <CartSidebar 
           cart={cart} 
           onClose={() => setIsCartOpen(false)} 
-          onCheckout={() => {
-            console.log("Starting Stripe checkout...");
-          }} 
+          onCheckout={() => alert('Stripe checkout would start here')} 
         />
       )}
     </div>
