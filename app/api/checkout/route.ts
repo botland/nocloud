@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-02-24.acacia',
-});
-
 export async function POST(request: NextRequest) {
   try {
     const { items, company, vatNumber } = await request.json();
+
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 });
+    }
+
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2025-02-24.acacia',
+    });
 
     // Create line items for Stripe
     const lineItems = items.map((item: any) => ({
@@ -19,7 +23,7 @@ export async function POST(request: NextRequest) {
             ? `Includes: ${item.services.map((s: any) => s.name).join(', ')}` 
             : undefined,
         },
-        unit_amount: item.totalPrice * 100, // in cents
+        unit_amount: item.totalPrice * 100,
       },
       quantity: 1,
     }));
