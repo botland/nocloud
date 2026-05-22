@@ -5,6 +5,7 @@ export interface Product {
   tier: string;
   price: number;
   description: string;
+  techSpecs?: Record<string, string>;
 }
 
 export interface CartItem {
