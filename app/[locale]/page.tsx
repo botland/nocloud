@@ -83,10 +83,12 @@ export default function LocaleHome() {
       <nav className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-screen-2xl mx-auto px-8">
           <div className="flex items-center justify-between h-20">
-            {/* Logo - Clean Cloud Slash */}
+            {/* Logo with white background + Cloud Slash */}
             <div className="flex items-center gap-x-3">
               <div className="flex items-center gap-x-2.5">
-                <i className="fa-solid fa-cloud-slash text-cyan-400 text-[23px]"></i>
+                <div className="w-9 h-9 bg-white rounded-2xl flex items-center justify-center">
+                  <i className="fa-solid fa-cloud-slash text-cyan-400 text-[21px]"></i>
+                </div>
                 <div className="flex items-baseline">
                   <span className="font-display text-[28px] font-semibold tracking-tighter">nocloud</span>
                   <span className="text-cyan-400 font-display text-[28px] font-semibold">.ai</span>
