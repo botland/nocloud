@@ -56,6 +56,18 @@ export default function LocaleHome() {
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const updateCartQuantity = (id: number, newQuantity: number) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          const newTotal = item.product.price * newQuantity;
+          return { ...item, quantity: newQuantity, totalPrice: newTotal };
+        }
+        return item;
+      })
+    );
+  };
+
   const openCheckout = () => {
     setIsCartOpen(false);
     setIsCheckoutOpen(true);
@@ -71,11 +83,16 @@ export default function LocaleHome() {
       <nav className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-screen-2xl mx-auto px-8">
           <div className="flex items-center justify-between h-20">
-            {/* Logo with improved icon */}
+            {/* Logo with No-Cloud icon */}
             <div className="flex items-center gap-x-3">
               <div className="flex items-center gap-x-2.5">
                 <div className="w-9 h-9 bg-white rounded-2xl flex items-center justify-center">
-                  <i className="fa-solid fa-lock text-cyan-400 text-[21px]"></i>
+                  {/* Custom No-Cloud slashed icon matching the provided style */}
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6.5 19.5C4.5 19.5 3 18 3 16C3 14.5 3.8 13.2 5 12.5C5.2 9.5 7.8 7 11 7C12.5 7 13.8 7.6 14.8 8.5" stroke="#22d3ee" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M18.5 10.5C19.9 11.2 21 12.6 21 14.2C21 16.3 19.3 18 17.2 18" stroke="#22d3ee" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                    <line x1="5" y1="5" x2="19" y2="19" stroke="#0f172a" strokeWidth="2.5" strokeLinecap="round"/>
+                  </svg>
                 </div>
                 <div className="flex items-baseline">
                   <span className="font-display text-[28px] font-semibold tracking-tighter">nocloud</span>
@@ -85,7 +102,6 @@ export default function LocaleHome() {
               <div className="hidden md:block px-3 py-1 text-[10px] font-bold tracking-[1.5px] border border-slate-700 rounded-2xl text-slate-400">B2B</div>
             </div>
 
-            {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-x-9 text-sm font-medium">
               <a href="#products" className="hover:text-cyan-400 transition-colors">Products</a>
               <a href="#services" className="hover:text-cyan-400 transition-colors">Services</a>
@@ -99,9 +115,7 @@ export default function LocaleHome() {
                 <a href="/fr" className="px-4 py-1.5 text-xs font-semibold border-l border-slate-700 hover:bg-slate-900">FR</a>
               </div>
 
-              <button 
-                onClick={() => setIsCartOpen(true)}
-                className="flex items-center gap-x-2 px-5 py-2 text-sm font-medium border border-slate-700 hover:bg-slate-900 rounded-3xl transition-colors">
+              <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-x-2 px-5 py-2 text-sm font-medium border border-slate-700 hover:bg-slate-900 rounded-3xl transition-colors">
                 <i className="fa-solid fa-shopping-cart"></i>
                 <span className="font-mono text-xs bg-slate-800 px-1.5 rounded">{cart.length}</span>
               </button>
@@ -131,11 +145,8 @@ export default function LocaleHome() {
           </p>
           
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-            <button 
-              onClick={() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })}
-              className="px-8 h-14 bg-white text-slate-950 font-semibold rounded-3xl flex items-center justify-center gap-x-3 text-base hover:bg-slate-100 transition-all shadow-lg">
-              Browse appliances
-              <i className="fa-solid fa-arrow-right ml-1"></i>
+            <button onClick={() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })} className="px-8 h-14 bg-white text-slate-950 font-semibold rounded-3xl flex items-center justify-center gap-x-3 text-base hover:bg-slate-100 transition-all shadow-lg">
+              Browse appliances <i className="fa-solid fa-arrow-right ml-1"></i>
             </button>
           </div>
           
@@ -159,11 +170,7 @@ export default function LocaleHome() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {products.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              onConfigure={() => openConfigurator(product)}
-            />
+            <ProductCard key={product.id} product={product} onConfigure={() => openConfigurator(product)} />
           ))}
         </div>
       </div>
@@ -243,7 +250,6 @@ export default function LocaleHome() {
         </div>
       </div>
 
-      {/* CTA */}
       <div className="border-t border-slate-800 bg-slate-900 py-14">
         <div className="max-w-screen-2xl mx-auto px-8 text-center">
           <h3 className="text-3xl font-semibold tracking-tight mb-3">Need a custom configuration?</h3>
@@ -265,34 +271,22 @@ export default function LocaleHome() {
         </div>
       </footer>
 
-      {/* Modals */}
       {isConfiguratorOpen && selectedProduct && (
-        <ConfiguratorModal
-          product={selectedProduct}
-          onClose={() => setIsConfiguratorOpen(false)}
-          onAddToCart={addToCart}
-        />
+        <ConfiguratorModal product={selectedProduct} onClose={() => setIsConfiguratorOpen(false)} onAddToCart={addToCart} />
       )}
 
       {isCartOpen && (
-        <CartSidebar
-          cart={cart}
-          onClose={() => setIsCartOpen(false)}
-          onCheckout={openCheckout}
+        <CartSidebar 
+          cart={cart} 
+          onClose={() => setIsCartOpen(false)} 
+          onCheckout={openCheckout} 
           onRemoveItem={removeFromCart}
+          onUpdateQuantity={updateCartQuantity}
         />
       )}
 
       {isCheckoutOpen && (
-        <CheckoutModal
-          cart={cart}
-          onClose={closeCheckout}
-          onOrderComplete={() => {
-            setCart([]);
-            closeCheckout();
-            setIsCartOpen(false);
-          }}
-        />
+        <CheckoutModal cart={cart} onClose={closeCheckout} onOrderComplete={() => { setCart([]); closeCheckout(); }} />
       )}
     </div>
   );

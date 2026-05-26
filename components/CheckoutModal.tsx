@@ -12,17 +12,20 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
   const [company, setCompany] = useState('');
   const [vat, setVat] = useState('');
   const [po, setPo] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [postal, setPostal] = useState('');
+  const [country, setCountry] = useState('FR');
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>('stripe');
 
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
 
   const handleCompleteOrder = () => {
-    if (!company) {
-      alert('Please enter your company name');
+    if (!company || !address || !city) {
+      alert('Please fill in company name, address and city');
       return;
     }
     
-    // Simulate order completion
     onOrderComplete();
     
     const successMessage = paymentMethod === 'invoice' 
@@ -31,7 +34,6 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
       ? `SEPA Direct Debit has been set up for ${company}. You will receive a confirmation email.`
       : `Payment successful via Stripe for ${company}. You will receive order confirmation and tracking.`;
 
-    // Show success toast
     const successDiv = document.createElement('div');
     successDiv.className = `fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-6`;
     successDiv.innerHTML = `
@@ -64,21 +66,42 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
           <button onClick={onClose} className="text-2xl text-slate-400">×</button>
         </div>
 
-        <div className="p-7 space-y-6 max-h-[70vh] overflow-y-auto">
+        <div className="p-7 space-y-6 max-h-[68vh] overflow-y-auto">
           {/* Company Info */}
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">COMPANY INFORMATION</div>
             <div className="space-y-3">
-              <input 
-                value={company} 
-                onChange={e => setCompany(e.target.value)}
-                type="text" placeholder="Company name" 
-                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" 
-              />
+              <input value={company} onChange={e => setCompany(e.target.value)} type="text" placeholder="Company name" className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" />
               <div className="grid grid-cols-2 gap-3">
                 <input value={vat} onChange={e => setVat(e.target.value)} type="text" placeholder="VAT / SIRET number" className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
                 <input value={po} onChange={e => setPo(e.target.value)} type="text" placeholder="PO number (optional)" className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
               </div>
+            </div>
+          </div>
+
+          {/* Billing Address - Added as requested */}
+          <div>
+            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">BILLING ADDRESS</div>
+            <div className="space-y-3">
+              <input 
+                value={address} 
+                onChange={e => setAddress(e.target.value)}
+                type="text" placeholder="Street address" 
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" 
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input value={city} onChange={e => setCity(e.target.value)} type="text" placeholder="City" className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                <input value={postal} onChange={e => setPostal(e.target.value)} type="text" placeholder="Postal code" className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+              </div>
+              <select value={country} onChange={e => setCountry(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
+                <option value="FR">France</option>
+                <option value="DE">Germany</option>
+                <option value="NL">Netherlands</option>
+                <option value="BE">Belgium</option>
+                <option value="ES">Spain</option>
+                <option value="IT">Italy</option>
+                <option value="other">Other EU country</option>
+              </select>
             </div>
           </div>
 
@@ -118,10 +141,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
             <div className="text-xs text-slate-400">Total to pay today</div>
             <div className="text-2xl font-semibold tabular-nums">€{hardwareTotal}</div>
           </div>
-          <button 
-            onClick={handleCompleteOrder}
-            className="px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 flex items-center gap-x-2"
-          >
+          <button onClick={handleCompleteOrder} className="px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 flex items-center gap-x-2">
             Complete order
           </button>
         </div>

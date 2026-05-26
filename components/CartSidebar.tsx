@@ -3,14 +3,20 @@
 import { CartItem } from '@/lib/types';
 
 interface Props {
-  cart: CartItem[];
+  cart: any[];
   onClose: () => void;
   onCheckout: () => void;
   onRemoveItem: (id: number) => void;
+  onUpdateQuantity?: (id: number, newQuantity: number) => void;
 }
 
-export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem }: Props) {
+export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, onUpdateQuantity }: Props) {
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
+
+  const updateQty = (id: number, newQty: number) => {
+    if (newQty < 1) return;
+    if (onUpdateQuantity) onUpdateQuantity(id, newQty);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/70 z-[110] flex justify-end" onClick={onClose}>
@@ -24,30 +30,41 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem }:
           {cart.length === 0 ? (
             <div className="text-center py-12 text-slate-400">Your cart is empty</div>
           ) : (
-            cart.map((item, idx) => (
-              <div key={idx} className="border border-slate-700 rounded-2xl p-4">
-                <div className="flex justify-between">
-                  <div>
-                    <div className="font-semibold">{item.product.name}</div>
-                    <div className="text-xs text-slate-400">NoCloud {item.product.name}</div>
+            cart.map((item) => {
+              const qty = item.quantity || 1;
+              return (
+                <div key={item.id} className="border border-slate-700 rounded-2xl p-4">
+                  <div className="flex justify-between">
+                    <div>
+                      <div className="font-semibold">{item.product.name}</div>
+                      <div className="text-xs text-slate-400">NoCloud {item.product.name} × {qty}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">€{item.totalPrice}</div>
+                      <button onClick={() => onRemoveItem(item.id)} className="text-red-400 text-xs hover:text-red-500">Remove</button>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-semibold">€{item.totalPrice}</div>
-                    <button onClick={() => onRemoveItem(item.id)} className="text-red-400 text-xs hover:text-red-500">Remove</button>
+
+                  {/* Quantity controls in cart */}
+                  <div className="flex items-center gap-x-2 mt-3">
+                    <button onClick={() => updateQty(item.id, qty - 1)} className="w-7 h-7 text-xs border border-slate-600 rounded hover:bg-slate-800">−</button>
+                    <span className="font-mono text-sm px-2">{qty}</span>
+                    <button onClick={() => updateQty(item.id, qty + 1)} className="w-7 h-7 text-xs border border-slate-600 rounded hover:bg-slate-800">+</button>
                   </div>
+
+                  {item.services?.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-700 text-xs space-y-1">
+                      {item.services.map((s: any, i: number) => (
+                        <div key={i} className="flex justify-between text-emerald-300">
+                          <span>{s.name}</span>
+                          <span>€{s.price}/mo</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {item.services.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-slate-700 text-xs space-y-1">
-                    {item.services.map((s: any, i: number) => (
-                      <div key={i} className="flex justify-between text-emerald-300">
-                        <span>{s.name}</span>
-                        <span>€{s.price}/mo</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -62,13 +79,9 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem }:
               <span>see configurator</span>
             </div>
             
-            <button 
-              onClick={onCheckout}
-              className="w-full py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-colors flex items-center justify-center gap-x-2 text-sm"
-            >
+            <button onClick={onCheckout} className="w-full py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-colors flex items-center justify-center gap-x-2 text-sm">
               Proceed to secure checkout
             </button>
-            
             <div className="text-center text-[10px] text-slate-500 mt-3">Secure • VAT handled • European invoicing</div>
           </div>
         )}
