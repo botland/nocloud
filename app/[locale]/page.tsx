@@ -83,17 +83,10 @@ export default function LocaleHome() {
       <nav className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-screen-2xl mx-auto px-8">
           <div className="flex items-center justify-between h-20">
-            {/* Logo with No-Cloud icon */}
+            {/* Logo - Clean Cloud Slash */}
             <div className="flex items-center gap-x-3">
               <div className="flex items-center gap-x-2.5">
-                <div className="w-9 h-9 bg-white rounded-2xl flex items-center justify-center">
-                  {/* Custom No-Cloud slashed icon matching the provided style */}
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M6.5 19.5C4.5 19.5 3 18 3 16C3 14.5 3.8 13.2 5 12.5C5.2 9.5 7.8 7 11 7C12.5 7 13.8 7.6 14.8 8.5" stroke="#22d3ee" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M18.5 10.5C19.9 11.2 21 12.6 21 14.2C21 16.3 19.3 18 17.2 18" stroke="#22d3ee" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                    <line x1="5" y1="5" x2="19" y2="19" stroke="#0f172a" strokeWidth="2.5" strokeLinecap="round"/>
-                  </svg>
-                </div>
+                <i className="fa-solid fa-cloud-slash text-cyan-400 text-[23px]"></i>
                 <div className="flex items-baseline">
                   <span className="font-display text-[28px] font-semibold tracking-tighter">nocloud</span>
                   <span className="text-cyan-400 font-display text-[28px] font-semibold">.ai</span>
