@@ -9,18 +9,43 @@ interface Props {
   onAddToCart: (item: CartItem) => void;
 }
 
+// Key specs per product (inspired by full-b2b quality)
+const productSpecs: Record<number, Array<[string, string]>> = {
+  0: [ // Edge
+    ['Inference', '60+ tokens/s (7B)'],
+    ['Models', 'Up to 13B'],
+    ['Memory', '24 GB'],
+    ['Storage', '1 TB NVMe'],
+    ['Form factor', 'Compact desktop'],
+  ],
+  1: [ // Studio
+    ['Inference', 'High performance multi-model'],
+    ['Models', 'Up to 70B'],
+    ['Memory', '96 GB'],
+    ['Storage', '4 TB RAID'],
+    ['Form factor', 'Desktop tower'],
+  ],
+  2: [ // Forge
+    ['Inference', 'Enterprise scale'],
+    ['Models', '100B+ & multi-node ready'],
+    ['Memory', '256+ GB HBM'],
+    ['Storage', '8 TB+ Enterprise'],
+    ['Form factor', 'Rackmount ready'],
+  ],
+};
+
 export default function ConfiguratorModal({ product, onClose, onAddToCart }: Props) {
   const [managed, setManaged] = useState(false);
   const [backup, setBackup] = useState(false);
-  const [setup, setSetup] = useState(false);
 
-  const selectedServices = [];
+  const specs = productSpecs[product.id] || [];
+
+  const selectedServices: { name: string; price: number }[] = [];
   if (managed) selectedServices.push({ name: "Managed Care", price: 89 });
   if (backup) selectedServices.push({ name: "SecureVault Backup", price: 39 });
-  if (setup) selectedServices.push({ name: "Professional Setup & Training", price: 499 });
 
   const servicesTotal = selectedServices.reduce((sum, s) => sum + s.price, 0);
-  const totalPrice = product.price + servicesTotal; // Upfront total (services include setup fees + first mo where applicable)
+  const totalPrice = product.price; // Hardware only for today (services recurring)
 
   const handleAddToCart = () => {
     const item: CartItem = {
@@ -33,73 +58,93 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="p-7">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs font-bold tracking-[2px] text-cyan-400">{product.tier} PERFORMANCE</div>
-              <h2 className="text-3xl font-semibold tracking-tighter">{product.name}</h2>
-            </div>
-            <button onClick={onClose} className="text-3xl leading-none text-slate-400 hover:text-white">×</button>
+    <div 
+      className="fixed inset-0 bg-black/70 backdrop-blur z-[100] flex items-center justify-center p-4" 
+      onClick={onClose}
+    >
+      <div 
+        className="modal bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl overflow-hidden" 
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-7 pt-6 pb-5 border-b border-slate-800 flex justify-between items-start">
+          <div>
+            <div className="font-semibold text-2xl tracking-tight">{product.name}</div>
+            <div className="text-xs uppercase tracking-[2px] text-cyan-400 font-bold mt-0.5">{product.tier}</div>
           </div>
-
-          <div className="mt-6 mb-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">Base appliance</span>
-              <span className="font-semibold tabular-nums">€{product.price}</span>
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <div className="text-xs uppercase tracking-[2px] text-slate-400 mb-3 mt-4">OPTIONAL SERVICES</div>
-            
-            <label className="flex items-start gap-x-3 p-4 border border-slate-700 hover:border-slate-600 rounded-2xl mb-2.5 cursor-pointer transition-colors">
-              <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} className="mt-1 accent-cyan-400 w-4 h-4" />
-              <div className="flex-1">
-                <div className="flex justify-between">
-                  <div className="font-medium">Managed Care</div>
-                  <div className="text-emerald-400 font-mono text-sm">€89/mo</div>
-                </div>
-                <div className="text-xs text-slate-400">Remote management, updates, priority support</div>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-x-3 p-4 border border-slate-700 hover:border-slate-600 rounded-2xl mb-2.5 cursor-pointer transition-colors">
-              <input type="checkbox" checked={backup} onChange={e => setBackup(e.target.checked)} className="mt-1 accent-cyan-400 w-4 h-4" />
-              <div className="flex-1">
-                <div className="flex justify-between">
-                  <div className="font-medium">SecureVault Backup</div>
-                  <div className="text-sky-400 font-mono text-sm">€39/mo</div>
-                </div>
-                <div className="text-xs text-slate-400">Daily encrypted backups + one-click restore</div>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-x-3 p-4 border border-slate-700 hover:border-slate-600 rounded-2xl cursor-pointer transition-colors">
-              <input type="checkbox" checked={setup} onChange={e => setSetup(e.target.checked)} className="mt-1 accent-cyan-400 w-4 h-4" />
-              <div className="flex-1">
-                <div className="flex justify-between">
-                  <div className="font-medium">Professional Setup & Training</div>
-                  <div className="text-amber-400 font-mono text-sm">€499 one-time</div>
-                </div>
-                <div className="text-xs text-slate-400">On-site or remote installation + team training</div>
-              </div>
-            </label>
-          </div>
-
-          <div className="text-xs text-slate-500">Services are billed monthly after initial setup (where applicable). Setup fee is one-time.</div>
+          <button onClick={onClose} className="text-2xl text-slate-400 hover:text-white">×</button>
         </div>
-
-        <div className="bg-slate-950 px-7 py-5 flex justify-between items-center border-t border-slate-800">
+        
+        <div className="p-7">
+          {/* Base Price */}
+          <div className="flex justify-between items-baseline mb-6">
+            <div className="text-sm text-slate-400">Base appliance</div>
+            <div className="text-3xl font-semibold tabular-nums">€{product.price}</div>
+          </div>
+          
+          {/* Key Specifications - Unified in same modal */}
+          <div className="mb-7">
+            <div className="uppercase text-xs tracking-widest text-slate-400 mb-3 font-medium">KEY SPECIFICATIONS</div>
+            <div className="text-sm">
+              {specs.map((spec, idx) => (
+                <div key={idx} className="flex justify-between py-2 border-b border-slate-800 last:border-none">
+                  <span className="text-slate-400">{spec[0]}</span>
+                  <span className="font-medium">{spec[1]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Optional Services */}
+          <div>
+            <div className="uppercase text-xs tracking-widest text-slate-400 mb-3 font-medium">OPTIONAL SERVICES</div>
+            
+            <div className="space-y-3">
+              <label className="flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={managed} 
+                  onChange={e => setManaged(e.target.checked)} 
+                  className="accent-cyan-400 mt-1" 
+                />
+                <div className="flex-1">
+                  <div className="flex justify-between">
+                    <span className="font-medium">Managed Care</span> 
+                    <span className="text-emerald-400 font-mono text-sm">€89/mo</span>
+                  </div>
+                  <div className="text-xs text-slate-400">Remote management, updates & priority support</div>
+                </div>
+              </label>
+              
+              <label className="flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={backup} 
+                  onChange={e => setBackup(e.target.checked)} 
+                  className="accent-cyan-400 mt-1" 
+                />
+                <div className="flex-1">
+                  <div className="flex justify-between">
+                    <span className="font-medium">SecureVault Backup</span> 
+                    <span className="text-sky-400 font-mono text-sm">€39/mo</span>
+                  </div>
+                  <div className="text-xs text-slate-400">Daily encrypted backups + restore</div>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex items-center justify-between">
           <div>
             <div className="text-xs text-slate-400">Total today</div>
-            <div className="text-3xl font-semibold tabular-nums">€{totalPrice}</div>
-            {servicesTotal > 0 && <div className="text-[10px] text-emerald-400">+ recurring services selected</div>}
+            <div className="text-3xl font-semibold tabular-nums tracking-tighter">€{totalPrice}</div>
+            <div className="text-[10px] text-slate-500">+ recurring services (billed monthly)</div>
           </div>
           <button 
             onClick={handleAddToCart}
-            className="px-9 py-3.5 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 active:scale-[0.985] transition-all"
+            className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-bold rounded-3xl text-sm flex items-center gap-x-2 transition-all"
           >
             Add to cart
           </button>
