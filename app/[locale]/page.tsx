@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useTranslations } from 'next-intl';
 import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
+import CheckoutModal from '@/components/CheckoutModal';
 import { Product } from '@/lib/types';
 
 const products: Product[] = [
@@ -35,11 +35,11 @@ const products: Product[] = [
 ];
 
 export default function LocaleHome() {
-  const t = useTranslations();
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
   const openConfigurator = (product: Product) => {
     setSelectedProduct(product);
@@ -56,19 +56,26 @@ export default function LocaleHome() {
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const openCheckout = () => {
+    setIsCartOpen(false);
+    setIsCheckoutOpen(true);
+  };
+
+  const closeCheckout = () => {
+    setIsCheckoutOpen(false);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      {/* Navbar - Improved with links like full-b2b */}
+      {/* Navbar */}
       <nav className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-screen-2xl mx-auto px-8">
           <div className="flex items-center justify-between h-20">
-            {/* Logo */}
+            {/* Logo with improved icon */}
             <div className="flex items-center gap-x-3">
               <div className="flex items-center gap-x-2.5">
                 <div className="w-9 h-9 bg-white rounded-2xl flex items-center justify-center">
-                  <div className="w-5 h-5 bg-slate-950 rounded-xl flex items-center justify-center">
-                    <span className="text-cyan-400 text-[21px]">🛡️</span>
-                  </div>
+                  <i className="fa-solid fa-lock text-cyan-400 text-[21px]"></i>
                 </div>
                 <div className="flex items-baseline">
                   <span className="font-display text-[28px] font-semibold tracking-tighter">nocloud</span>
@@ -78,26 +85,24 @@ export default function LocaleHome() {
               <div className="hidden md:block px-3 py-1 text-[10px] font-bold tracking-[1.5px] border border-slate-700 rounded-2xl text-slate-400">B2B</div>
             </div>
 
-            {/* Desktop Nav Links - from full-b2b */}
+            {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-x-9 text-sm font-medium">
-              <a href="#products" className="nav-link hover:text-cyan-400 transition-colors">Products</a>
-              <a href="#services" className="nav-link hover:text-cyan-400 transition-colors">Services</a>
-              <a href="#why" className="nav-link hover:text-cyan-400 transition-colors">Why NoCloud</a>
-              <a href="#docs" className="nav-link hover:text-cyan-400 transition-colors">Docs</a>
+              <a href="#products" className="hover:text-cyan-400 transition-colors">Products</a>
+              <a href="#services" className="hover:text-cyan-400 transition-colors">Services</a>
+              <a href="#why" className="hover:text-cyan-400 transition-colors">Why NoCloud</a>
+              <a href="#docs" className="hover:text-cyan-400 transition-colors">Docs</a>
             </div>
 
             <div className="flex items-center gap-x-3">
-              {/* Language Switcher */}
               <div className="flex border border-slate-700 rounded-3xl overflow-hidden text-sm">
                 <a href="/en" className="px-4 py-1.5 text-xs font-semibold hover:bg-slate-900">EN</a>
                 <a href="/fr" className="px-4 py-1.5 text-xs font-semibold border-l border-slate-700 hover:bg-slate-900">FR</a>
               </div>
 
-              {/* Cart */}
               <button 
                 onClick={() => setIsCartOpen(true)}
                 className="flex items-center gap-x-2 px-5 py-2 text-sm font-medium border border-slate-700 hover:bg-slate-900 rounded-3xl transition-colors">
-                <span>🛒</span>
+                <i className="fa-solid fa-shopping-cart"></i>
                 <span className="font-mono text-xs bg-slate-800 px-1.5 rounded">{cart.length}</span>
               </button>
             </div>
@@ -105,7 +110,7 @@ export default function LocaleHome() {
         </div>
       </nav>
 
-      {/* Hero - Removed quote CTA as requested */}
+      {/* Hero */}
       <div className="max-w-screen-2xl mx-auto px-8 pt-16 pb-14">
         <div className="max-w-4xl">
           <div className="inline-flex items-center gap-x-2 px-4 h-9 rounded-3xl bg-slate-900 border border-slate-800 text-sm mb-6">
@@ -130,7 +135,7 @@ export default function LocaleHome() {
               onClick={() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })}
               className="px-8 h-14 bg-white text-slate-950 font-semibold rounded-3xl flex items-center justify-center gap-x-3 text-base hover:bg-slate-100 transition-all shadow-lg">
               Browse appliances
-              <span>→</span>
+              <i className="fa-solid fa-arrow-right ml-1"></i>
             </button>
           </div>
           
@@ -163,7 +168,7 @@ export default function LocaleHome() {
         </div>
       </div>
 
-      {/* Services - Removed Professional Setup & Training */}
+      {/* Services */}
       <div id="services" className="bg-slate-900 border-y border-slate-800 py-16">
         <div className="max-w-screen-2xl mx-auto px-8">
           <div className="max-w-xl mb-9">
@@ -175,15 +180,15 @@ export default function LocaleHome() {
             <div className="bg-slate-950 border border-slate-700 p-7 rounded-3xl">
               <div className="flex gap-x-4">
                 <div className="w-11 h-11 rounded-2xl bg-emerald-900/30 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">⚙️</span>
+                  <i className="fa-solid fa-headset text-2xl"></i>
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-xl">Managed Care</div>
                   <div className="text-emerald-400 font-medium">€89 / month</div>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
-                    <li className="flex gap-x-2">✓ Proactive monitoring & alerts</li>
-                    <li className="flex gap-x-2">✓ Automatic updates & security patches</li>
-                    <li className="flex gap-x-2">✓ Priority European support</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> Proactive monitoring &amp; alerts</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> Automatic updates &amp; security patches</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> Priority European support</li>
                   </ul>
                 </div>
               </div>
@@ -192,15 +197,15 @@ export default function LocaleHome() {
             <div className="bg-slate-950 border border-slate-700 p-7 rounded-3xl">
               <div className="flex gap-x-4">
                 <div className="w-11 h-11 rounded-2xl bg-sky-900/30 text-sky-400 flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">🛡️</span>
+                  <i className="fa-solid fa-shield-halved text-2xl"></i>
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-xl">SecureVault Backup</div>
                   <div className="text-sky-400 font-medium">€39 / month</div>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
-                    <li className="flex gap-x-2">✓ Daily encrypted backups</li>
-                    <li className="flex gap-x-2">✓ One-click restore to any appliance</li>
-                    <li className="flex gap-x-2">✓ Compliance-ready logs</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> Daily encrypted backups</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> One-click restore to any appliance</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> Compliance-ready logs</li>
                   </ul>
                 </div>
               </div>
@@ -209,7 +214,7 @@ export default function LocaleHome() {
         </div>
       </div>
 
-      {/* Why NoCloud - New section inspired by full-b2b */}
+      {/* Why NoCloud */}
       <div id="why" className="max-w-screen-2xl mx-auto px-8 py-20">
         <div className="grid md:grid-cols-12 gap-x-10">
           <div className="md:col-span-5 mb-10 md:mb-0">
@@ -219,32 +224,31 @@ export default function LocaleHome() {
           <div className="md:col-span-7">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
               <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                <div className="text-3xl mb-4">🔒</div>
+                <i className="fa-solid fa-lock text-3xl text-cyan-400 mb-4"></i>
                 <div className="font-semibold mb-1.5">100% Private</div>
                 <p className="text-sm text-slate-400">Your models and data never leave your premises or chosen EU location.</p>
               </div>
               <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                <div className="text-3xl mb-4">📋</div>
+                <i className="fa-solid fa-file-invoice-dollar text-3xl text-cyan-400 mb-4"></i>
                 <div className="font-semibold mb-1.5">B2B Ready</div>
                 <p className="text-sm text-slate-400">Company invoicing, VAT handling, purchase orders, and dedicated support.</p>
               </div>
               <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                <div className="text-3xl mb-4">🌍</div>
+                <i className="fa-solid fa-globe text-3xl text-cyan-400 mb-4"></i>
                 <div className="font-semibold mb-1.5">EU First</div>
-                <p className="text-sm text-slate-400">Data residency in Europe, French & English support, seamless intra-EU shipping.</p>
+                <p className="text-sm text-slate-400">Data residency in Europe, French &amp; English support, seamless intra-EU shipping.</p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Quote CTA simplified or removed - keeping minimal */}
+      {/* CTA */}
       <div className="border-t border-slate-800 bg-slate-900 py-14">
         <div className="max-w-screen-2xl mx-auto px-8 text-center">
           <h3 className="text-3xl font-semibold tracking-tight mb-3">Need a custom configuration?</h3>
           <p className="text-slate-400 mb-6 max-w-md mx-auto">Contact our team for tailored enterprise quotes and volume pricing.</p>
-          <a href="mailto:sales@nocloud.ai" 
-             className="px-9 py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-all inline-flex items-center gap-x-3">
+          <a href="mailto:sales@nocloud.ai" className="px-9 py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-all inline-flex items-center gap-x-3">
             Contact sales
           </a>
         </div>
@@ -261,7 +265,7 @@ export default function LocaleHome() {
         </div>
       </footer>
 
-      {/* Unified Configurator Modal (configure + specs) */}
+      {/* Modals */}
       {isConfiguratorOpen && selectedProduct && (
         <ConfiguratorModal
           product={selectedProduct}
@@ -274,8 +278,20 @@ export default function LocaleHome() {
         <CartSidebar
           cart={cart}
           onClose={() => setIsCartOpen(false)}
-          onCheckout={() => {}}
+          onCheckout={openCheckout}
           onRemoveItem={removeFromCart}
+        />
+      )}
+
+      {isCheckoutOpen && (
+        <CheckoutModal
+          cart={cart}
+          onClose={closeCheckout}
+          onOrderComplete={() => {
+            setCart([]);
+            closeCheckout();
+            setIsCartOpen(false);
+          }}
         />
       )}
     </div>
