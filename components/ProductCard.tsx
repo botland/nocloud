@@ -5,44 +5,41 @@ import { Product } from '@/lib/types';
 interface Props {
   product: Product;
   onConfigure: () => void;
-  onViewSpecs: () => void;
 }
 
-export default function ProductCard({ product, onConfigure, onViewSpecs }: Props) {
-  const tierColor = 
-    product.tier === 'LOW' ? 'text-emerald-400' : 
-    product.tier === 'MEDIUM' ? 'text-cyan-400' : 'text-violet-400';
-
+export default function ProductCard({ product, onConfigure }: Props) {
   return (
-    <div className="product-card bg-slate-900 border border-slate-800 rounded-3xl p-7 flex flex-col transition-all hover:-translate-y-1">
-      <div className="flex justify-between mb-5">
+    <div className="product-card bg-slate-900 border border-slate-800 rounded-3xl p-7 flex flex-col">
+      <div className="flex justify-between mb-4">
         <div>
-          <div className={`${tierColor} text-xs font-extrabold tracking-widest`}>{product.tier}</div>
-          <div className="text-3xl font-semibold tracking-tight mt-1">{product.name}</div>
+          <div className={`${product.id === 0 ? 'text-emerald-400' : product.id === 1 ? 'text-cyan-400' : 'text-violet-400'} text-xs font-extrabold tracking-widest`}>
+            {product.tier}
+          </div>
+          <h3 className="text-3xl font-semibold tracking-tight mt-0.5">{product.name}</h3>
         </div>
         <div className="text-right">
           <div className="text-xs text-slate-400">from</div>
           <div className="text-3xl font-semibold tabular-nums">€{product.price}</div>
         </div>
       </div>
-
-      <p className="text-slate-400 text-sm mb-6 flex-1">{product.description}</p>
       
-      <div className="space-y-2.5">
-        <button 
-          onClick={onConfigure}
-          className="w-full py-3.5 bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 transition-colors"
-        >
-          Configure & Buy
-        </button>
-        
-        <button 
-          onClick={onViewSpecs}
-          className="w-full text-xs text-cyan-400 hover:text-cyan-300 py-1"
-        >
-          View technical specifications →
-        </button>
+      <p className="text-slate-400 flex-1 text-[15px] mb-6">{product.description}</p>
+      
+      <div className="my-2 text-xs">
+        <div className="flex justify-between text-slate-400 mb-1.5">
+          <span>Best for</span> 
+          <span className={`font-medium ${product.id === 0 ? 'text-emerald-400' : product.id === 1 ? 'text-cyan-400' : 'text-violet-400'}`}>
+            {product.id === 0 ? 'Solo • Labs • Creators' : product.id === 1 ? 'Teams • Agencies • Scale-ups' : 'Enterprise • Research Labs'}
+          </span>
+        </div>
       </div>
+      
+      <button 
+        onClick={onConfigure}
+        className="mt-auto w-full py-[15px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 transition-all flex items-center justify-center gap-x-2"
+      >
+        Configure & Buy
+      </button>
     </div>
   );
 }

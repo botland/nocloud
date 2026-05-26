@@ -16,6 +16,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Font Awesome for consistent icons with full-b2b.html */}
+        <link 
+          rel="stylesheet" 
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" 
+        />
+      </head>
       <body className="bg-slate-950 text-slate-200 antialiased">
         {children}
       </body>
