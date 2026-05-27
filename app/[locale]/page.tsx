@@ -6,6 +6,7 @@ import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
 import CheckoutModal from '@/components/CheckoutModal';
 import { Product } from '@/lib/types';
+import LogoIcon from '@/icons/logo.svg';
 
 const products: Product[] = [
   {
@@ -86,9 +87,9 @@ export default function LocaleHome() {
             {/* Logo with white background + Cloud Slash */}
             <div className="flex items-center gap-x-3">
               <div className="flex items-center gap-x-2.5">
-                <div className="w-9 h-9 bg-white rounded-2xl flex items-center justify-center">
-                  <i className="fa-solid fa-cloud-slash text-cyan-400 text-[21px]"></i>
-                </div>
+<div className="w-20 h-20 bg-[#0a1428] rounded-2xl flex items-center justify-center">
+  <LogoIcon className="w-full h-full text-cyan-400" />
+</div>
                 <div className="flex items-baseline">
                   <span className="font-display text-[28px] font-semibold tracking-tighter">nocloud</span>
                   <span className="text-cyan-400 font-display text-[28px] font-semibold">.ai</span>
@@ -223,25 +224,30 @@ export default function LocaleHome() {
             <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-3">BUILT FOR EUROPEAN ORGANIZATIONS</div>
             <h2 className="text-[2.1rem] leading-none font-semibold tracking-tighter">Sovereign AI.<br />European data residency.<br />Full control.</h2>
           </div>
-          <div className="md:col-span-7">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                <i className="fa-solid fa-lock text-3xl text-cyan-400 mb-4"></i>
-                <div className="font-semibold mb-1.5">100% Private</div>
-                <p className="text-sm text-slate-400">Your models and data never leave your premises or chosen EU location.</p>
-              </div>
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                <i className="fa-solid fa-file-invoice-dollar text-3xl text-cyan-400 mb-4"></i>
-                <div className="font-semibold mb-1.5">B2B Ready</div>
-                <p className="text-sm text-slate-400">Company invoicing, VAT handling, purchase orders, and dedicated support.</p>
-              </div>
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                <i className="fa-solid fa-globe text-3xl text-cyan-400 mb-4"></i>
-                <div className="font-semibold mb-1.5">EU First</div>
-                <p className="text-sm text-slate-400">Data residency in Europe, French &amp; English support, seamless intra-EU shipping.</p>
-              </div>
-            </div>
-          </div>
+<div className="md:col-span-7">
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+    <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+      <i className="fa-solid fa-lock text-3xl text-cyan-400 mb-4"></i>
+      <div className="font-semibold mb-1.5">Complete data privacy</div>
+      <p className="text-sm text-slate-400">Nothing leaves your premises. Perfect for regulated industries and sensitive IP.</p>
+    </div>
+    <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+      <i className="fa-solid fa-bolt text-3xl text-cyan-400 mb-4"></i>
+      <div className="font-semibold mb-1.5">Ultra-low latency</div>
+      <p className="text-sm text-slate-400">Run inference at the edge or in your data center. No network round-trips to the cloud.</p>
+    </div>
+    <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+      <i className="fa-solid fa-file-invoice-dollar text-3xl text-cyan-400 mb-4"></i>
+      <div className="font-semibold mb-1.5">Predictable costs</div>
+      <p className="text-sm text-slate-400">One-time hardware purchase. No surprise token bills or usage-based pricing.</p>
+    </div>
+    <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+      <i className="fa-solid fa-sync text-3xl text-cyan-400 mb-4"></i>
+      <div className="font-semibold mb-1.5">Full control</div>
+      <p className="text-sm text-slate-400">Choose any open-source model, fine-tune freely, and integrate with your existing stack.</p>
+    </div>
+  </div>
+</div>
         </div>
       </div>
 
