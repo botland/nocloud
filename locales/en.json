@@ -158,6 +158,20 @@
       "invoice": "Thank you, {company}! Your order has been registered. You will receive an invoice with payment instructions shortly.",
       "sepa": "SEPA Direct Debit has been set up for {company}. You will receive a confirmation email.",
       "stripe": "Payment successful via Stripe for {company}. You will receive order confirmation and tracking."
-    }
+    },
+    "financingLabel": "PAYMENT TERMS",
+    "payFull": "Pay in full today",
+    "payFullDesc": "One-time payment for the appliances",
+    "lease": "Lease / finance",
+    "leaseDesc": "Hardware amortized over {months} months + services included",
+    "monthlyPayment": "€{amount}/month for {months} months",
+    "firstMonthNote": "First payment charged today via Stripe",
+    "monthlyTotalLabel": "Monthly payment ({months} months)"
+  },
+  "success": {
+    "title": "Thank you for your order!",
+    "message": "Your payment has been processed successfully. You will receive a confirmation email with all the details and next steps for delivery and setup.",
+    "returnHome": "Return to homepage",
+    "reference": "Reference: {id}"
   }
 }

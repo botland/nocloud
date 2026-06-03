@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 
 interface Props {
   cart: any[];
@@ -20,8 +20,20 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
   const [postal, setPostal] = useState('');
   const [country, setCountry] = useState('FR');
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>('stripe');
+  const [financing, setFinancing] = useState<'full' | 'lease'>('full');
 
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
+
+  const servicesMonthly = cart.reduce((sum, item) => sum + (item.services || []).reduce((s: number, p: any) => s + (p.price || 0), 0), 0);
+
+  // Always compute lease preview numbers (independent of current financing choice)
+  const leaseMonths = hardwareTotal < 10000 ? 12 : 24;
+  const leaseMonthly = Math.ceil(hardwareTotal / leaseMonths) + servicesMonthly;
+
+  // Current selection
+  const isLease = financing === 'lease';
+
+  const locale = useLocale();
 
   const countryOptions = [
     { value: 'FR', label: t('countries.FR') },
@@ -33,48 +45,88 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
     { value: 'other', label: t('countries.other') },
   ];
 
-  const handleCompleteOrder = () => {
+  const handleCompleteOrder = async () => {
     if (!company || !address || !city) {
       alert(t('validation'));
       return;
     }
-    
-    onOrderComplete();
-    
-    const successMessage = paymentMethod === 'invoice' 
-      ? t('success.invoice', { company })
-      : paymentMethod === 'sepa'
-      ? t('success.sepa', { company })
-      : t('success.stripe', { company });
 
-    const orderNum = `NC-${Date.now().toString().slice(-8)}`;
-    const orderConfirmed = t('success.orderConfirmed');
-    const orderNumLabel = t('success.orderNumLabel');
-    const paymentLabel = t('success.paymentLabel');
-    const totalLabel = t('success.totalLabel');
-    const returnHome = t('success.returnHome');
+    if (paymentMethod === 'invoice') {
+      // Keep the legacy B2B invoice fake flow (net 30)
+      onOrderComplete();
 
-    const successDiv = document.createElement('div');
-    successDiv.className = `fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-6`;
-    successDiv.innerHTML = `
-      <div class="bg-slate-900 border border-slate-700 max-w-md w-full rounded-3xl p-8 text-center">
-        <div class="mx-auto w-16 h-16 bg-emerald-900/30 rounded-full flex items-center justify-center mb-6">
-          <i class="fa-solid fa-check text-emerald-400 text-4xl"></i>
+      const successMessage = t('success.invoice', { company });
+      const orderNum = `NC-${Date.now().toString().slice(-8)}`;
+      const orderConfirmed = t('success.orderConfirmed');
+      const orderNumLabel = t('success.orderNumLabel');
+      const paymentLabel = t('success.paymentLabel');
+      const totalLabel = t('success.totalLabel');
+      const returnHome = t('success.returnHome');
+
+      const successDiv = document.createElement('div');
+      successDiv.className = `fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-6`;
+      successDiv.innerHTML = `
+        <div class="bg-slate-900 border border-slate-700 max-w-md w-full rounded-3xl p-8 text-center">
+          <div class="mx-auto w-16 h-16 bg-emerald-900/30 rounded-full flex items-center justify-center mb-6">
+            <i class="fa-solid fa-check text-emerald-400 text-4xl"></i>
+          </div>
+          <h3 class="text-2xl font-semibold tracking-tight mb-3">${orderConfirmed}</h3>
+          <p class="text-slate-400 mb-6">${successMessage}</p>
+          
+          <div class="text-left bg-slate-950 p-4 rounded-2xl text-sm mb-6">
+            <div class="flex justify-between py-1"><span class="text-slate-400">${orderNumLabel}</span> <span class="font-mono">${orderNum}</span></div>
+            <div class="flex justify-between py-1"><span class="text-slate-400">${paymentLabel}</span> <span class="capitalize">${paymentMethod}</span></div>
+            <div class="flex justify-between py-1"><span class="text-slate-400">${totalLabel}</span> <span class="font-semibold">€${hardwareTotal}</span></div>
+          </div>
+          
+          <button onclick="this.closest('.fixed').remove(); window.location.reload()" 
+                  class="w-full py-3.5 bg-white text-slate-950 font-bold rounded-3xl">${returnHome}</button>
         </div>
-        <h3 class="text-2xl font-semibold tracking-tight mb-3">${orderConfirmed}</h3>
-        <p class="text-slate-400 mb-6">${successMessage}</p>
-        
-        <div class="text-left bg-slate-950 p-4 rounded-2xl text-sm mb-6">
-          <div class="flex justify-between py-1"><span class="text-slate-400">${orderNumLabel}</span> <span class="font-mono">${orderNum}</span></div>
-          <div class="flex justify-between py-1"><span class="text-slate-400">${paymentLabel}</span> <span class="capitalize">${paymentMethod}</span></div>
-          <div class="flex justify-between py-1"><span class="text-slate-400">${totalLabel}</span> <span class="font-semibold">€${hardwareTotal}</span></div>
-        </div>
-        
-        <button onclick="this.closest('.fixed').remove(); window.location.reload()" 
-                class="w-full py-3.5 bg-white text-slate-950 font-bold rounded-3xl">${returnHome}</button>
-      </div>
-    `;
-    document.body.appendChild(successDiv);
+      `;
+      document.body.appendChild(successDiv);
+      return;
+    }
+
+    // Real Stripe flow for 'stripe' / 'sepa'
+    try {
+      const payload = {
+        items: cart,
+        company,
+        vatNumber: vat,
+        poNumber: po,
+        address,
+        city,
+        postal,
+        country,
+        paymentMethod,
+        financing,
+        locale,
+      };
+
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to create checkout session');
+      }
+
+      const data = await res.json();
+      if (data.url) {
+        // Redirect to Stripe hosted Checkout (direct payment or subscription)
+        window.location.href = data.url;
+        return;
+      }
+
+      throw new Error('No checkout URL returned');
+    } catch (e: any) {
+      console.error('Checkout error', e);
+      const msg = e?.message || 'Please try again or contact support.';
+      alert(`Unable to start payment: ${msg}`);
+    }
   };
 
   return (
@@ -121,6 +173,49 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
             </div>
           </div>
 
+          {/* Financing / Payment Terms (new for direct / recurring / leasing) */}
+          <div>
+            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
+            <div className="space-y-3">
+              <label 
+                className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950"
+              >
+                <input 
+                  type="radio" 
+                  name="financing" 
+                  value="full" 
+                  checked={financing === 'full'} 
+                  onChange={() => setFinancing('full')} 
+                  className="accent-cyan-400" 
+                />
+                <div className="flex-1">
+                  <div className="font-medium">{t('payFull')}</div>
+                  <div className="text-xs text-slate-400">{t('payFullDesc')} — €{hardwareTotal}</div>
+                </div>
+              </label>
+
+              <label 
+                className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950"
+              >
+                <input 
+                  type="radio" 
+                  name="financing" 
+                  value="lease" 
+                  checked={financing === 'lease'} 
+                  onChange={() => setFinancing('lease')} 
+                  className="accent-cyan-400" 
+                />
+                <div className="flex-1">
+                  <div className="font-medium">{t('lease')}</div>
+                  <div className="text-xs text-slate-400">
+                    {t('leaseDesc', { months: leaseMonths })} — {t('monthlyPayment', { amount: leaseMonthly, months: leaseMonths })}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{t('firstMonthNote')}</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
           {/* Payment Method */}
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('paymentMethod')}</div>
@@ -154,8 +249,13 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
 
         <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex justify-between items-center">
           <div>
-            <div className="text-xs text-slate-400">{t('totalToPay')}</div>
-            <div className="text-2xl font-semibold tabular-nums">€{hardwareTotal}</div>
+            <div className="text-xs text-slate-400">
+              {isLease 
+                ? t('monthlyTotalLabel', { months: leaseMonths }) 
+                : t('totalToPay')}
+            </div>
+            <div className="text-2xl font-semibold tabular-nums">€{isLease ? leaseMonthly : hardwareTotal}</div>
+            {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}
           </div>
           <button onClick={handleCompleteOrder} className="px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 flex items-center gap-x-2">
             {t('completeBtn')}

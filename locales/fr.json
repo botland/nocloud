@@ -158,6 +158,20 @@
       "invoice": "Merci, {company} ! Votre commande a été enregistrée. Vous recevrez sous peu une facture avec les instructions de paiement.",
       "sepa": "Le prélèvement SEPA a été mis en place pour {company}. Vous recevrez un email de confirmation.",
       "stripe": "Paiement réussi via Stripe pour {company}. Vous recevrez une confirmation de commande et le suivi."
-    }
+    },
+    "financingLabel": "CONDITIONS DE PAIEMENT",
+    "payFull": "Payer en totalité aujourd'hui",
+    "payFullDesc": "Paiement unique pour les appareils",
+    "lease": "Location / financement",
+    "leaseDesc": "Matériel amorti sur {months} mois + services inclus",
+    "monthlyPayment": "€{amount}/mois pendant {months} mois",
+    "firstMonthNote": "Premier paiement prélevé aujourd'hui via Stripe",
+    "monthlyTotalLabel": "Paiement mensuel ({months} mois)"
+  },
+  "success": {
+    "title": "Merci pour votre commande !",
+    "message": "Votre paiement a été traité avec succès. Vous recevrez un email de confirmation avec tous les détails et les prochaines étapes pour la livraison et l'installation.",
+    "returnHome": "Retour à l'accueil",
+    "reference": "Référence : {id}"
   }
 }
