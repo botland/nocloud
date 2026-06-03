@@ -1,14 +1,21 @@
 'use client';
 
 import { useTranslations, useLocale } from 'next-intl';
-import { useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 export default function SuccessPage() {
   const t = useTranslations('success');
   const locale = useLocale();
-  const searchParams = useSearchParams();
-  const sessionId = searchParams.get('session_id');
+
+  // Client-side only to avoid any useSearchParams hook side effects on hydration/interactivity.
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      setSessionId(sp.get('session_id'));
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center p-8">
