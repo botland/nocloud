@@ -60,6 +60,7 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
   if (backup) selectedServices.push({ name: t('secureVaultBackup'), price: backupUnit });
 
   const totalPrice = product.price * quantity;
+  const recurringPrice = selectedServices.reduce((sum, s) => sum + s.price * quantity, 0);
 
   const handleAddToCart = () => {
     const item = {
@@ -139,7 +140,9 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
           <div>
             <div className="text-xs text-slate-400">{t('totalToday')}</div>
             <div className="text-3xl font-semibold tabular-nums tracking-tighter">€{totalPrice}</div>
-            <div className="text-[10px] text-slate-500">{t('recurringNote')}</div>
+            {recurringPrice > 0 && (
+              <div className="text-xs text-emerald-400 mt-0.5">+ €{recurringPrice}/mo recurring</div>
+            )}
           </div>
           <button onClick={handleAddToCart} className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-bold rounded-3xl text-sm">
             {t('addToCart')}

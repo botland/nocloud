@@ -47,6 +47,9 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, o
                     </div>
                     <div className="text-right">
                       <div className="font-semibold">€{item.totalPrice}</div>
+                      {item.services?.length > 0 && (
+                        <div className="text-xs text-emerald-400">+ €{(item.services || []).reduce((s: number, p: any) => s + (p.price || 0), 0) * qty}/mo</div>
+                      )}
                       <button onClick={() => onRemoveItem(item.id)} className="text-red-400 text-xs hover:text-red-500">{t('remove')}</button>
                     </div>
                   </div>

@@ -192,7 +192,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                 />
                 <div className="flex-1">
                   <div className="font-medium">{t('payFull')}</div>
-                  <div className="text-xs text-slate-400">{t('payFullDesc')} — €{hardwareTotal}</div>
+                  <div className="text-xs text-slate-400">{t('payFullDesc')} — €{hardwareTotal}{servicesMonthly > 0 ? ` + €${servicesMonthly}/mo recurring` : ''}</div>
                 </div>
               </label>
 
@@ -257,6 +257,9 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                 : t('totalToPay')}
             </div>
             <div className="text-2xl font-semibold tabular-nums">€{isLease ? leaseMonthly : hardwareTotal}</div>
+            {!isLease && servicesMonthly > 0 && (
+              <div className="text-[10px] text-emerald-400">+ €{servicesMonthly}/mo recurring services</div>
+            )}
             {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}
           </div>
           <button onClick={handleCompleteOrder} className="px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 flex items-center gap-x-2">
