@@ -1,7 +1,6 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { CartItem } from '@/lib/types';
 
 interface Props {
   cart: any[];

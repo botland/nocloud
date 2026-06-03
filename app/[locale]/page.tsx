@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
@@ -18,6 +19,8 @@ const baseProducts = [
 export default function LocaleHome() {
   const t = useTranslations();
   const locale = useLocale();
+  const searchParams = useSearchParams();
+  const showCanceled = searchParams?.get('canceled') === 'true';
 
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -109,6 +112,17 @@ export default function LocaleHome() {
           </div>
         </div>
       </nav>
+
+      {/* Canceled payment feedback (from Stripe cancel_url) */}
+      {showCanceled && (
+        <div className="border-b border-amber-900/50 bg-amber-950/60">
+          <div className="max-w-screen-2xl mx-auto px-8 py-3 text-sm flex items-center gap-x-3 text-amber-300">
+            <i className="fa-solid fa-exclamation-triangle"></i>
+            <span className="font-medium">{t('canceledTitle')}</span>
+            <span className="text-amber-400/80">{t('canceledMessage')}</span>
+          </div>
+        </div>
+      )}
 
       {/* Hero */}
       <div className="max-w-screen-2xl mx-auto px-8 pt-16 pb-14">

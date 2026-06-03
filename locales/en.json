@@ -84,6 +84,8 @@
     "privacy": "Privacy (RGPD)",
     "support": "Support"
   },
+  "canceledTitle": "Payment canceled",
+  "canceledMessage": "Your checkout was canceled. Your cart is still here — feel free to try again.",
   "configurator": {
     "baseAppliance": "Base appliance",
     "keySpecs": "KEY SPECIFICATIONS",
@@ -172,6 +174,8 @@
     "title": "Thank you for your order!",
     "message": "Your payment has been processed successfully. You will receive a confirmation email with all the details and next steps for delivery and setup.",
     "returnHome": "Return to homepage",
+    "referenceLabel": "Reference",
+    "emailNote": "You will also receive a confirmation email with tracking and setup instructions.",
     "reference": "Reference: {id}"
   }
 }

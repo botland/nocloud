@@ -97,12 +97,44 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // For direct purchases, turn selected services into real recurring Subscriptions
-    // (the customer + payment method from the one-time Checkout can be reused)
+    // For direct purchases (financing=full), turn selected services into real recurring Subscriptions.
+    // The pm collected by the one-time Checkout session must be explicitly attached so the
+    // monthly subs can actually charge (without this, subs are often created without a default pm
+    // and won't auto-bill, especially noticeable with SEPA).
     if (session.customer && financing !== 'lease' && servicesArray.length > 0) {
+      // Best-effort: extract the payment method used for this Checkout payment.
+      // In 'payment' mode the pm may be directly on session or reachable via the payment_intent.
+      let defaultPaymentMethod: string | undefined;
+      const sessionPm = (session as any).payment_method as string | undefined;
+      if (sessionPm) {
+        defaultPaymentMethod = sessionPm;
+      } else if (session.payment_intent) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(
+            session.payment_intent as string,
+            { expand: ['payment_method'] }
+          );
+          const pm = (pi as any).payment_method;
+          defaultPaymentMethod = typeof pm === 'string' ? pm : pm?.id;
+        } catch (retrieveErr) {
+          console.warn('Could not expand payment_intent to obtain payment_method for service subs', retrieveErr);
+        }
+      }
+
+      // Also set it as the customer's default so any future subscriptions (or retries) work.
+      if (defaultPaymentMethod) {
+        try {
+          await stripe.customers.update(session.customer as string, {
+            invoice_settings: { default_payment_method: defaultPaymentMethod },
+          });
+        } catch (custErr) {
+          console.warn('Could not set default pm on customer', custErr);
+        }
+      }
+
       for (const s of servicesArray) {
         try {
-          await stripe.subscriptions.create({
+          const subParams: any = {
             customer: session.customer as string,
             items: [{
               price_data: {
@@ -116,7 +148,12 @@ export async function POST(request: NextRequest) {
               order_session: orderId,
               service: s.name,
             },
-          });
+          };
+          if (defaultPaymentMethod) {
+            subParams.default_payment_method = defaultPaymentMethod;
+          }
+          await stripe.subscriptions.create(subParams);
+          console.log(`Created service subscription for "${s.name}" on customer ${session.customer} (pm: ${defaultPaymentMethod || 'none'})`);
         } catch (subErr) {
           console.error('Failed to create service subscription', subErr);
         }

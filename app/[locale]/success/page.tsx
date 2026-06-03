@@ -1,11 +1,12 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 export default function SuccessPage() {
   const t = useTranslations('success');
+  const locale = useLocale();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
 
@@ -21,20 +22,20 @@ export default function SuccessPage() {
 
         {sessionId && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-8 text-sm">
-            <div className="text-slate-400 mb-1">{t('reference', { id: '' })}</div>
+            <div className="text-slate-400 mb-1">{t('referenceLabel')}</div>
             <div className="font-mono text-slate-200 break-all">{sessionId}</div>
           </div>
         )}
 
         <Link
-          href="/"
+          href={`/${locale}`}
           className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-all"
         >
           {t('returnHome')}
         </Link>
 
         <div className="mt-10 text-xs text-slate-500">
-          You will also receive a confirmation email with tracking and setup instructions.
+          {t('emailNote')}
         </div>
       </div>
     </div>

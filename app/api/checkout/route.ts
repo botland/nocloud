@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Direct / full payment: one-time for hardware only.
       // Services (if any) will be turned into real subscriptions by the webhook.
+      // Use proper quantity + unit price so Stripe line items correctly reflect qty > 1.
       lineItems = (items || []).map((item: any) => ({
         price_data: {
           currency: 'eur',
@@ -84,9 +85,9 @@ export async function POST(request: NextRequest) {
               ? `Includes: ${(item.services || []).map((s: any) => s.name).join(', ')}`
               : undefined,
           },
-          unit_amount: (item.totalPrice || 0) * 100,
+          unit_amount: (item.product?.price || 0) * 100,
         },
-        quantity: 1,
+        quantity: item.quantity || 1,
       }));
     }
 

@@ -84,6 +84,8 @@
     "privacy": "Confidentialité (RGPD)",
     "support": "Support"
   },
+  "canceledTitle": "Paiement annulé",
+  "canceledMessage": "Votre commande a été annulée. Votre panier est toujours là — n'hésitez pas à réessayer.",
   "configurator": {
     "baseAppliance": "Appareil de base",
     "keySpecs": "CARACTÉRISTIQUES CLÉS",
@@ -172,6 +174,8 @@
     "title": "Merci pour votre commande !",
     "message": "Votre paiement a été traité avec succès. Vous recevrez un email de confirmation avec tous les détails et les prochaines étapes pour la livraison et l'installation.",
     "returnHome": "Retour à l'accueil",
+    "referenceLabel": "Référence",
+    "emailNote": "Vous recevrez également un email de confirmation avec les instructions de suivi et de configuration.",
     "reference": "Référence : {id}"
   }
 }

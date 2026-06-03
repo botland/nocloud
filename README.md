@@ -1,38 +1,100 @@
-# nocloud.ai — Next.js + Stripe + next-intl Starter
+# nocloud.ai — Private Generative AI Appliances (B2B)
 
-This is a clean, production-ready starter for your B2B generative AI appliance ecommerce site.
+Next.js 16 (App Router) + Stripe Checkout + next-intl (EN/FR) + Resend.
 
-## Features
-- **next-intl** for multilingual support (EN + FR)
-- **Stripe Checkout** integration (real payment flow)
-- B2B fields (Company, VAT, PO)
-- Clean, fast, functional design
-- Product configurator + cart
+Real B2B checkout for on-premise AI hardware appliances with optional managed services and flexible payment terms (pay in full, or lease 12/24 months).
+
+## Current Features
+
+- **Full i18n** (EN + FR) — every string in UI, configurator, cart, checkout, success, and financing terms is translated and locale-routed (`/en`, `/fr`).
+- **Real Stripe payments** (hosted Checkout):
+  - **Direct / one-time**: full hardware amount charged immediately (services noted in description).
+  - **Recurring services** (for direct purchases): selected Managed Care (€89/mo) and/or SecureVault Backup (€39/mo) are turned into real Stripe Subscriptions in the `checkout.session.completed` webhook using the collected payment method.
+  - **Leasing / financing**: hardware + services amortized into a single monthly subscription. 12 months if hardware total < €10k, else 24 months. Fixed term enforced via `subscriptions.update({ cancel_at })` (computed at checkout time and stored in metadata).
+- **B2B data collection**: Company name, VAT/SIRET, PO number, full billing address + country selector. All passed through to Stripe metadata and order emails.
+- **Payment methods**: Card (Stripe), SEPA Direct Debit, or "Pay by Invoice (B2B)" mock (Net 30).
+- **Cart + Configurator**: quantity selector, optional monthly services per appliance, live totals (hardware one-time + services monthly).
+- **Success page**: localized thank-you + optional `session_id` reference. Returns to correct locale.
+- **Emails**: customer confirmation + admin notification via Resend on successful checkout (includes financing details, services list, B2B info).
+- **Rich metadata** on Stripe objects for reconciliation.
+- Clean dark UI, Font Awesome icons, fully responsive.
 
 ## Setup
 
-1. Copy this folder into your project
-2. Install dependencies:
+1. Install:
    ```bash
    npm install
    ```
 
-3. Add your Stripe keys in `.env.local`:
-   ```env
-   STRIPE_SECRET_KEY=sk_test_...
-   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
-   NEXT_PUBLIC_SITE_URL=http://localhost:3000
+2. Copy the example and fill real secrets (never commit `.env.local`):
+   ```bash
+   cp .env.example .env.local
    ```
+   Required keys:
+   - `STRIPE_SECRET_KEY` (sk_test_...)
+   - `STRIPE_WEBHOOK_SECRET` (whsec_... — required for the webhook to verify events and send emails + create service subs)
+   - `RESEND_API_KEY` (re_...)
+   - `ADMIN_EMAIL` (where you want order alerts)
+   - `NEXT_PUBLIC_SITE_URL` (http://localhost:8080 for dev; your production domain for live)
 
-4. Run the dev server:
+3. Run dev (listens on 8080 per package.json):
    ```bash
    npm run dev
    ```
 
-## Next Steps
-- Connect real B2B form before checkout
-- Add success page
-- Connect to your database for orders
-- Expand technical specs
+4. For Stripe webhooks locally: use the Stripe CLI
+   ```bash
+   stripe login
+   stripe listen --forward-to http://localhost:8080/api/webhook/stripe
+   ```
+   Copy the signing secret into `STRIPE_WEBHOOK_SECRET` in `.env.local`.
 
-This gives you a very strong foundation.
+## Payment Flows (Summary)
+
+- Choose appliances + services + quantities in configurator → cart.
+- "Proceed to secure checkout" → fill B2B fields + choose **Payment Terms** (Pay in full vs Lease) + **Payment Method**.
+- Invoice path: shows a localized fake success overlay (B2B Net 30, no real charge).
+- Card / SEPA: real `stripe.checkout.sessions.create` (mode payment or subscription for lease) → hosted Stripe Checkout → success or cancel.
+- On `checkout.session.completed`:
+  - Emails sent (customer + admin) with accurate details.
+  - If direct + services selected: real monthly Subscriptions created for each service (with the collected pm attached).
+  - If lease: the subscription (created by Checkout) gets `cancel_at` set from metadata.
+
+Lease math (server + client consistent):
+- months = hardwareTotal < 10000 ? 12 : 24
+- monthly = Math.ceil(hardwareTotal / months) + servicesMonthly
+
+## Scripts
+
+- `npm run dev` — dev server on :8080
+- `npm run build` — production build (Turbopack)
+- `npm run start` — production server
+- `npm run lint` — neutralized (no ESLint config yet)
+- `npm run deploy` — example PM2 deploy script (see ecosystem.config.js — customize for your env/port)
+
+## Deployment Notes
+
+- Uses PM2 (`ecosystem.config.js` names the app "nocloud", defaults to port 44444 in prod example).
+- The deploy script does a clean build + restart.
+- Make sure `NEXT_PUBLIC_SITE_URL` and webhook endpoint are set correctly for your domain.
+- `.env` files are gitignored (`.env.example` is the committed template).
+
+## Known Limitations / Future Ideas
+
+- Invoice method is still a mock (easy to extend to real Stripe Invoices later).
+- No persistent DB — orders live in Stripe + email + metadata only.
+- Webhook only reacts to `checkout.session.completed` (no failed payment, subscription lifecycle, or customer portal flows yet).
+- Middleware deprecation warning on build (`middleware.ts` → consider "proxy" per Next 16 guidance; routing still works).
+- Prices, service rates, and the €10k lease threshold are hardcoded in a few places (configurator, route, page).
+- External Font Awesome CDN (no SRI).
+- No automated tests.
+
+This is a production-ready foundation for a European B2B appliance sales site with sophisticated financing.
+
+## License / Credits
+
+Private project. Built with Next.js, Stripe, next-intl, Resend, Tailwind.
+
+---
+
+**Branch history note**: Core i18n landed on `feature/i18n-support`. Full payments + leasing (direct / recurring services / lease) on `feature/payments-leasing`. Subsequent hygiene, bug fixes (e.g. recurring pm attachment for services), polish, and docs on `fix/post-payments-issues`.
