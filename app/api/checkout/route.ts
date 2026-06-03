@@ -130,14 +130,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: pmTypes,
       mode,
       line_items: lineItems,
       success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}`,
-      ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
-      customer_email: email || undefined,
       metadata: {
         company_name: company || 'N/A',
         vat_number: vatNumber || 'N/A',
@@ -155,7 +153,13 @@ export async function POST(request: NextRequest) {
         customer_email: email || 'N/A',
         pricing_version: PRICING_VERSION,
       },
-    });
+    };
+    if (stripeCustomerId) {
+      sessionParams.customer = stripeCustomerId;
+    } else if (email) {
+      sessionParams.customer_email = email;
+    }
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     return NextResponse.json({ url: session.url });
   } catch (error: any) {

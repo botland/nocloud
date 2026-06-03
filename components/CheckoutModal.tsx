@@ -23,7 +23,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>('stripe');
   const [financing, setFinancing] = useState<'full' | 'lease'>('full');
 
-  // Email collected here (part of checkout), kept in payload, transmitted to Stripe (customer_email + pre-created Customer).
+  // Email collected here (part of checkout), kept in payload, transmitted to Stripe (pre-created Customer preferred; falls back to customer_email).
   const [email, setEmail] = useState('');
 
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
