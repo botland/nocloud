@@ -21,19 +21,45 @@ export default function LocaleHome() {
 
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    // Hydrate cart from localStorage so it survives page reloads and Stripe cancel redirects.
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('nocloud_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  // Persist cart to localStorage whenever it changes (survives cancel from Stripe, refreshes, etc.).
+  useEffect(() => {
+    try {
+      localStorage.setItem('nocloud_cart', JSON.stringify(cart));
+    } catch {
+      // ignore storage errors (private mode, quota, etc.)
+    }
+  }, [cart]);
 
   // Client-side only check for ?canceled=true (from Stripe cancel_url).
   // Using useEffect + URLSearchParams avoids useSearchParams() hook entirely,
   // which was causing hydration and event handler attachment issues for
   // interactive elements (configure buttons, basket/cart button, etc.).
+  // We also clean the param from the URL so the banner doesn't re-appear on refresh.
   const [showCanceled, setShowCanceled] = useState(false);
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
-      setShowCanceled(sp.get('canceled') === 'true');
+      if (sp.get('canceled') === 'true') {
+        setShowCanceled(true);
+        // Remove the param so a refresh doesn't keep showing the canceled banner forever.
+        sp.delete('canceled');
+        const newSearch = sp.toString();
+        const cleanUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+        window.history.replaceState({}, '', cleanUrl);
+      }
     }
   }, []);
 
@@ -299,7 +325,11 @@ export default function LocaleHome() {
       )}
 
       {isCheckoutOpen && (
-        <CheckoutModal cart={cart} onClose={closeCheckout} onOrderComplete={() => { setCart([]); closeCheckout(); }} />
+        <CheckoutModal cart={cart} onClose={closeCheckout} onOrderComplete={() => {
+          setCart([]);
+          try { localStorage.removeItem('nocloud_cart'); } catch {}
+          closeCheckout();
+        }} />
       )}
     </div>
   );

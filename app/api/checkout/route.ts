@@ -152,6 +152,8 @@ export async function POST(request: NextRequest) {
       line_items: lineItems,
       success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
+      // Make the Stripe-hosted Checkout page itself appear in the user's language (en/fr supported by Stripe)
+      locale,
       metadata: {
         company_name: company || 'N/A',
         vat_number: vatNumber || 'N/A',
