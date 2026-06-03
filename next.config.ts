@@ -5,8 +5,8 @@ const withNextIntl = createNextIntlPlugin();
 
 /** @type {import('next').NextConfig} */
 const nextConfig: NextConfig = {
-  // allowedDevOrigins was a previous tunnel IP; left commented to avoid surprises in shared dev.
-  // allowedDevOrigins: ['66.175.238.227'],
+  // Allow dev HMR and dev features when accessing via the tunnel/public IP used in this environment.
+  allowedDevOrigins: ['66.175.238.227'],
 
   // SVGR for Turbopack (Next.js 16)
   turbopack: {

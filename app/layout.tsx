@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title: titles[locale] || titles.en,
     description: descriptions[locale] || descriptions.en,
     icons: {
-      icon: '/favicon.ico',
+      icon: '/favicon.svg',
     },
   };
 }
