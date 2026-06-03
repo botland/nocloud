@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
 import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
@@ -8,39 +9,28 @@ import CheckoutModal from '@/components/CheckoutModal';
 import { Product } from '@/lib/types';
 import LogoIcon from '@/icons/logo.svg';
 
-const products: Product[] = [
-  {
-    id: 0,
-    slug: 'edge',
-    name: 'Edge',
-    tier: 'LOW • DESKTOP',
-    price: 2490,
-    description: 'Compact desktop appliance for individuals and small teams. Excellent for 7B–13B models with high-speed local inference.',
-  },
-  {
-    id: 1,
-    slug: 'studio',
-    name: 'Studio',
-    tier: 'MEDIUM • TOWER',
-    price: 9490,
-    description: 'Powerful tower for teams. Handles up to 70B models, collaborative RAG, and production workloads with ease.',
-  },
-  {
-    id: 2,
-    slug: 'forge',
-    name: 'Forge',
-    tier: 'HIGH • ENTERPRISE',
-    price: 27900,
-    description: 'Enterprise-grade system for large organizations. Massive scale inference, fine-tuning, and multi-node ready.',
-  },
+const baseProducts = [
+  { id: 0, slug: 'edge', price: 2490 },
+  { id: 1, slug: 'studio', price: 9490 },
+  { id: 2, slug: 'forge', price: 27900 },
 ];
 
 export default function LocaleHome() {
+  const t = useTranslations();
+  const locale = useLocale();
+
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  const products: Product[] = baseProducts.map((base) => ({
+    ...base,
+    name: t(`products.items.${base.slug}.name`),
+    tier: t(`products.items.${base.slug}.tier`),
+    description: t(`products.items.${base.slug}.description`),
+  }));
 
   const openConfigurator = (product: Product) => {
     setSelectedProduct(product);
@@ -99,10 +89,10 @@ export default function LocaleHome() {
             </div>
 
             <div className="hidden md:flex items-center gap-x-9 text-sm font-medium">
-              <a href="#products" className="hover:text-cyan-400 transition-colors">Products</a>
-              <a href="#services" className="hover:text-cyan-400 transition-colors">Services</a>
-              <a href="#why" className="hover:text-cyan-400 transition-colors">Why NoCloud</a>
-              <a href="#docs" className="hover:text-cyan-400 transition-colors">Docs</a>
+              <a href="#products" className="hover:text-cyan-400 transition-colors">{t('nav.products')}</a>
+              <a href="#services" className="hover:text-cyan-400 transition-colors">{t('nav.services')}</a>
+              <a href="#why" className="hover:text-cyan-400 transition-colors">{t('nav.why')}</a>
+              <a href="#docs" className="hover:text-cyan-400 transition-colors">{t('nav.docs')}</a>
             </div>
 
             <div className="flex items-center gap-x-3">
@@ -126,28 +116,27 @@ export default function LocaleHome() {
           <div className="inline-flex items-center gap-x-2 px-4 h-9 rounded-3xl bg-slate-900 border border-slate-800 text-sm mb-6">
             <div className="flex items-center gap-x-2">
               <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-              <span className="font-medium">Now shipping across Europe • 3-year warranty • B2B focused</span>
+              <span className="font-medium">{t('hero.badge')}</span>
             </div>
           </div>
           
           <h1 className="text-6xl md:text-7xl font-semibold tracking-tighter leading-[1.05] mb-5">
-            Private Generative AI.<br />
-            <span className="text-white">Your infrastructure.<br />Your rules.</span>
+            {t('hero.title1')}<br />
+            <span className="text-white">{t('hero.title2')}</span>
           </h1>
           
           <p className="max-w-lg text-xl text-slate-400 mb-9">
-            High-performance appliances for European organizations. 
-            Fully private. No cloud. Built for B2B.
+            {t('hero.subtitle')}
           </p>
           
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <button onClick={() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })} className="px-8 h-14 bg-white text-slate-950 font-semibold rounded-3xl flex items-center justify-center gap-x-3 text-base hover:bg-slate-100 transition-all shadow-lg">
-              Browse appliances <i className="fa-solid fa-arrow-right ml-1"></i>
+              {t('hero.cta1')} <i className="fa-solid fa-arrow-right ml-1"></i>
             </button>
           </div>
           
           <div className="mt-8 flex items-center gap-x-8 text-sm">
-            <div className="text-slate-400">Trusted by <span className="font-semibold text-slate-200">240+</span> European teams</div>
+            <div className="text-slate-400">{t('hero.trusted')}</div>
           </div>
         </div>
       </div>
@@ -156,11 +145,11 @@ export default function LocaleHome() {
       <div id="products" className="max-w-screen-2xl mx-auto px-8 pb-16">
         <div className="flex items-end justify-between mb-8">
           <div>
-            <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-1">HARDWARE APPLIANCES</div>
-            <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">Choose your performance level</h2>
+            <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-1">{t('products.tag')}</div>
+            <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">{t('products.title')}</h2>
           </div>
           <div className="hidden lg:block text-sm text-slate-400 max-w-xs text-right">
-            All appliances include our private inference engine and come pre-loaded with leading open-source models.
+            {t('products.blurb')}
           </div>
         </div>
 
@@ -175,8 +164,8 @@ export default function LocaleHome() {
       <div id="services" className="bg-slate-900 border-y border-slate-800 py-16">
         <div className="max-w-screen-2xl mx-auto px-8">
           <div className="max-w-xl mb-9">
-            <div className="text-cyan-400 text-xs font-bold tracking-[2.5px] mb-2">OPTIONAL SERVICES</div>
-            <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">Add management or backup.<br />Keep full control.</h2>
+            <div className="text-cyan-400 text-xs font-bold tracking-[2.5px] mb-2">{t('services.tag')}</div>
+            <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">{t('services.title1')}<br />{t('services.title2')}</h2>
           </div>
           
           <div className="grid md:grid-cols-2 gap-6 max-w-4xl">
@@ -186,12 +175,12 @@ export default function LocaleHome() {
                   <i className="fa-solid fa-headset text-2xl"></i>
                 </div>
                 <div className="flex-1">
-                  <div className="font-semibold text-xl">Managed Care</div>
-                  <div className="text-emerald-400 font-medium">€89 / month</div>
+                  <div className="font-semibold text-xl">{t('services.managedCare')}</div>
+                  <div className="text-emerald-400 font-medium">{t('services.managedCarePrice')}</div>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
-                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> Proactive monitoring &amp; alerts</li>
-                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> Automatic updates &amp; security patches</li>
-                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> Priority European support</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc1')}</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc2')}</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc3')}</li>
                   </ul>
                 </div>
               </div>
@@ -203,12 +192,12 @@ export default function LocaleHome() {
                   <i className="fa-solid fa-shield-halved text-2xl"></i>
                 </div>
                 <div className="flex-1">
-                  <div className="font-semibold text-xl">SecureVault Backup</div>
-                  <div className="text-sky-400 font-medium">€39 / month</div>
+                  <div className="font-semibold text-xl">{t('services.secureVaultBackup')}</div>
+                  <div className="text-sky-400 font-medium">{t('services.secureVaultBackupPrice')}</div>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
-                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> Daily encrypted backups</li>
-                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> One-click restore to any appliance</li>
-                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> Compliance-ready logs</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc1')}</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc2')}</li>
+                    <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc3')}</li>
                   </ul>
                 </div>
               </div>
@@ -221,30 +210,30 @@ export default function LocaleHome() {
       <div id="why" className="max-w-screen-2xl mx-auto px-8 py-20">
         <div className="grid md:grid-cols-12 gap-x-10">
           <div className="md:col-span-5 mb-10 md:mb-0">
-            <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-3">BUILT FOR EUROPEAN ORGANIZATIONS</div>
-            <h2 className="text-[2.1rem] leading-none font-semibold tracking-tighter">Sovereign AI.<br />European data residency.<br />Full control.</h2>
+            <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-3">{t('why.tag')}</div>
+            <h2 className="text-[2.1rem] leading-none font-semibold tracking-tighter">{t('why.title1')}<br />{t('why.title2')}<br />{t('why.title3')}</h2>
           </div>
 <div className="md:col-span-7">
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
       <i className="fa-solid fa-lock text-3xl text-cyan-400 mb-4"></i>
-      <div className="font-semibold mb-1.5">Complete data privacy</div>
-      <p className="text-sm text-slate-400">Nothing leaves your premises. Perfect for regulated industries and sensitive IP.</p>
+      <div className="font-semibold mb-1.5">{t('why.privacyTitle')}</div>
+      <p className="text-sm text-slate-400">{t('why.privacyDesc')}</p>
     </div>
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
       <i className="fa-solid fa-bolt text-3xl text-cyan-400 mb-4"></i>
-      <div className="font-semibold mb-1.5">Ultra-low latency</div>
-      <p className="text-sm text-slate-400">Run inference at the edge or in your data center. No network round-trips to the cloud.</p>
+      <div className="font-semibold mb-1.5">{t('why.latencyTitle')}</div>
+      <p className="text-sm text-slate-400">{t('why.latencyDesc')}</p>
     </div>
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
       <i className="fa-solid fa-file-invoice-dollar text-3xl text-cyan-400 mb-4"></i>
-      <div className="font-semibold mb-1.5">Predictable costs</div>
-      <p className="text-sm text-slate-400">One-time hardware purchase. No surprise token bills or usage-based pricing.</p>
+      <div className="font-semibold mb-1.5">{t('why.costsTitle')}</div>
+      <p className="text-sm text-slate-400">{t('why.costsDesc')}</p>
     </div>
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
       <i className="fa-solid fa-sync text-3xl text-cyan-400 mb-4"></i>
-      <div className="font-semibold mb-1.5">Full control</div>
-      <p className="text-sm text-slate-400">Choose any open-source model, fine-tune freely, and integrate with your existing stack.</p>
+      <div className="font-semibold mb-1.5">{t('why.controlTitle')}</div>
+      <p className="text-sm text-slate-400">{t('why.controlDesc')}</p>
     </div>
   </div>
 </div>
@@ -253,21 +242,21 @@ export default function LocaleHome() {
 
       <div className="border-t border-slate-800 bg-slate-900 py-14">
         <div className="max-w-screen-2xl mx-auto px-8 text-center">
-          <h3 className="text-3xl font-semibold tracking-tight mb-3">Need a custom configuration?</h3>
-          <p className="text-slate-400 mb-6 max-w-md mx-auto">Contact our team for tailored enterprise quotes and volume pricing.</p>
+          <h3 className="text-3xl font-semibold tracking-tight mb-3">{t('custom.title')}</h3>
+          <p className="text-slate-400 mb-6 max-w-md mx-auto">{t('custom.subtitle')}</p>
           <a href="mailto:sales@nocloud.ai" className="px-9 py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-all inline-flex items-center gap-x-3">
-            Contact sales
+            {t('custom.cta')}
           </a>
         </div>
       </div>
 
       <footer className="border-t border-slate-800 py-9 text-sm">
         <div className="max-w-screen-2xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-y-4 text-slate-400">
-          <div>© {new Date().getFullYear()} nocloud.ai — Private generative AI infrastructure for Europe</div>
+          <div>{t('footer.copyright', { year: new Date().getFullYear() })}</div>
           <div className="flex gap-x-6 text-xs">
-            <a href="#" className="hover:text-slate-300">Legal</a>
-            <a href="#" className="hover:text-slate-300">Privacy (RGPD)</a>
-            <a href="#" className="hover:text-slate-300">Support</a>
+            <a href="#" className="hover:text-slate-300">{t('footer.legal')}</a>
+            <a href="#" className="hover:text-slate-300">{t('footer.privacy')}</a>
+            <a href="#" className="hover:text-slate-300">{t('footer.support')}</a>
           </div>
         </div>
       </footer>

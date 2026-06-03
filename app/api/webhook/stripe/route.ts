@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
-const resend = new Resend(process.env.RESEND_API_KEY as string);
-
 export async function POST(request: NextRequest) {
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+
   const body = await request.text();
   const signature = request.headers.get('stripe-signature') || '';
 
@@ -38,8 +37,10 @@ export async function POST(request: NextRequest) {
     const vatNumber = metadata.vatNumber || 'N/A';
     const poNumber = metadata.poNumber || 'N/A';
 
+    const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
     // Customer email - invoice / confirmation
-    if (customerEmail) {
+    if (customerEmail && resend) {
       await resend.emails.send({
         from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
         to: customerEmail,
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Admin notification
-    if (process.env.ADMIN_EMAIL) {
+    if (process.env.ADMIN_EMAIL && resend) {
       await resend.emails.send({
         from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
         to: process.env.ADMIN_EMAIL,
