@@ -3,6 +3,11 @@ import Stripe from 'stripe';
 import { Resend } from 'resend';
 
 export async function POST(request: NextRequest) {
+  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
+    console.error('Webhook misconfigured: missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET');
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
+  }
+
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
     apiVersion: '2026-05-27.dahlia' as any,
   });
@@ -40,6 +45,8 @@ export async function POST(request: NextRequest) {
     const leaseMonths = metadata.lease_months || '';
     const leaseCancelAt = metadata.lease_cancel_at || '';
     const pricingVersion = metadata.pricing_version || metadata.pricingVersion || 'unknown';
+    const orderLocale = (metadata.locale as string) || 'en';
+    const isFr = orderLocale === 'fr';
 
     let servicesStr = 'None';
     let servicesArray: Array<{ name: string; price: number }> = [];
@@ -55,49 +62,75 @@ export async function POST(request: NextRequest) {
     // Customer email - invoice / confirmation
     if (customerEmail && resend) {
       const leaseNote = financing === 'lease' ? `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>` : '';
-      await resend.emails.send({
-        from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-        to: customerEmail,
-        subject: `Thank you for your nocloud.ai order #${orderId.slice(-8)}`,
-        html: `
-          <h1 style="color: #0ea5e9;">Thank you for your purchase!</h1>
-          <p>Your order has been received and payment confirmed.</p>
-          <h2>Order Summary</h2>
-          <p><strong>Total:</strong> ${amount} ${currency}</p>
-          <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
-          <p><strong>Optional Services:</strong> ${servicesStr}</p>
-          <p><strong>Company:</strong> ${companyName}</p>
-          <p><strong>VAT Number:</strong> ${vatNumber}</p>
-          <p><strong>PO Number:</strong> ${poNumber}</p>
-          <p>Order ID: ${orderId}</p>
-          <p><strong>Pricing version:</strong> ${pricingVersion}</p>
-          ${leaseNote}
-          <p>You will receive the appliance soon. Contact us if you have any questions.</p>
-          <p>Best regards,<br>The nocloud.ai Team</p>
-        `,
-      });
+      try {
+        const thanksSubj = isFr
+          ? `Merci pour votre commande nocloud.ai #${orderId.slice(-8)}`
+          : `Thank you for your nocloud.ai order #${orderId.slice(-8)}`;
+        const thanksTitle = isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!';
+        const thanksBody = isFr ? 'Votre commande a été reçue et le paiement confirmé.' : 'Your order has been received and payment confirmed.';
+        const thanksSummary = isFr ? 'Récapitulatif de commande' : 'Order Summary';
+        const thanksServices = isFr ? 'Services optionnels' : 'Optional Services';
+        const thanksCompany = isFr ? 'Société' : 'Company';
+        const thanksVat = isFr ? 'Numéro de TVA' : 'VAT Number';
+        const thanksPo = isFr ? 'N° de commande' : 'PO Number';
+        const thanksPriceVer = isFr ? 'Version de tarification' : 'Pricing version';
+        const thanksFooter = isFr ? 'Vous recevrez l\'appareil prochainement. Contactez-nous si vous avez des questions.' : 'You will receive the appliance soon. Contact us if you have any questions.';
+        const thanksClose = isFr ? 'Cordialement,<br>L\'équipe nocloud.ai' : 'Best regards,<br>The nocloud.ai Team';
+        await resend.emails.send({
+          from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+          to: customerEmail,
+          subject: thanksSubj,
+          html: `
+            <h1 style="color: #0ea5e9;">${thanksTitle}</h1>
+            <p>${thanksBody}</p>
+            <h2>${thanksSummary}</h2>
+            <p><strong>Total:</strong> ${amount} ${currency}</p>
+            <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
+            <p><strong>${thanksServices}:</strong> ${servicesStr}</p>
+            <p><strong>${thanksCompany}:</strong> ${companyName}</p>
+            <p><strong>${thanksVat}:</strong> ${vatNumber}</p>
+            <p><strong>${thanksPo}:</strong> ${poNumber}</p>
+            <p>Order ID: ${orderId}</p>
+            <p><strong>${thanksPriceVer}:</strong> ${pricingVersion}</p>
+            ${leaseNote}
+            <p>${thanksFooter}</p>
+            <p>${thanksClose}</p>
+          `,
+        });
+      } catch (emailErr) {
+        console.error('Failed to send customer email for order', orderId, emailErr);
+      }
     }
 
     // Admin notification
     if (process.env.ADMIN_EMAIL && resend) {
-      await resend.emails.send({
-        from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-        to: process.env.ADMIN_EMAIL,
-        subject: `New Order Received - #${orderId.slice(-8)}`,
-        html: `
-          <h2>New B2B Order on nocloud.ai</h2>
-          <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
-          <p><strong>Total Paid:</strong> ${amount} ${currency}</p>
-          <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
-          <p><strong>Services:</strong> ${servicesStr}</p>
-          <p><strong>Company:</strong> ${companyName}</p>
-          <p><strong>VAT:</strong> ${vatNumber}</p>
-          <p><strong>PO #:</strong> ${poNumber}</p>
-          <p><strong>Full Session ID:</strong> ${orderId}</p>
-          <p><strong>Pricing version:</strong> ${pricingVersion}</p>
-          <p>Check Stripe dashboard for full details and fulfill the order.</p>
-        `,
-      });
+      try {
+        const adminSubj = isFr
+          ? `Nouvelle commande B2B sur nocloud.ai - #${orderId.slice(-8)}`
+          : `New Order Received - #${orderId.slice(-8)}`;
+        const adminTitle = isFr ? 'Nouvelle commande B2B sur nocloud.ai' : 'New B2B Order on nocloud.ai';
+        const adminCheck = isFr ? 'Vérifiez le tableau de bord Stripe pour tous les détails et pour exécuter la commande.' : 'Check Stripe dashboard for full details and fulfill the order.';
+        await resend.emails.send({
+          from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+          to: process.env.ADMIN_EMAIL,
+          subject: adminSubj,
+          html: `
+            <h2>${adminTitle}</h2>
+            <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
+            <p><strong>Total Paid:</strong> ${amount} ${currency}</p>
+            <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
+            <p><strong>Services:</strong> ${servicesStr}</p>
+            <p><strong>Company:</strong> ${companyName}</p>
+            <p><strong>VAT:</strong> ${vatNumber}</p>
+            <p><strong>PO #:</strong> ${poNumber}</p>
+            <p><strong>Full Session ID:</strong> ${orderId}</p>
+            <p><strong>Pricing version:</strong> ${pricingVersion}</p>
+            <p>${adminCheck}</p>
+          `,
+        });
+      } catch (emailErr) {
+        console.error('Failed to send admin email for order', orderId, emailErr);
+      }
     }
 
     // For direct purchases (financing=full), turn selected services into real recurring Subscriptions.

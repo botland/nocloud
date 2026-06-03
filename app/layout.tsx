@@ -1,6 +1,21 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { getLocale } from 'next-intl/server';
+import { Inter, Space_Grotesk } from 'next/font/google';
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
+});
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-space-grotesk',
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
+});
 
 const titles: Record<string, string> = {
   en: 'nocloud.ai — Private Generative AI Appliances | B2B',
@@ -31,7 +46,7 @@ export default async function RootLayout({
   const locale = await getLocale();
 
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html lang={locale} className={`${inter.variable} ${spaceGrotesk.variable}`} suppressHydrationWarning>
       <head>
         {/* Font Awesome for consistent icons with full-b2b.html */}
         <link 

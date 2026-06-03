@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { calculateLease, isOverSepaLimit, PRICING_VERSION } from '@/lib/pricing';
+import { calculateLease, isOverSepaLimit, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey } from '@/lib/pricing';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -30,17 +30,29 @@ export async function POST(request: NextRequest) {
       locale = 'en',
     } = body;
 
-    // Authoritative totals from raw item data (client totalPrice is only hardware)
-    const hardwareTotal = (items || []).reduce((sum: number, item: any) => {
-      const qty = item.quantity || 1;
-      return sum + ((item.product?.price || 0) * qty);
-    }, 0);
+    // Authoritative prices + totals resolved server-side from lib/pricing.ts using slugs + service keys.
+    // Client-provided prices (in product.price / services[].price) are IGNORED for charge amounts to prevent tampering.
+    let hardwareTotal = 0;
+    let servicesMonthly = 0;
+    const resolvedServicesForMeta: Array<{ name: string; price: number }> = [];
 
-    const servicesMonthly = (items || []).reduce((sum: number, item: any) => {
-      const svcs = item.services || [];
+    for (const item of (items || [])) {
       const qty = item.quantity || 1;
-      return sum + svcs.reduce((s: number, p: any) => s + (p.price || 0) * qty, 0);
-    }, 0);
+      const slug = item.product?.slug as string | undefined;
+      const hwPrice = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
+      hardwareTotal += hwPrice * qty;
+
+      const svcs = item.services || [];
+      for (const s of svcs) {
+        const key = (s.key as ServiceKey | undefined) || undefined;
+        const svcPrice = key ? getServicePrice(key) : (s.price || 0);
+        const lineTotal = svcPrice * qty;
+        servicesMonthly += lineTotal;
+        // Store with translated-or-fallback name; qty-multiplied price for legacy consumers in emails/webhook.
+        const displayName = s.name || (key ? key : 'Service');
+        resolvedServicesForMeta.push({ name: displayName, price: lineTotal });
+      }
+    }
 
     let mode: 'payment' | 'subscription' = 'payment';
     let lineItems: any[] = [];
@@ -78,20 +90,24 @@ export async function POST(request: NextRequest) {
     } else {
       // Direct / full payment: one-time for hardware only.
       // Services (if any) will be turned into real subscriptions by the webhook.
-      // Use proper quantity + unit price so Stripe line items correctly reflect qty > 1.
-      lineItems = (items || []).map((item: any) => ({
-        price_data: {
-          currency: 'eur',
-          product_data: {
-            name: `NoCloud ${item.product?.name || 'Appliance'}`,
-            description: (item.services || []).length > 0
-              ? `Includes: ${(item.services || []).map((s: any) => s.name).join(', ')}`
-              : undefined,
+      // Use proper quantity + unit price (resolved server-side) so Stripe line items correctly reflect qty > 1.
+      lineItems = (items || []).map((item: any) => {
+        const qty = item.quantity || 1;
+        const slug = item.product?.slug as string | undefined;
+        const unit = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
+        const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
+        return {
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: `NoCloud ${item.product?.name || 'Appliance'}`,
+              description: svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}` : undefined,
+            },
+            unit_amount: unit * 100,
           },
-          unit_amount: (item.product?.price || 0) * 100,
-        },
-        quantity: item.quantity || 1,
-      }));
+          quantity: qty,
+        };
+      });
     }
 
     const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = 
@@ -135,7 +151,7 @@ export async function POST(request: NextRequest) {
       mode,
       line_items: lineItems,
       success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
       metadata: {
         company_name: company || 'N/A',
         vat_number: vatNumber || 'N/A',
@@ -144,14 +160,10 @@ export async function POST(request: NextRequest) {
         financing,
         lease_months: leaseMonthsStr,
         lease_cancel_at: leaseCancelAt,
-        services: JSON.stringify(
-          (items || []).flatMap((i: any) => {
-            const qty = i.quantity || 1;
-            return (i.services || []).map((s: any) => ({ name: s.name, price: s.price * qty }));
-          })
-        ),
+        services: JSON.stringify(resolvedServicesForMeta),
         customer_email: email || 'N/A',
         pricing_version: PRICING_VERSION,
+        locale,
       },
     };
     if (stripeCustomerId) {

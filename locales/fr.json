@@ -174,5 +174,11 @@
     "referenceLabel": "Référence",
     "emailNote": "Vous recevrez également un email de confirmation avec les instructions de suivi et de configuration.",
     "reference": "Référence : {id}"
+  },
+  "common": {
+    "perMonth": "/mois",
+    "perMonthLong": " / mois",
+    "recurringSuffixShort": "/mois récurrent",
+    "recurringSuffix": "/mois services récurrents"
   }
 }

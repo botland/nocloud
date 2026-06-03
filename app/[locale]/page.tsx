@@ -6,7 +6,7 @@ import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
 import CheckoutModal from '@/components/CheckoutModal';
-import { Product } from '@/lib/types';
+import { Product, CartItem } from '@/lib/types';
 import { HARDWARE_PRICES, SERVICE_PRICES } from '@/lib/pricing';
 import LogoIcon from '@/icons/logo.svg';
 
@@ -21,7 +21,7 @@ export default function LocaleHome() {
 
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
@@ -49,7 +49,7 @@ export default function LocaleHome() {
     setIsConfiguratorOpen(true);
   };
 
-  const addToCart = (item: any) => {
+  const addToCart = (item: CartItem) => {
     setCart((prev) => [...prev, item]);
     setIsConfiguratorOpen(false);
     setIsCartOpen(true);
@@ -199,7 +199,7 @@ export default function LocaleHome() {
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-xl">{t('services.managedCare')}</div>
-                  <div className="text-emerald-400 font-medium">€{SERVICE_PRICES.managedCare} / month</div>
+                  <div className="text-emerald-400 font-medium">€{SERVICE_PRICES.managedCare}{t('common.perMonthLong')}</div>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc1')}</li>
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc2')}</li>
@@ -216,7 +216,7 @@ export default function LocaleHome() {
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-xl">{t('services.secureVaultBackup')}</div>
-                  <div className="text-sky-400 font-medium">€{SERVICE_PRICES.secureVaultBackup} / month</div>
+                  <div className="text-sky-400 font-medium">€{SERVICE_PRICES.secureVaultBackup}{t('common.perMonthLong')}</div>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc1')}</li>
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc2')}</li>

@@ -3,15 +3,17 @@
 import { useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { calculateLease, isOverSepaLimit } from '@/lib/pricing';
+import { CartItem } from '@/lib/types';
 
 interface Props {
-  cart: any[];
+  cart: CartItem[];
   onClose: () => void;
   onOrderComplete: () => void;
 }
 
 export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props) {
   const t = useTranslations('checkout');
+  const tc = useTranslations();
 
   const [company, setCompany] = useState('');
   const [vat, setVat] = useState('');
@@ -26,10 +28,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
   // Email collected here (part of checkout), kept in payload, transmitted to Stripe (pre-created Customer preferred; falls back to customer_email).
   const [email, setEmail] = useState('');
 
+
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
 
   const servicesMonthly = cart.reduce((sum, item) => 
-    sum + (item.services || []).reduce((s: number, p: any) => s + (p.price || 0) * (item.quantity || 1), 0)
+    sum + (item.services || []).reduce((s: number, p) => s + (p.price || 0) * (item.quantity || 1), 0)
   , 0);
 
   // Always compute lease preview numbers (independent of current financing choice).
@@ -60,11 +63,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
     }
 
     if (paymentMethod === 'invoice') {
-      // Keep the legacy B2B invoice fake flow (net 30)
+      // Keep the legacy B2B invoice fake flow (net 30). Use safe DOM construction (textContent / createElement) to avoid XSS from user fields.
       onOrderComplete();
 
-      const successMessage = t('success.invoice', { company });
       const orderNum = `NC-${Date.now().toString().slice(-8)}`;
+      const successMessage = t('success.invoice', { company });
       const orderConfirmed = t('success.orderConfirmed');
       const orderNumLabel = t('success.orderNumLabel');
       const paymentLabel = t('success.paymentLabel');
@@ -73,25 +76,57 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
 
       const successDiv = document.createElement('div');
       successDiv.className = `fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-6`;
-      successDiv.innerHTML = `
-        <div class="bg-slate-900 border border-slate-700 max-w-md w-full rounded-3xl p-8 text-center">
-          <div class="mx-auto w-16 h-16 bg-emerald-900/30 rounded-full flex items-center justify-center mb-6">
-            <i class="fa-solid fa-check text-emerald-400 text-4xl"></i>
-          </div>
-          <h3 class="text-2xl font-semibold tracking-tight mb-3">${orderConfirmed}</h3>
-          <p class="text-slate-400 mb-6">${successMessage}</p>
-          
-          <div class="text-left bg-slate-950 p-4 rounded-2xl text-sm mb-6">
-            <div class="flex justify-between py-1"><span class="text-slate-400">${orderNumLabel}</span> <span class="font-mono">${orderNum}</span></div>
-            <div class="flex justify-between py-1"><span class="text-slate-400">Email</span> <span class="font-mono">${email}</span></div>
-            <div class="flex justify-between py-1"><span class="text-slate-400">${paymentLabel}</span> <span class="capitalize">${paymentMethod}</span></div>
-            <div class="flex justify-between py-1"><span class="text-slate-400">${totalLabel}</span> <span class="font-semibold">€${hardwareTotal}</span></div>
-          </div>
-          
-          <button onclick="this.closest('.fixed').remove(); window.location.reload()" 
-                  class="w-full py-3.5 bg-white text-slate-950 font-bold rounded-3xl">${returnHome}</button>
-        </div>
-      `;
+
+      const inner = document.createElement('div');
+      inner.className = 'bg-slate-900 border border-slate-700 max-w-md w-full rounded-3xl p-8 text-center';
+
+      // icon
+      const iconWrap = document.createElement('div');
+      iconWrap.className = 'mx-auto w-16 h-16 bg-emerald-900/30 rounded-full flex items-center justify-center mb-6';
+      const icon = document.createElement('i');
+      icon.className = 'fa-solid fa-check text-emerald-400 text-4xl';
+      iconWrap.appendChild(icon);
+
+      const h3 = document.createElement('h3');
+      h3.className = 'text-2xl font-semibold tracking-tight mb-3';
+      h3.textContent = orderConfirmed;
+
+      const p = document.createElement('p');
+      p.className = 'text-slate-400 mb-6';
+      p.textContent = successMessage;
+
+      const meta = document.createElement('div');
+      meta.className = 'text-left bg-slate-950 p-4 rounded-2xl text-sm mb-6';
+
+      const row1 = document.createElement('div'); row1.className = 'flex justify-between py-1';
+      const s1 = document.createElement('span'); s1.className = 'text-slate-400'; s1.textContent = orderNumLabel;
+      const v1 = document.createElement('span'); v1.className = 'font-mono'; v1.textContent = orderNum;
+      row1.append(s1, v1);
+
+      const row2 = document.createElement('div'); row2.className = 'flex justify-between py-1';
+      const s2 = document.createElement('span'); s2.className = 'text-slate-400'; s2.textContent = 'Email';
+      const v2 = document.createElement('span'); v2.className = 'font-mono'; v2.textContent = email;
+      row2.append(s2, v2);
+
+      const row3 = document.createElement('div'); row3.className = 'flex justify-between py-1';
+      const s3 = document.createElement('span'); s3.className = 'text-slate-400'; s3.textContent = paymentLabel;
+      const v3 = document.createElement('span'); v3.className = 'capitalize'; v3.textContent = paymentMethod;
+      row3.append(s3, v3);
+
+      const row4 = document.createElement('div'); row4.className = 'flex justify-between py-1';
+      const s4 = document.createElement('span'); s4.className = 'text-slate-400'; s4.textContent = totalLabel;
+      const v4 = document.createElement('span'); v4.className = 'font-semibold'; v4.textContent = `€${hardwareTotal}`;
+      row4.append(s4, v4);
+
+      meta.append(row1, row2, row3, row4);
+
+      const btn = document.createElement('button');
+      btn.className = 'w-full py-3.5 bg-white text-slate-950 font-bold rounded-3xl';
+      btn.textContent = returnHome;
+      btn.onclick = () => { successDiv.remove(); window.location.reload(); };
+
+      inner.append(iconWrap, h3, p, meta, btn);
+      successDiv.appendChild(inner);
       document.body.appendChild(successDiv);
       return;
     }
@@ -211,7 +246,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                 />
                 <div className="flex-1">
                   <div className="font-medium">{t('payFull')}</div>
-                  <div className="text-xs text-slate-400">{t('payFullDesc')} — €{hardwareTotal}{servicesMonthly > 0 ? ` + €${servicesMonthly}/mo recurring` : ''}</div>
+                  <div className="text-xs text-slate-400">{t('payFullDesc')} — €{hardwareTotal}{servicesMonthly > 0 ? ` + €${servicesMonthly}${tc('common.recurringSuffixShort')}` : ''}</div>
                 </div>
               </label>
 
@@ -293,7 +328,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
             </div>
             <div className="text-2xl font-semibold tabular-nums">€{isLease ? leaseMonthly : hardwareTotal}</div>
             {!isLease && servicesMonthly > 0 && (
-              <div className="text-[10px] text-emerald-400">+ €{servicesMonthly}/mo recurring services</div>
+              <div className="text-[10px] text-emerald-400">+ €{servicesMonthly}{tc('common.recurringSuffix')}</div>
             )}
             {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}
           </div>

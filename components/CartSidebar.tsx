@@ -1,9 +1,10 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { CartItem } from '@/lib/types';
 
 interface Props {
-  cart: any[];
+  cart: CartItem[];
   onClose: () => void;
   onCheckout: () => void;
   onRemoveItem: (id: number) => void;
@@ -12,11 +13,12 @@ interface Props {
 
 export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, onUpdateQuantity }: Props) {
   const t = useTranslations('cart');
+  const tc = useTranslations();
 
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
 
   const servicesMonthly = cart.reduce((sum, item) => 
-    sum + (item.services || []).reduce((s: number, p: any) => s + (p.price || 0) * (item.quantity || 1), 0)
+    sum + (item.services || []).reduce((s: number, p) => s + (p.price || 0) * (item.quantity || 1), 0)
   , 0);
 
   const updateQty = (id: number, newQty: number) => {
@@ -48,7 +50,7 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, o
                     <div className="text-right">
                       <div className="font-semibold">€{item.totalPrice}</div>
                       {item.services?.length > 0 && (
-                        <div className="text-xs text-emerald-400">+ €{(item.services || []).reduce((s: number, p: any) => s + (p.price || 0), 0) * qty}/mo</div>
+                        <div className="text-xs text-emerald-400">+ €{(item.services || []).reduce((s: number, p) => s + (p.price || 0), 0) * qty}{tc('common.perMonth')}</div>
                       )}
                       <button onClick={() => onRemoveItem(item.id)} className="text-red-400 text-xs hover:text-red-500">{t('remove')}</button>
                     </div>
@@ -63,10 +65,10 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, o
 
                   {item.services?.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-slate-700 text-xs space-y-1">
-                      {item.services.map((s: any, i: number) => (
+                      {item.services.map((s, i) => (
                         <div key={i} className="flex justify-between text-emerald-300">
                           <span>{s.name}</span>
-                          <span>€{s.price * qty}/mo</span>
+                          <span>€{s.price * qty}{tc('common.perMonth')}</span>
                         </div>
                       ))}
                     </div>

@@ -90,6 +90,13 @@ Lease math (server + client consistent, centralized in `lib/pricing.ts`):
 - External Font Awesome CDN (no SRI).
 - No automated tests.
 - (Prices, service rates, lease threshold, and SEPA limit are now centralized in `lib/pricing.ts` with `PRICING_VERSION` for history.)
+- ~~Client price tampering possible (fixed: server now resolves all amounts from lib/pricing.ts using slugs/keys).~~
+- ~~Emails could fail and skip side effects (fixed: wrapped, processing always continues).~~
+- ~~Canceled banner never triggered from Stripe (fixed).~~
+- ~~Recurring price labels leaked English in FR (fixed via common i18n keys).~~
+- ~~Order emails always English (basic FR support added; full template i18n possible).~~
+- ~~Missing custom fonts (Inter + Space Grotesk) despite CSS prep (fixed via next/font).~~
+- ~~Price tampering vector and invoice success used unsafe interpolation (fixed).~~
 
 This is a production-ready foundation for a European B2B appliance sales site with sophisticated financing.
 
