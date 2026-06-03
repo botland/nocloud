@@ -15,6 +15,10 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, o
 
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
 
+  const servicesMonthly = cart.reduce((sum, item) => 
+    sum + (item.services || []).reduce((s: number, p: any) => s + (p.price || 0) * (item.quantity || 1), 0)
+  , 0);
+
   const updateQty = (id: number, newQty: number) => {
     if (newQty < 1) return;
     if (onUpdateQuantity) onUpdateQuantity(id, newQty);
@@ -59,7 +63,7 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, o
                       {item.services.map((s: any, i: number) => (
                         <div key={i} className="flex justify-between text-emerald-300">
                           <span>{s.name}</span>
-                          <span>€{s.price}/mo</span>
+                          <span>€{s.price * qty}/mo</span>
                         </div>
                       ))}
                     </div>
@@ -78,7 +82,7 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, o
             </div>
             <div className="flex justify-between text-xs px-1 text-slate-400 mb-5">
               <span>{t('servicesMonthly')}</span>
-              <span>{t('seeConfigurator')}</span>
+              <span>€{servicesMonthly}</span>
             </div>
             
             <button onClick={onCheckout} className="w-full py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-colors flex items-center justify-center gap-x-2 text-sm">

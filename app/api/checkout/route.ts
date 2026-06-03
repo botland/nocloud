@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
 
     const servicesMonthly = (items || []).reduce((sum: number, item: any) => {
       const svcs = item.services || [];
-      return sum + svcs.reduce((s: number, p: any) => s + (p.price || 0), 0);
+      const qty = item.quantity || 1;
+      return sum + svcs.reduce((s: number, p: any) => s + (p.price || 0) * qty, 0);
     }, 0);
 
     let mode: 'payment' | 'subscription' = 'payment';
@@ -109,7 +110,10 @@ export async function POST(request: NextRequest) {
         lease_months: leaseMonthsStr,
         lease_cancel_at: leaseCancelAt,
         services: JSON.stringify(
-          (items || []).flatMap((i: any) => (i.services || []).map((s: any) => ({ name: s.name, price: s.price })))
+          (items || []).flatMap((i: any) => {
+            const qty = i.quantity || 1;
+            return (i.services || []).map((s: any) => ({ name: s.name, price: s.price * qty }));
+          })
         ),
       },
     });

@@ -24,7 +24,9 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
 
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
 
-  const servicesMonthly = cart.reduce((sum, item) => sum + (item.services || []).reduce((s: number, p: any) => s + (p.price || 0), 0), 0);
+  const servicesMonthly = cart.reduce((sum, item) => 
+    sum + (item.services || []).reduce((s: number, p: any) => s + (p.price || 0) * (item.quantity || 1), 0)
+  , 0);
 
   // Always compute lease preview numbers (independent of current financing choice)
   const leaseMonths = hardwareTotal < 10000 ? 12 : 24;

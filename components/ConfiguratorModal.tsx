@@ -50,9 +50,14 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
 
   const specs = specsById[product.id] || [];
 
+  const managedUnit = 89;
+  const backupUnit = 39;
+  const managedPrice = managedUnit * quantity;
+  const backupPrice = backupUnit * quantity;
+
   const selectedServices: { name: string; price: number }[] = [];
-  if (managed) selectedServices.push({ name: t('managedCare'), price: 89 });
-  if (backup) selectedServices.push({ name: t('secureVaultBackup'), price: 39 });
+  if (managed) selectedServices.push({ name: t('managedCare'), price: managedUnit });
+  if (backup) selectedServices.push({ name: t('secureVaultBackup'), price: backupUnit });
 
   const totalPrice = product.price * quantity;
 
@@ -115,14 +120,14 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
               <label className="flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors">
                 <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} className="accent-cyan-400 mt-1" />
                 <div className="flex-1">
-                  <div className="flex justify-between"><span className="font-medium">{t('managedCare')}</span> <span className="text-emerald-400 font-mono text-sm">{t('managedCarePrice')}</span></div>
+                  <div className="flex justify-between"><span className="font-medium">{t('managedCare')}</span> <span className="text-emerald-400 font-mono text-sm">€{managedPrice}/mo</span></div>
                   <div className="text-xs text-slate-400">{t('managedCareNote')}</div>
                 </div>
               </label>
               <label className="flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors">
                 <input type="checkbox" checked={backup} onChange={e => setBackup(e.target.checked)} className="accent-cyan-400 mt-1" />
                 <div className="flex-1">
-                  <div className="flex justify-between"><span className="font-medium">{t('secureVaultBackup')}</span> <span className="text-sky-400 font-mono text-sm">{t('secureVaultBackupPrice')}</span></div>
+                  <div className="flex justify-between"><span className="font-medium">{t('secureVaultBackup')}</span> <span className="text-sky-400 font-mono text-sm">€{backupPrice}/mo</span></div>
                   <div className="text-xs text-slate-400">{t('secureVaultBackupNote')}</div>
                 </div>
               </label>
