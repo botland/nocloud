@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Product, CartItem } from '@/lib/types';
+import { SERVICE_PRICES } from '@/lib/pricing';
 
 interface Props {
   product: Product;
@@ -50,8 +51,8 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
 
   const specs = specsById[product.id] || [];
 
-  const managedUnit = 89;
-  const backupUnit = 39;
+  const managedUnit = SERVICE_PRICES.managedCare;
+  const backupUnit = SERVICE_PRICES.secureVaultBackup;
   const managedPrice = managedUnit * quantity;
   const backupPrice = backupUnit * quantity;
 

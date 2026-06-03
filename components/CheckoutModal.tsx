@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
+import { calculateLease, isOverSepaLimit } from '@/lib/pricing';
 
 interface Props {
   cart: any[];
@@ -22,15 +23,20 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>('stripe');
   const [financing, setFinancing] = useState<'full' | 'lease'>('full');
 
+  // Email collected here (part of checkout), kept in payload, transmitted to Stripe (customer_email + pre-created Customer).
+  const [email, setEmail] = useState('');
+
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
 
   const servicesMonthly = cart.reduce((sum, item) => 
     sum + (item.services || []).reduce((s: number, p: any) => s + (p.price || 0) * (item.quantity || 1), 0)
   , 0);
 
-  // Always compute lease preview numbers (independent of current financing choice)
-  const leaseMonths = hardwareTotal < 10000 ? 12 : 24;
-  const leaseMonthly = Math.ceil(hardwareTotal / leaseMonths) + servicesMonthly;
+  // Always compute lease preview numbers (independent of current financing choice).
+  // Uses centralized calculateLease so client/server stay in sync.
+  const leaseDetails = calculateLease(hardwareTotal, servicesMonthly);
+  const leaseMonths = leaseDetails.months;
+  const leaseMonthly = leaseDetails.monthlyTotal;
 
   // Current selection
   const isLease = financing === 'lease';
@@ -48,7 +54,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
   ];
 
   const handleCompleteOrder = async () => {
-    if (!company || !address || !city) {
+    if (!company || !email || !address || !city) {
       alert(t('validation'));
       return;
     }
@@ -77,6 +83,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
           
           <div class="text-left bg-slate-950 p-4 rounded-2xl text-sm mb-6">
             <div class="flex justify-between py-1"><span class="text-slate-400">${orderNumLabel}</span> <span class="font-mono">${orderNum}</span></div>
+            <div class="flex justify-between py-1"><span class="text-slate-400">Email</span> <span class="font-mono">${email}</span></div>
             <div class="flex justify-between py-1"><span class="text-slate-400">${paymentLabel}</span> <span class="capitalize">${paymentMethod}</span></div>
             <div class="flex justify-between py-1"><span class="text-slate-400">${totalLabel}</span> <span class="font-semibold">€${hardwareTotal}</span></div>
           </div>
@@ -93,6 +100,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
     try {
       const payload = {
         items: cart,
+        email,
         company,
         vatNumber: vat,
         poNumber: po,
@@ -146,6 +154,14 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('companyInfo')}</div>
             <div className="space-y-3">
               <input value={company} onChange={e => setCompany(e.target.value)} type="text" placeholder={t('companyPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" />
+              {/* Email collected as part of our checkout (kept + transmitted to Stripe for customer ownership). */}
+              <input
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                type="email"
+                placeholder={t('emailPlaceholder')}
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500"
+              />
               <div className="grid grid-cols-2 gap-3">
                 <input value={vat} onChange={e => setVat(e.target.value)} type="text" placeholder={t('vatPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
                 <input value={po} onChange={e => setPo(e.target.value)} type="text" placeholder={t('poPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
@@ -189,7 +205,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                   checked={financing === 'full'} 
                   onChange={() => {
                     setFinancing('full');
-                    if (paymentMethod === 'sepa' && hardwareTotal > 10000) setPaymentMethod('stripe');
+                    if (paymentMethod === 'sepa' && isOverSepaLimit(hardwareTotal)) setPaymentMethod('stripe');
                   }} 
                   className="accent-cyan-400" 
                 />
@@ -209,7 +225,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                   checked={financing === 'lease'} 
                   onChange={() => {
                     setFinancing('lease');
-                    if (paymentMethod === 'sepa' && leaseMonthly > 10000) setPaymentMethod('stripe');
+                    if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthly)) setPaymentMethod('stripe');
                   }} 
                   className="accent-cyan-400" 
                 />
@@ -244,13 +260,13 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                   checked={paymentMethod === 'sepa'} 
                   onChange={() => setPaymentMethod('sepa')} 
                   className="accent-cyan-400"
-                  disabled={ (financing === 'lease' && leaseMonthly > 10000) || (financing === 'full' && hardwareTotal > 10000) }
+                  disabled={ (financing === 'lease' && isOverSepaLimit(leaseMonthly)) || (financing === 'full' && isOverSepaLimit(hardwareTotal)) }
                 />
                 <div className="flex-1">
                   <div className="font-medium">{t('sepa')}</div>
                   <div className="text-xs text-slate-400">
                     {t('sepaDesc')}
-                    { ( (financing === 'lease' && leaseMonthly > 10000) || (financing === 'full' && hardwareTotal > 10000) ) && (
+                    { ( (financing === 'lease' && isOverSepaLimit(leaseMonthly)) || (financing === 'full' && isOverSepaLimit(hardwareTotal)) ) && (
                       <span className="text-amber-400 ml-1">(max €10,000 — choose card or reduce order)</span>
                     )}
                   </div>

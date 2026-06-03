@@ -49,12 +49,10 @@
     "title1": "Add management or backup.",
     "title2": "Keep full control.",
     "managedCare": "Managed Care",
-    "managedCarePrice": "€89 / month",
     "managedCareDesc1": "Proactive monitoring & alerts",
     "managedCareDesc2": "Automatic updates & security patches",
     "managedCareDesc3": "Priority European support",
     "secureVaultBackup": "SecureVault Backup",
-    "secureVaultBackupPrice": "€39 / month",
     "secureVaultBackupDesc1": "Daily encrypted backups",
     "secureVaultBackupDesc2": "One-click restore to any appliance",
     "secureVaultBackupDesc3": "Compliance-ready logs"
@@ -105,10 +103,8 @@
     },
     "managedCare": "Managed Care",
     "managedCareNote": "Remote management, updates & priority support",
-    "managedCarePrice": "€89/mo",
     "secureVaultBackup": "SecureVault Backup",
-    "secureVaultBackupNote": "Daily encrypted backups + restore",
-    "secureVaultBackupPrice": "€39/mo"
+    "secureVaultBackupNote": "Daily encrypted backups + restore"
   },
   "cart": {
     "yourOrder": "Your order",
@@ -125,6 +121,7 @@
     "completeOrder": "Complete your order",
     "companyInfo": "COMPANY INFORMATION",
     "companyPlaceholder": "Company name",
+    "emailPlaceholder": "Email address",
     "vatPlaceholder": "VAT / SIRET number",
     "poPlaceholder": "PO number (optional)",
     "billingAddress": "BILLING ADDRESS",
@@ -141,7 +138,7 @@
     "invoiceDesc": "Net 30 • Common for European companies",
     "totalToPay": "Total to pay today",
     "completeBtn": "Complete order",
-    "validation": "Please fill in company name, address and city",
+    "validation": "Please fill in company name, email, address and city",
     "countries": {
       "FR": "France",
       "DE": "Germany",

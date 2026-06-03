@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
     const financing = metadata.financing || 'full';
     const leaseMonths = metadata.lease_months || '';
     const leaseCancelAt = metadata.lease_cancel_at || '';
+    const pricingVersion = metadata.pricing_version || metadata.pricingVersion || 'unknown';
 
     let servicesStr = 'None';
     let servicesArray: Array<{ name: string; price: number }> = [];
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
           <p><strong>VAT Number:</strong> ${vatNumber}</p>
           <p><strong>PO Number:</strong> ${poNumber}</p>
           <p>Order ID: ${orderId}</p>
+          <p><strong>Pricing version:</strong> ${pricingVersion}</p>
           ${leaseNote}
           <p>You will receive the appliance soon. Contact us if you have any questions.</p>
           <p>Best regards,<br>The nocloud.ai Team</p>
@@ -92,6 +94,7 @@ export async function POST(request: NextRequest) {
           <p><strong>VAT:</strong> ${vatNumber}</p>
           <p><strong>PO #:</strong> ${poNumber}</p>
           <p><strong>Full Session ID:</strong> ${orderId}</p>
+          <p><strong>Pricing version:</strong> ${pricingVersion}</p>
           <p>Check Stripe dashboard for full details and fulfill the order.</p>
         `,
       });

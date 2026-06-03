@@ -49,12 +49,10 @@
     "title1": "Ajoutez de la gestion ou de la sauvegarde.",
     "title2": "Gardez le contrôle total.",
     "managedCare": "Maintenance Gérée",
-    "managedCarePrice": "€89 / mois",
     "managedCareDesc1": "Surveillance proactive & alertes",
     "managedCareDesc2": "Mises à jour automatiques & correctifs de sécurité",
     "managedCareDesc3": "Support prioritaire européen",
     "secureVaultBackup": "Sauvegarde SecureVault",
-    "secureVaultBackupPrice": "€39 / mois",
     "secureVaultBackupDesc1": "Sauvegardes chiffrées quotidiennes",
     "secureVaultBackupDesc2": "Restauration en un clic sur n'importe quel appareil",
     "secureVaultBackupDesc3": "Journaux conformes"
@@ -105,10 +103,8 @@
     },
     "managedCare": "Maintenance Gérée",
     "managedCareNote": "Gestion à distance, mises à jour & support prioritaire",
-    "managedCarePrice": "€89/mois",
     "secureVaultBackup": "Sauvegarde SecureVault",
-    "secureVaultBackupNote": "Sauvegardes chiffrées quotidiennes + restauration",
-    "secureVaultBackupPrice": "€39/mois"
+    "secureVaultBackupNote": "Sauvegardes chiffrées quotidiennes + restauration"
   },
   "cart": {
     "yourOrder": "Votre commande",
@@ -125,6 +121,7 @@
     "completeOrder": "Finalisez votre commande",
     "companyInfo": "INFORMATIONS ENTREPRISE",
     "companyPlaceholder": "Nom de l'entreprise",
+    "emailPlaceholder": "Adresse e-mail",
     "vatPlaceholder": "Numéro de TVA / SIRET",
     "poPlaceholder": "Numéro de bon de commande (optionnel)",
     "billingAddress": "ADRESSE DE FACTURATION",
@@ -141,7 +138,7 @@
     "invoiceDesc": "Net 30 • Courant pour les entreprises européennes",
     "totalToPay": "Total à payer aujourd'hui",
     "completeBtn": "Finaliser la commande",
-    "validation": "Veuillez renseigner le nom de l'entreprise, l'adresse et la ville",
+    "validation": "Veuillez renseigner le nom de l'entreprise, l'adresse e-mail, l'adresse et la ville",
     "countries": {
       "FR": "France",
       "DE": "Allemagne",
