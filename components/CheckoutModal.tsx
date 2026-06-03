@@ -3,30 +3,50 @@
 import { useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { calculateLease, isOverSepaLimit } from '@/lib/pricing';
-import { CartItem } from '@/lib/types';
+import { CartItem, CheckoutFormDraft } from '@/lib/types';
 
 interface Props {
   cart: CartItem[];
   onClose: () => void;
   onOrderComplete: () => void;
+  // Optional pre-filled data (from persisted draft) so info survives Stripe cancel.
+  initialData?: CheckoutFormDraft | null;
+  // Called as the user types so parent can keep the draft in sync (for persistence).
+  onDraftChange?: (partial: Partial<CheckoutFormDraft>) => void;
 }
 
-export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props) {
+export default function CheckoutModal({ cart, onClose, onOrderComplete, initialData, onDraftChange }: Props) {
   const t = useTranslations('checkout');
   const tc = useTranslations();
 
-  const [company, setCompany] = useState('');
-  const [vat, setVat] = useState('');
-  const [po, setPo] = useState('');
-  const [address, setAddress] = useState('');
-  const [city, setCity] = useState('');
-  const [postal, setPostal] = useState('');
-  const [country, setCountry] = useState('FR');
-  const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>('stripe');
-  const [financing, setFinancing] = useState<'full' | 'lease'>('full');
+  // Initialize from persisted draft if present (e.g. user filled form, went to Stripe, canceled).
+  const [company, setCompany] = useState(initialData?.company || '');
+  const [vat, setVat] = useState(initialData?.vatNumber || '');
+  const [po, setPo] = useState(initialData?.poNumber || '');
+  const [address, setAddress] = useState(initialData?.address || '');
+  const [city, setCity] = useState(initialData?.city || '');
+  const [postal, setPostal] = useState(initialData?.postal || '');
+  const [country, setCountry] = useState(initialData?.country || 'FR');
+  const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>(initialData?.paymentMethod || 'stripe');
+  const [financing, setFinancing] = useState<'full' | 'lease'>(initialData?.financing || 'full');
 
   // Email collected here (part of checkout), kept in payload, transmitted to Stripe (pre-created Customer preferred; falls back to customer_email).
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialData?.email || '');
+
+  // Wrapped setters that also push changes to parent so the draft is kept up to date in localStorage
+  // even if the user partially fills the form and closes the modal.
+  const updateDraft = (partial: Partial<CheckoutFormDraft>) => onDraftChange?.(partial);
+
+  const setCompanyWithDraft = (v: string) => { setCompany(v); updateDraft({ company: v }); };
+  const setVatWithDraft = (v: string) => { setVat(v); updateDraft({ vatNumber: v }); };
+  const setPoWithDraft = (v: string) => { setPo(v); updateDraft({ poNumber: v }); };
+  const setAddressWithDraft = (v: string) => { setAddress(v); updateDraft({ address: v }); };
+  const setCityWithDraft = (v: string) => { setCity(v); updateDraft({ city: v }); };
+  const setPostalWithDraft = (v: string) => { setPostal(v); updateDraft({ postal: v }); };
+  const setCountryWithDraft = (v: string) => { setCountry(v); updateDraft({ country: v }); };
+  const setPaymentMethodWithDraft = (v: 'stripe' | 'sepa' | 'invoice') => { setPaymentMethod(v); updateDraft({ paymentMethod: v }); };
+  const setFinancingWithDraft = (v: 'full' | 'lease') => { setFinancing(v); updateDraft({ financing: v }); };
+  const setEmailWithDraft = (v: string) => { setEmail(v); updateDraft({ email: v }); };
 
 
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -188,18 +208,18 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('companyInfo')}</div>
             <div className="space-y-3">
-              <input value={company} onChange={e => setCompany(e.target.value)} type="text" placeholder={t('companyPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" />
+              <input value={company} onChange={e => setCompanyWithDraft(e.target.value)} type="text" placeholder={t('companyPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" />
               {/* Email collected as part of our checkout (kept + transmitted to Stripe for customer ownership). */}
               <input
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={e => setEmailWithDraft(e.target.value)}
                 type="email"
                 placeholder={t('emailPlaceholder')}
                 className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500"
               />
               <div className="grid grid-cols-2 gap-3">
-                <input value={vat} onChange={e => setVat(e.target.value)} type="text" placeholder={t('vatPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                <input value={po} onChange={e => setPo(e.target.value)} type="text" placeholder={t('poPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                <input value={vat} onChange={e => setVatWithDraft(e.target.value)} type="text" placeholder={t('vatPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                <input value={po} onChange={e => setPoWithDraft(e.target.value)} type="text" placeholder={t('poPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
               </div>
             </div>
           </div>
@@ -210,15 +230,15 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
             <div className="space-y-3">
               <input 
                 value={address} 
-                onChange={e => setAddress(e.target.value)}
+                onChange={e => setAddressWithDraft(e.target.value)}
                 type="text" placeholder={t('streetPlaceholder')} 
                 className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" 
               />
               <div className="grid grid-cols-2 gap-3">
-                <input value={city} onChange={e => setCity(e.target.value)} type="text" placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                <input value={postal} onChange={e => setPostal(e.target.value)} type="text" placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                <input value={city} onChange={e => setCityWithDraft(e.target.value)} type="text" placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                <input value={postal} onChange={e => setPostalWithDraft(e.target.value)} type="text" placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
               </div>
-              <select value={country} onChange={e => setCountry(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
+              <select value={country} onChange={e => setCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
                 {countryOptions.map((c) => (
                   <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
@@ -239,8 +259,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                   value="full" 
                   checked={financing === 'full'} 
                   onChange={() => {
-                    setFinancing('full');
-                    if (paymentMethod === 'sepa' && isOverSepaLimit(hardwareTotal)) setPaymentMethod('stripe');
+                    setFinancingWithDraft('full');
+                    if (paymentMethod === 'sepa' && isOverSepaLimit(hardwareTotal)) setPaymentMethodWithDraft('stripe');
                   }} 
                   className="accent-cyan-400" 
                 />
@@ -259,8 +279,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                   value="lease" 
                   checked={financing === 'lease'} 
                   onChange={() => {
-                    setFinancing('lease');
-                    if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthly)) setPaymentMethod('stripe');
+                    setFinancingWithDraft('lease');
+                    if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthly)) setPaymentMethodWithDraft('stripe');
                   }} 
                   className="accent-cyan-400" 
                 />
@@ -280,7 +300,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('paymentMethod')}</div>
             <div className="space-y-3">
               <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-                <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} className="accent-cyan-400" />
+                <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethodWithDraft('stripe')} className="accent-cyan-400" />
                 <div className="flex-1">
                   <div className="font-medium flex items-center gap-x-2">{t('card')} <span className="text-[10px] px-2 py-px bg-slate-800 rounded">{t('cardTag')}</span></div>
                   <div className="text-xs text-slate-400">{t('cardDesc')}</div>
@@ -293,7 +313,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                   name="payment" 
                   value="sepa" 
                   checked={paymentMethod === 'sepa'} 
-                  onChange={() => setPaymentMethod('sepa')} 
+                  onChange={() => setPaymentMethodWithDraft('sepa')} 
                   className="accent-cyan-400"
                   disabled={ (financing === 'lease' && isOverSepaLimit(leaseMonthly)) || (financing === 'full' && isOverSepaLimit(hardwareTotal)) }
                 />
@@ -309,7 +329,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
               </label>
 
               <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-                <input type="radio" name="payment" value="invoice" checked={paymentMethod === 'invoice'} onChange={() => setPaymentMethod('invoice')} className="accent-cyan-400" />
+                <input type="radio" name="payment" value="invoice" checked={paymentMethod === 'invoice'} onChange={() => setPaymentMethodWithDraft('invoice')} className="accent-cyan-400" />
                 <div className="flex-1">
                   <div className="font-medium">{t('invoice')}</div>
                   <div className="text-xs text-slate-400">{t('invoiceDesc')}</div>

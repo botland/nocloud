@@ -38,3 +38,17 @@ export interface CheckoutPayload {
   financing: 'full' | 'lease';
   locale?: string;
 }
+
+// Draft of checkout form data persisted across Stripe cancel so user doesn't have to re-type everything.
+export interface CheckoutFormDraft {
+  email: string;
+  company: string;
+  vatNumber: string;
+  poNumber: string;
+  address: string;
+  city: string;
+  postal: string;
+  country: string;
+  paymentMethod: 'stripe' | 'sepa' | 'invoice';
+  financing: 'full' | 'lease';
+}

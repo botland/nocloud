@@ -6,7 +6,7 @@ import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
 import CheckoutModal from '@/components/CheckoutModal';
-import { Product, CartItem } from '@/lib/types';
+import { Product, CartItem, CheckoutFormDraft } from '@/lib/types';
 import { HARDWARE_PRICES, SERVICE_PRICES } from '@/lib/pricing';
 import LogoIcon from '@/icons/logo.svg';
 
@@ -34,6 +34,29 @@ export default function LocaleHome() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
+  // Persisted checkout form draft so that if user fills B2B info, goes to Stripe, and cancels,
+  // the company/email/address etc. are still there when they retry.
+  const [checkoutDraft, setCheckoutDraft] = useState<CheckoutFormDraft | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem('nocloud_checkout_draft');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Persist checkout draft
+  useEffect(() => {
+    try {
+      if (checkoutDraft) {
+        localStorage.setItem('nocloud_checkout_draft', JSON.stringify(checkoutDraft));
+      } else {
+        localStorage.removeItem('nocloud_checkout_draft');
+      }
+    } catch {}
+  }, [checkoutDraft]);
+
   // Persist cart to localStorage whenever it changes (survives cancel from Stripe, refreshes, etc.).
   useEffect(() => {
     try {
@@ -54,6 +77,9 @@ export default function LocaleHome() {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get('canceled') === 'true') {
         setShowCanceled(true);
+        // Auto-open the cart sidebar so the user immediately sees their restored items.
+        setIsCartOpen(true);
+
         // Remove the param so a refresh doesn't keep showing the canceled banner forever.
         sp.delete('canceled');
         const newSearch = sp.toString();
@@ -106,6 +132,36 @@ export default function LocaleHome() {
     setIsCheckoutOpen(false);
   };
 
+  // Called by CheckoutModal as user types so the draft survives even if they partially fill then close.
+  const updateCheckoutDraft = (partial: Partial<CheckoutFormDraft>) => {
+    setCheckoutDraft((prev) => {
+      const base: CheckoutFormDraft = prev || {
+        email: '',
+        company: '',
+        vatNumber: '',
+        poNumber: '',
+        address: '',
+        city: '',
+        postal: '',
+        country: 'FR',
+        paymentMethod: 'stripe',
+        financing: 'full',
+      };
+      return { ...base, ...partial };
+    });
+  };
+
+  // Clear draft on successful order (along with cart)
+  const handleOrderComplete = () => {
+    setCart([]);
+    setCheckoutDraft(null);
+    try {
+      localStorage.removeItem('nocloud_cart');
+      localStorage.removeItem('nocloud_checkout_draft');
+    } catch {}
+    closeCheckout();
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       {/* Navbar */}
@@ -155,6 +211,24 @@ export default function LocaleHome() {
             <i className="fa-solid fa-exclamation-triangle"></i>
             <span className="font-medium">{t('canceledTitle')}</span>
             <span className="text-amber-400/80">{t('canceledMessage')}</span>
+
+            {/* Improved actions: direct way to continue, and dismiss */}
+            <button
+              onClick={() => {
+                setIsCartOpen(true);
+                setShowCanceled(false);
+              }}
+              className="ml-auto text-xs px-3 py-1 border border-amber-700 hover:bg-amber-900/40 rounded-full transition-colors"
+            >
+              View cart
+            </button>
+            <button
+              onClick={() => setShowCanceled(false)}
+              className="text-amber-400 hover:text-amber-200 text-lg leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
           </div>
         </div>
       )}
@@ -325,11 +399,13 @@ export default function LocaleHome() {
       )}
 
       {isCheckoutOpen && (
-        <CheckoutModal cart={cart} onClose={closeCheckout} onOrderComplete={() => {
-          setCart([]);
-          try { localStorage.removeItem('nocloud_cart'); } catch {}
-          closeCheckout();
-        }} />
+        <CheckoutModal
+          cart={cart}
+          onClose={closeCheckout}
+          onOrderComplete={handleOrderComplete}
+          initialData={checkoutDraft}
+          onDraftChange={updateCheckoutDraft}
+        />
       )}
     </div>
   );
