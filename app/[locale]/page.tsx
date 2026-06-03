@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useTranslations, useLocale } from 'next-intl';
+import { useState, Suspense } from 'react';
+import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
@@ -16,11 +16,34 @@ const baseProducts = [
   { id: 2, slug: 'forge', price: 27900 },
 ];
 
-export default function LocaleHome() {
+/**
+ * Isolated client component for the canceled payment banner.
+ * Uses useSearchParams internally so that the main page component
+ * (with all the cart/configurator state and event handlers) is not
+ * directly dependent on search params. This prevents hydration/interactivity
+ * regressions with buttons and modals.
+ * Wrapped in <Suspense> at the call site.
+ */
+function CanceledBanner() {
   const t = useTranslations();
-  const locale = useLocale();
   const searchParams = useSearchParams();
   const showCanceled = searchParams?.get('canceled') === 'true';
+
+  if (!showCanceled) return null;
+
+  return (
+    <div className="border-b border-amber-900/50 bg-amber-950/60">
+      <div className="max-w-screen-2xl mx-auto px-8 py-3 text-sm flex items-center gap-x-3 text-amber-300">
+        <i className="fa-solid fa-exclamation-triangle"></i>
+        <span className="font-medium">{t('canceledTitle')}</span>
+        <span className="text-amber-400/80">{t('canceledMessage')}</span>
+      </div>
+    </div>
+  );
+}
+
+export default function LocaleHome() {
+  const t = useTranslations();
 
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -114,15 +137,13 @@ export default function LocaleHome() {
       </nav>
 
       {/* Canceled payment feedback (from Stripe cancel_url) */}
-      {showCanceled && (
-        <div className="border-b border-amber-900/50 bg-amber-950/60">
-          <div className="max-w-screen-2xl mx-auto px-8 py-3 text-sm flex items-center gap-x-3 text-amber-300">
-            <i className="fa-solid fa-exclamation-triangle"></i>
-            <span className="font-medium">{t('canceledTitle')}</span>
-            <span className="text-amber-400/80">{t('canceledMessage')}</span>
-          </div>
-        </div>
-      )}
+      {/* Wrapped in Suspense because CanceledBanner uses useSearchParams.
+          This isolates the dynamic search param read so it does not
+          interfere with the rest of the client component tree (cart state,
+          configure buttons, basket button, modals, etc.). */}
+      <Suspense fallback={null}>
+        <CanceledBanner />
+      </Suspense>
 
       {/* Hero */}
       <div className="max-w-screen-2xl mx-auto px-8 pt-16 pb-14">
