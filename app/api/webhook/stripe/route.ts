@@ -4,7 +4,7 @@ import { Resend } from 'resend';
 
 export async function POST(request: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-    apiVersion: '2025-02-24.acacia',
+    apiVersion: '2026-05-27.dahlia' as any,
   });
 
   const body = await request.text();

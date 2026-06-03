@@ -187,7 +187,10 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                   name="financing" 
                   value="full" 
                   checked={financing === 'full'} 
-                  onChange={() => setFinancing('full')} 
+                  onChange={() => {
+                    setFinancing('full');
+                    if (paymentMethod === 'sepa' && hardwareTotal > 10000) setPaymentMethod('stripe');
+                  }} 
                   className="accent-cyan-400" 
                 />
                 <div className="flex-1">
@@ -204,7 +207,10 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
                   name="financing" 
                   value="lease" 
                   checked={financing === 'lease'} 
-                  onChange={() => setFinancing('lease')} 
+                  onChange={() => {
+                    setFinancing('lease');
+                    if (paymentMethod === 'sepa' && leaseMonthly > 10000) setPaymentMethod('stripe');
+                  }} 
                   className="accent-cyan-400" 
                 />
                 <div className="flex-1">
@@ -231,10 +237,23 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete }: Props)
               </label>
 
               <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-                <input type="radio" name="payment" value="sepa" checked={paymentMethod === 'sepa'} onChange={() => setPaymentMethod('sepa')} className="accent-cyan-400" />
+                <input 
+                  type="radio" 
+                  name="payment" 
+                  value="sepa" 
+                  checked={paymentMethod === 'sepa'} 
+                  onChange={() => setPaymentMethod('sepa')} 
+                  className="accent-cyan-400"
+                  disabled={ (financing === 'lease' && leaseMonthly > 10000) || (financing === 'full' && hardwareTotal > 10000) }
+                />
                 <div className="flex-1">
                   <div className="font-medium">{t('sepa')}</div>
-                  <div className="text-xs text-slate-400">{t('sepaDesc')}</div>
+                  <div className="text-xs text-slate-400">
+                    {t('sepaDesc')}
+                    { ( (financing === 'lease' && leaseMonthly > 10000) || (financing === 'full' && hardwareTotal > 10000) ) && (
+                      <span className="text-amber-400 ml-1">(max €10,000 — choose card or reduce order)</span>
+                    )}
+                  </div>
                 </div>
               </label>
 

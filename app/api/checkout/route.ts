@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   }
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2025-02-24.acacia',
+    apiVersion: '2026-05-27.dahlia' as any,
   });
 
   try {
@@ -44,12 +44,13 @@ export async function POST(request: NextRequest) {
     let lineItems: any[] = [];
     let leaseCancelAt = '';
     let leaseMonthsStr = '';
+    let monthlyTotal = 0;
 
     if (financing === 'lease') {
       mode = 'subscription';
       const months = hardwareTotal < 10000 ? 12 : 24;
       const hardwarePerMonth = Math.ceil(hardwareTotal / months);
-      const monthlyTotal = hardwarePerMonth + servicesMonthly;
+      monthlyTotal = hardwarePerMonth + servicesMonthly;
 
       lineItems = [
         {
@@ -94,6 +95,15 @@ export async function POST(request: NextRequest) {
 
     const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = 
       paymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
+
+    // Guard against Stripe limits: SEPA Direct Debit (and some other PMs) cap the charge amount at €10,000.
+    // For "full" this is the one-time total; for "lease" it's the monthly recurring charge.
+    const dueAmount = financing === 'lease' ? monthlyTotal : hardwareTotal;
+    if (paymentMethod === 'sepa' && dueAmount > 10000) {
+      return NextResponse.json({
+        error: `SEPA Direct Debit payments are limited to €10,000. Your ${financing === 'lease' ? 'monthly lease payment' : 'order total'} is €${dueAmount}. Please select "Credit / Debit card" (or reduce quantity / use Pay in full for smaller hardware totals).`
+      }, { status: 400 });
+    }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: pmTypes,
