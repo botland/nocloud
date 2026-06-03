@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { useSearchParams } from 'next/navigation';
 import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
@@ -16,32 +15,6 @@ const baseProducts = [
   { id: 2, slug: 'forge', price: 27900 },
 ];
 
-/**
- * Isolated client component for the canceled payment banner.
- * Uses useSearchParams internally so that the main page component
- * (with all the cart/configurator state and event handlers) is not
- * directly dependent on search params. This prevents hydration/interactivity
- * regressions with buttons and modals.
- * Wrapped in <Suspense> at the call site.
- */
-function CanceledBanner() {
-  const t = useTranslations();
-  const searchParams = useSearchParams();
-  const showCanceled = searchParams?.get('canceled') === 'true';
-
-  if (!showCanceled) return null;
-
-  return (
-    <div className="border-b border-amber-900/50 bg-amber-950/60">
-      <div className="max-w-screen-2xl mx-auto px-8 py-3 text-sm flex items-center gap-x-3 text-amber-300">
-        <i className="fa-solid fa-exclamation-triangle"></i>
-        <span className="font-medium">{t('canceledTitle')}</span>
-        <span className="text-amber-400/80">{t('canceledMessage')}</span>
-      </div>
-    </div>
-  );
-}
-
 export default function LocaleHome() {
   const t = useTranslations();
 
@@ -50,6 +23,18 @@ export default function LocaleHome() {
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  // Client-side only check for ?canceled=true (from Stripe cancel_url).
+  // Using useEffect + URLSearchParams avoids useSearchParams() hook entirely,
+  // which was causing hydration and event handler attachment issues for
+  // interactive elements (configure buttons, basket/cart button, etc.).
+  const [showCanceled, setShowCanceled] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      setShowCanceled(sp.get('canceled') === 'true');
+    }
+  }, []);
 
   const products: Product[] = baseProducts.map((base) => ({
     ...base,
@@ -137,13 +122,15 @@ export default function LocaleHome() {
       </nav>
 
       {/* Canceled payment feedback (from Stripe cancel_url) */}
-      {/* Wrapped in Suspense because CanceledBanner uses useSearchParams.
-          This isolates the dynamic search param read so it does not
-          interfere with the rest of the client component tree (cart state,
-          configure buttons, basket button, modals, etc.). */}
-      <Suspense fallback={null}>
-        <CanceledBanner />
-      </Suspense>
+      {showCanceled && (
+        <div className="border-b border-amber-900/50 bg-amber-950/60">
+          <div className="max-w-screen-2xl mx-auto px-8 py-3 text-sm flex items-center gap-x-3 text-amber-300">
+            <i className="fa-solid fa-exclamation-triangle"></i>
+            <span className="font-medium">{t('canceledTitle')}</span>
+            <span className="text-amber-400/80">{t('canceledMessage')}</span>
+          </div>
+        </div>
+      )}
 
       {/* Hero */}
       <div className="max-w-screen-2xl mx-auto px-8 pt-16 pb-14">
