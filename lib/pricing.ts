@@ -26,18 +26,21 @@ export const PRICING_VERSION = '2026-06-03';
 // It is passed through to Stripe session metadata and surfaced in order emails.
 
 export const HARDWARE_PRICES = {
-  edge: 2490,
-  studio: 9490,
-  forge: 27900,
+  edge: 4990,
+  studio: 7990,
+  forge: 14900,
 } as const;
 
 export const SERVICE_PRICES = {
-  managedCare: 89,
-  secureVaultBackup: 39,
+  managedCare: 99,
+  secureVaultBackup: 49,
 } as const;
 
+export const LEASE_MAX = 20000;       // EUR - no leasing above this amount
 export const LEASE_THRESHOLD = 10000; // EUR — below this: 12mo lease; at/above: 24mo
 export const SEPA_MAX = 10000;        // EUR — Stripe-enforced soft cap for SEPA Direct Debit (we guard both sides)
+
+export const LEASE_UPFRONT_PERCENT = 20;
 
 export const LEASE_MONTHS_UNDER = 12;
 export const LEASE_MONTHS_OVER = 24;
