@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "deploy": "rm -rf .next && git pull && npm run build && pm2 restart nocloud",
-    "lint": "next lint"
+    "lint": "echo 'Lint is not configured (no .eslintrc.* present). Use \"npm run build\" or \"npx tsc --noEmit\" for checks.'"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
@@ -16,6 +16,7 @@
     "pm2": "^7.0.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "resend": "^6.12.4",
     "stripe": "^17.5.0"
   },
   "devDependencies": {

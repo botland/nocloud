@@ -5,19 +5,180 @@
     "title2": "Votre infrastructure. Vos règles.",
     "subtitle": "Appareils haute performance pour les organisations européennes. Entièrement privé. Pas de cloud. Conçu pour le B2B.",
     "cta1": "Parcourir les appareils",
-    "cta2": "Demander un devis personnalisé"
+    "cta2": "Demander un devis personnalisé",
+    "trusted": "Fait confiance par plus de 240 équipes européennes"
+  },
+  "nav": {
+    "products": "Produits",
+    "services": "Services",
+    "why": "Pourquoi NoCloud",
+    "docs": "Docs"
   },
   "products": {
     "tag": "APPAREILS MATÉRIELS",
     "title": "Choisissez votre niveau de performance",
     "from": "à partir de",
-    "configure": "Configurer & Acheter"
-  },
-  "nav": {
-    "products": "Produits",
-    "services": "Services"
+    "configure": "Configurer & Acheter",
+    "items": {
+      "edge": {
+        "name": "Edge",
+        "tier": "BASSE • DESKTOP",
+        "description": "Appareil compact de bureau pour particuliers et petites équipes. Idéal pour les modèles 7B–13B avec inférence locale haute vitesse."
+      },
+      "studio": {
+        "name": "Studio",
+        "tier": "MOYENNE • TOUR",
+        "description": "Tour puissante pour les équipes. Gère jusqu'à 70B modèles, RAG collaboratif et charges de production avec facilité."
+      },
+      "forge": {
+        "name": "Forge",
+        "tier": "HAUTE • ENTREPRISE",
+        "description": "Système de niveau entreprise pour les grandes organisations. Inférence à grande échelle, fine-tuning et prêt pour multi-nœuds."
+      }
+    },
+    "bestForLabel": "Idéal pour",
+    "bestFor": {
+      "0": "Solo • Labs • Créateurs",
+      "1": "Équipes • Agences • Scale-ups",
+      "2": "Entreprise • Labs de recherche"
+    },
+    "blurb": "Tous les appareils incluent notre moteur d'inférence privé et sont préchargés avec les principaux modèles open-source."
   },
   "services": {
-    "title": "Services optionnels"
+    "tag": "SERVICES OPTIONNELS",
+    "title1": "Ajoutez de la gestion ou de la sauvegarde.",
+    "title2": "Gardez le contrôle total.",
+    "managedCare": "Maintenance Gérée",
+    "managedCareDesc1": "Surveillance proactive & alertes",
+    "managedCareDesc2": "Mises à jour automatiques & correctifs de sécurité",
+    "managedCareDesc3": "Support prioritaire européen",
+    "secureVaultBackup": "Sauvegarde SecureVault",
+    "secureVaultBackupDesc1": "Sauvegardes chiffrées quotidiennes",
+    "secureVaultBackupDesc2": "Restauration en un clic sur n'importe quel appareil",
+    "secureVaultBackupDesc3": "Journaux conformes"
+  },
+  "why": {
+    "tag": "CONÇU POUR LES ORGANISATIONS EUROPÉENNES",
+    "title1": "IA Souveraine.",
+    "title2": "Résidence des données en Europe.",
+    "title3": "Contrôle total.",
+    "privacyTitle": "Confidentialité complète des données",
+    "privacyDesc": "Rien ne quitte vos locaux. Parfait pour les industries réglementées et la PI sensible.",
+    "latencyTitle": "Latence ultra-faible",
+    "latencyDesc": "Exécutez l'inférence à la périphérie ou dans votre datacenter. Pas d'allers-retours réseau vers le cloud.",
+    "costsTitle": "Coûts prévisibles",
+    "costsDesc": "Achat unique du matériel. Pas de factures surprises par token ou tarification à l'usage.",
+    "controlTitle": "Contrôle total",
+    "controlDesc": "Choisissez n'importe quel modèle open-source, fine-tunnez librement et intégrez à votre stack existante."
+  },
+  "custom": {
+    "title": "Besoin d'une configuration personnalisée ?",
+    "subtitle": "Contactez notre équipe pour des devis entreprise sur mesure et des tarifs volume.",
+    "cta": "Contacter les ventes"
+  },
+  "footer": {
+    "copyright": "© {year} nocloud.ai — Infrastructure IA générative privée pour l'Europe",
+    "legal": "Mentions légales",
+    "privacy": "Confidentialité (RGPD)",
+    "support": "Support"
+  },
+  "canceledTitle": "Paiement annulé",
+  "canceledMessage": "Votre commande a été annulée. Votre panier est toujours là — n'hésitez pas à réessayer.",
+  "configurator": {
+    "baseAppliance": "Appareil de base",
+    "keySpecs": "CARACTÉRISTIQUES CLÉS",
+    "quantity": "QUANTITÉ",
+    "appliance": "appareil",
+    "appliances": "appareils",
+    "optionalServices": "SERVICES OPTIONNELS",
+    "totalToday": "Total aujourd'hui",
+    "recurringNote": "+ services récurrents",
+    "addToCart": "Ajouter au panier",
+    "specs": {
+      "inference": "Inférence",
+      "models": "Modèles",
+      "memory": "Mémoire",
+      "storage": "Stockage",
+      "formFactor": "Format"
+    },
+    "managedCare": "Maintenance Gérée",
+    "managedCareNote": "Gestion à distance, mises à jour & support prioritaire",
+    "secureVaultBackup": "Sauvegarde SecureVault",
+    "secureVaultBackupNote": "Sauvegardes chiffrées quotidiennes + restauration"
+  },
+  "cart": {
+    "yourOrder": "Votre commande",
+    "empty": "Votre panier est vide",
+    "itemLabel": "NoCloud {name} × {qty}",
+    "hardwareTotal": "Total matériel",
+    "servicesMonthly": "Services (mensuels)",
+    "seeConfigurator": "voir le configurateur",
+    "proceedCheckout": "Passer à la caisse sécurisée",
+    "secureNote": "Sécurisé • TVA gérée • Facturation européenne",
+    "remove": "Supprimer"
+  },
+  "checkout": {
+    "completeOrder": "Finalisez votre commande",
+    "companyInfo": "INFORMATIONS ENTREPRISE",
+    "companyPlaceholder": "Nom de l'entreprise",
+    "emailPlaceholder": "Adresse e-mail",
+    "vatPlaceholder": "Numéro de TVA / SIRET",
+    "poPlaceholder": "Numéro de bon de commande (optionnel)",
+    "billingAddress": "ADRESSE DE FACTURATION",
+    "streetPlaceholder": "Adresse",
+    "cityPlaceholder": "Ville",
+    "postalPlaceholder": "Code postal",
+    "paymentMethod": "MÉTHODE DE PAIEMENT",
+    "card": "Carte de crédit / débit",
+    "cardTag": "Stripe",
+    "cardDesc": "Paiement sécurisé par Stripe • 3D Secure",
+    "sepa": "Prélèvement SEPA",
+    "sepaDesc": "Populaire en Europe • Pas de carte nécessaire",
+    "invoice": "Payer par facture (B2B)",
+    "invoiceDesc": "Net 30 • Courant pour les entreprises européennes",
+    "totalToPay": "Total à payer aujourd'hui",
+    "completeBtn": "Finaliser la commande",
+    "validation": "Veuillez renseigner le nom de l'entreprise, l'adresse e-mail, l'adresse et la ville",
+    "countries": {
+      "FR": "France",
+      "DE": "Allemagne",
+      "NL": "Pays-Bas",
+      "BE": "Belgique",
+      "ES": "Espagne",
+      "IT": "Italie",
+      "other": "Autre pays de l'UE"
+    },
+    "success": {
+      "orderConfirmed": "Commande confirmée !",
+      "orderNumLabel": "Commande n°",
+      "paymentLabel": "Paiement",
+      "totalLabel": "Total",
+      "returnHome": "Retour à l'accueil",
+      "invoice": "Merci, {company} ! Votre commande a été enregistrée. Vous recevrez sous peu une facture avec les instructions de paiement.",
+      "sepa": "Le prélèvement SEPA a été mis en place pour {company}. Vous recevrez un email de confirmation.",
+      "stripe": "Paiement réussi via Stripe pour {company}. Vous recevrez une confirmation de commande et le suivi."
+    },
+    "financingLabel": "CONDITIONS DE PAIEMENT",
+    "payFull": "Payer en totalité aujourd'hui",
+    "payFullDesc": "Paiement unique pour les appareils",
+    "lease": "Location / financement",
+    "leaseDesc": "Matériel amorti sur {months} mois + services inclus",
+    "monthlyPayment": "€{amount}/mois pendant {months} mois",
+    "firstMonthNote": "Premier paiement prélevé aujourd'hui via Stripe",
+    "monthlyTotalLabel": "Paiement mensuel ({months} mois)"
+  },
+  "success": {
+    "title": "Merci pour votre commande !",
+    "message": "Votre paiement a été traité avec succès. Vous recevrez un email de confirmation avec tous les détails et les prochaines étapes pour la livraison et l'installation.",
+    "returnHome": "Retour à l'accueil",
+    "referenceLabel": "Référence",
+    "emailNote": "Vous recevrez également un email de confirmation avec les instructions de suivi et de configuration.",
+    "reference": "Référence : {id}"
+  },
+  "common": {
+    "perMonth": "/mois",
+    "perMonthLong": " / mois",
+    "recurringSuffixShort": "/mois récurrent",
+    "recurringSuffix": "/mois services récurrents"
   }
 }
