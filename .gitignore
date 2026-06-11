@@ -9,3 +9,6 @@ package-lock.json
 # TypeScript / Next build artifacts
 *.tsbuildinfo
 
+
+# Test coverage reports
+coverage/

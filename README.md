@@ -74,6 +74,18 @@ Lease math (server + client consistent, centralized in `lib/pricing.ts`):
 - `npm run start` — production server
 - `npm run lint` — neutralized (no ESLint config yet)
 - `npm run deploy` — example PM2 deploy script (see ecosystem.config.js — customize for your env/port)
+- `npm run test` / `npm run test:run` — Vitest (watch / single run)
+- `npm run test:coverage` — Vitest with coverage report
+
+## Testing
+
+Functional (contract) test coverage exists under `tests/`. Tests are intentionally written to be **as independent from implementation details as possible** so they continue to provide value across future refactors of the checkout and webhook logic.
+
+- `tests/lib/pricing.test.ts` — exhaustive table-driven tests of the single source of truth (all constants, `calculateLease`, eligibility guards, PBI/SEPA/invoice policy). These protect the business math used by both UI and server.
+- `tests/api/checkout.test.ts` — black-box tests of the `/api/checkout` POST handler. Realistic `CheckoutPayload`s (prices always resolved via the pricing module) exercising the four main financing × paymentMethod paths plus all validation error cases. Mocks Stripe + Resend; asserts on response shape (`url` vs `success+invoiceId` vs `error`) and high-level call contracts (amounts, metadata fields such as `pricing_version`/`upfront_percent`/`contract_type`, lease trial/cancel_at, Resend only on invoice paths).
+- `tests/api/webhook.test.ts` — event-driven tests for `checkout.session.completed` and `invoice.paid`. Covers full+services provisioning, lease PM attachment (with fallbacks), deferred lease sub creation on upfront invoice paid, standalone invoice paid, retry path, resilience to missing PMs / bad metadata, and email sending. Always asserts that the webhook returns 200.
+
+Run with real Node (no Stripe secrets required — everything is mocked). The suite is fast and focuses on observable behavior and the stable business contract.
 
 ## Deployment Notes
 
@@ -89,7 +101,6 @@ Lease math (server + client consistent, centralized in `lib/pricing.ts`):
 - Webhook reacts to `checkout.session.completed` (full purchases + legacy) and `invoice.paid` (for lease upfront+recurring initial invoices). No failed payment, subscription lifecycle, or customer portal flows yet.
 - Middleware deprecation warning on build (`middleware.ts` → consider "proxy" per Next 16 guidance; routing still works).
 - External Font Awesome CDN (no SRI).
-- No automated tests.
 - (Prices, service rates, lease threshold, and SEPA limit are now centralized in `lib/pricing.ts` with `PRICING_VERSION` for history.)
 - ~~Client price tampering possible (fixed: server now resolves all amounts from lib/pricing.ts using slugs/keys).~~
 - ~~Emails could fail and skip side effects (fixed: wrapped, processing always continues).~~
