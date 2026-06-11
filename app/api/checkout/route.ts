@@ -249,8 +249,8 @@ export async function POST(request: NextRequest) {
         const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600;
 
         const leaseProduct = await stripe.products.create({
-          name: 'NoCloud Appliance Lease + Services',
-          description: `Monthly lease payment (hardware amortized + services over ${lease.months} months). Upfront charged as initial payment; recurring monthly starts ~1 month after initial payment.`,
+          name: 'NoCloud Appliance Lease (hardware)',
+          description: `Monthly lease payments for hardware amortization over ${lease.months} months (upfront paid separately; recurring starts ~1 month after initial payment). Optional services are on separate perpetual subscriptions.`,
         });
 
         const subParams: any = {
@@ -261,7 +261,7 @@ export async function POST(request: NextRequest) {
               price_data: {
                 currency: 'eur',
                 product: leaseProduct.id,
-                unit_amount: monthlyTotal * 100,
+                unit_amount: lease.hardwarePerMonth * 100,
                 recurring: { interval: 'month' },
               },
             },
@@ -296,6 +296,40 @@ export async function POST(request: NextRequest) {
         const subscription = await stripe.subscriptions.create(subParams);
         const leaseSubId = subscription.id;
 
+        // Pre-create the perpetual service subs early (like the lease hardware sub), in trialing with default_incomplete.
+        // They will get the default PM attached in the webhook after the upfront payment.
+        // This ensures the user sees the service subs immediately after placing the lease order.
+        let leaseServiceSubIds: string[] = [];
+        for (const s of resolvedServicesForMeta) {
+          try {
+            const serviceProduct = await stripe.products.create({ name: s.name });
+            const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600;
+            const subParams2: any = {
+              customer: stripeCustomerId,
+              collection_method: 'charge_automatically',
+              trial_end: trialEnd,
+              payment_behavior: 'default_incomplete',
+              items: [{
+                price_data: {
+                  currency: 'eur',
+                  product: serviceProduct.id,
+                  unit_amount: Math.round(s.price * 100),
+                  recurring: { interval: 'month' },
+                },
+              }],
+              metadata: {
+                service: s.name,
+                is_lease_service: 'true',
+              },
+            };
+            const svcSub = await stripe.subscriptions.create(subParams2);
+            leaseServiceSubIds.push(svcSub.id);
+            console.log(`Pre-created lease service sub ${svcSub.id} for "${s.name}" (will attach PM after upfront payment; visible immediately in trialing)`);
+          } catch (e) {
+            console.error('Failed to pre-create lease service sub in route', e);
+          }
+        }
+
         // Card or sepa: one-time Checkout for the upfront amount only.
         const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
           paymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
@@ -326,6 +360,7 @@ export async function POST(request: NextRequest) {
             financing: 'lease',
             is_lease_upfront: 'true',
             lease_subscription_id: leaseSubId,
+            lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
             lease_months: lease.months.toString(),
             lease_upfront_amount: lease.upfrontAmount.toString(),
             lease_financed_amount: lease.financedAmount.toString(),
