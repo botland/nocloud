@@ -52,7 +52,7 @@ export const PBI_MIN = 5000;                // EUR - pay by invoice not availabl
 
 export const SEPA_MAX = 10000;              // EUR — Stripe-enforced soft cap for SEPA Direct Debit (we guard both sides)
 
-export const INVOICE_ONLY_FULL_NO_SERVICES = true;
+export const INVOICE_ONLY_FULL_NO_SERVICES = false;
 // When true (the default), "Pay by Invoice (B2B)" is only permitted for
 // financing='full' with servicesMonthly === 0. This reduces administrative
 // overhead for net-30 invoices (no lease subscriptions or recurring service subs).

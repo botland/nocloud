@@ -165,6 +165,7 @@
     "leaseDesc": "Hardware amortized over {months} months + services included",
     "monthlyPayment": "€{amount}/month for {months} months",
     "firstMonthNote": "First payment charged today via Stripe",
+    "upfrontDueToday": "€{amount} due today",
     "leaseRangeNote": "(eligible for hardware €{min} – €{max})",
     "invoiceRangeNote": "(min €{min} – max €{max} — choose card or reduce order)",
     "invoicePolicyNote": "(only for one-time full payment with no recurring services — choose card or reduce order)",

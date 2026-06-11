@@ -165,6 +165,7 @@
     "leaseDesc": "Matériel amorti sur {months} mois + services inclus",
     "monthlyPayment": "€{amount}/mois pendant {months} mois",
     "firstMonthNote": "Premier paiement prélevé aujourd'hui via Stripe",
+    "upfrontDueToday": "€{amount} dus aujourd'hui",
     "leaseRangeNote": "(éligible pour un matériel de €{min} à €{max})",
     "invoiceRangeNote": "(min €{min} – max €{max} — choisissez carte ou réduisez la commande)",
     "invoicePolicyNote": "(uniquement pour un paiement unique complet sans services récurrents — choisissez carte ou réduisez la commande)",

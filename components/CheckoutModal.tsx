@@ -60,6 +60,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const leaseDetails = calculateLease(hardwareTotal, servicesMonthly);
   const leaseMonths = leaseDetails.months;
   const leaseMonthly = leaseDetails.monthlyTotal;
+  const leaseUpfront = leaseDetails.upfrontAmount;
 
   const canLease = leaseDetails.isAllowed;
   const canPbi = isPbiAllowed(hardwareTotal);
@@ -307,8 +308,13 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 <div className="flex-1">
                   <div className="font-medium">{t('lease')}</div>
                   <div className="text-xs text-slate-400">
-                    {t('leaseDesc', { months: leaseMonths })} — {t('monthlyPayment', { amount: leaseMonthly, months: leaseMonths })}
+                    {t('leaseDesc', { months: leaseMonths })}
                   </div>
+                  {canLease && (
+                    <div className="text-xs text-emerald-400 mt-0.5">
+                      {t('upfrontDueToday', { amount: leaseUpfront })} + {t('monthlyPayment', { amount: leaseMonthly, months: leaseMonths })}
+                    </div>
+                  )}
                   <div className="text-[10px] text-slate-500 mt-0.5">{t('firstMonthNote')}</div>
                   {!canLease && (
                     <div className="text-[10px] text-amber-400 mt-0.5">{t('leaseRangeNote', { min: LEASE_MIN, max: LEASE_MAX })}</div>
@@ -387,6 +393,9 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 : t('totalToPay')}
             </div>
             <div className="text-2xl font-semibold tabular-nums">€{isLease ? leaseMonthly : hardwareTotal}</div>
+            {isLease && (
+              <div className="text-[10px] text-emerald-400">{t('upfrontDueToday', { amount: leaseUpfront })}</div>
+            )}
             {!isLease && servicesMonthly > 0 && (
               <div className="text-[10px] text-emerald-400">+ €{servicesMonthly}{tc('common.recurringSuffix')}</div>
             )}
