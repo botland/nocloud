@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey } from '@/lib/pricing';
+import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey, UPFRONT_PERCENT } from '@/lib/pricing';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -54,68 +54,43 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    let mode: 'payment' | 'subscription' = 'payment';
-    let lineItems: any[] = [];
-    let leaseCancelAt = '';
-    let leaseMonthsStr = '';
-    let monthlyTotal = 0;
-
-    if (financing === 'lease') {
-      mode = 'subscription';
-      const lease = calculateLease(hardwareTotal, servicesMonthly);
-      monthlyTotal = lease.monthlyTotal;
-
-      lineItems = [
-        {
-          price_data: {
-            currency: 'eur',
-            product_data: {
-              name: 'NoCloud Appliance Lease + Services',
-              description: `Financed over ${lease.months} months (hardware amortized + services)`,
-            },
-            unit_amount: monthlyTotal * 100,
-            recurring: { interval: 'month' },
+    // Email is collected in our form (kept) and transmitted here.
+    // We explicitly create a Stripe Customer (with email + rich B2B metadata and structured address)
+    // so we "own" the customer record in Stripe. The address is set on the customer object
+    // so that when we pass the customer to the Checkout session, Stripe will prefill the
+    // billing address in the hosted Checkout (preventing the user from having to enter it twice).
+    let stripeCustomerId: string | undefined;
+    if (email) {
+      try {
+        const customer = await stripe.customers.create({
+          email,
+          name: company || undefined,
+          address: {
+            line1: address || undefined,
+            city: city || undefined,
+            postal_code: postal || undefined,
+            country: country || undefined,
           },
-          quantity: 1,
-        },
-      ];
-
-      // Compute cancel_at timestamp and pass ONLY via metadata.
-      // subscription_data.cancel_at is not supported on Checkout session create
-      // (even in recent API versions) -- we'll apply it via subscriptions.update
-      // in the webhook.
-      const cancelAt = Math.floor(Date.now() / 1000) + (lease.months * 31 * 24 * 3600);
-      leaseCancelAt = cancelAt.toString();
-      leaseMonthsStr = lease.months.toString();
-    } else {
-      // Direct / full payment: one-time for hardware only.
-      // Services (if any) will be turned into real subscriptions by the webhook.
-      // Use proper quantity + unit price (resolved server-side) so Stripe line items correctly reflect qty > 1.
-      lineItems = (items || []).map((item: any) => {
-        const qty = item.quantity || 1;
-        const slug = item.product?.slug as string | undefined;
-        const unit = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
-        const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
-        return {
-          price_data: {
-            currency: 'eur',
-            product_data: {
-              name: `NoCloud ${item.product?.name || 'Appliance'}`,
-              description: svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}` : undefined,
-            },
-            unit_amount: unit * 100,
+          metadata: {
+            company_name: company || 'N/A',
+            vat_number: vatNumber || 'N/A',
+            po_number: poNumber || 'N/A',
           },
-          quantity: qty,
-        };
-      });
+        });
+        stripeCustomerId = customer.id;
+      } catch (custErr) {
+        console.warn('Failed to pre-create Stripe customer (Checkout will create one); proceeding anyway', custErr);
+      }
     }
 
-    const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = 
-      paymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
+    let monthlyTotal = 0;
+    let leaseDetails: ReturnType<typeof calculateLease> | null = null;
 
-    // Guard against Stripe limits: SEPA Direct Debit (and some other PMs) cap the charge amount at €10,000.
-    // For "full" this is the one-time total; for "lease" it's the monthly recurring charge.
-    // Logic centralized in pricing.ts (client + server must agree).
+    if (financing === 'lease') {
+      leaseDetails = calculateLease(hardwareTotal, servicesMonthly);
+      monthlyTotal = leaseDetails.monthlyTotal;
+    }
+
     const dueAmount = financing === 'lease' ? monthlyTotal : hardwareTotal;
 
     // Enforce lease and pay-by-invoice eligibility ranges using the constants from lib/pricing.ts
@@ -142,28 +117,174 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Email is collected in our form (kept) and transmitted here.
-    // We explicitly create a Stripe Customer (with email + rich B2B metadata) so we "own"
-    // the customer record in Stripe (durable, queryable, has our metadata attached) rather than
-    // only having ephemeral session data. This is key to not being fully locked into the provider.
-    let stripeCustomerId: string | undefined;
-    if (email) {
-      try {
-        const customer = await stripe.customers.create({
-          email,
-          name: company || undefined,
-          metadata: {
-            company_name: company || 'N/A',
-            vat_number: vatNumber || 'N/A',
-            po_number: poNumber || 'N/A',
-            address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
-          },
-        });
-        stripeCustomerId = customer.id;
-      } catch (custErr) {
-        console.warn('Failed to pre-create Stripe customer (Checkout will create one); proceeding anyway', custErr);
+    if (financing === 'lease') {
+      // For lease we create the subscription directly (not via Checkout) so we can set
+      // cancel_at, rich metadata, collection_method etc. at creation time.
+      // The customer must exist (we ensure it). We then redirect to the subscription's
+      // first invoice hosted payment page to collect the initial charge (upfront + first month).
+      // Webhook on invoice.paid sends the confirmation emails.
+      if (!stripeCustomerId) {
+        if (!email) {
+          return NextResponse.json({ error: 'Email is required to create a lease subscription.' }, { status: 400 });
+        }
+        try {
+          const customer = await stripe.customers.create({
+            email,
+            name: company || undefined,
+            address: {
+              line1: address || undefined,
+              city: city || undefined,
+              postal_code: postal || undefined,
+              country: country || undefined,
+            },
+            metadata: {
+              company_name: company || 'N/A',
+              vat_number: vatNumber || 'N/A',
+              po_number: poNumber || 'N/A',
+            },
+          });
+          stripeCustomerId = customer.id;
+        } catch (custErr) {
+          console.error('Failed to create Stripe customer for lease', custErr);
+          return NextResponse.json({ error: 'Unable to prepare customer for lease payment.' }, { status: 500 });
+        }
       }
+
+      const lease = leaseDetails!;
+
+      // Create a pending InvoiceItem for the one-time upfront before creating the subscription.
+      // This is the supported way (in this Stripe API version) to attach an ad-hoc one-time
+      // amount + description to the *first invoice* generated by the subscription.
+      //
+      // The user's requested payload (add_invoice_items with amount/description or price_data)
+      // is not supported for dynamic one-time lines. We achieve the equivalent by creating
+      // a pending InvoiceItem (which appears on the subscription's first invoice) + the
+      // recurring item below.
+      if (lease.upfrontAmount > 0) {
+        await stripe.invoiceItems.create({
+          customer: stripeCustomerId,
+          amount: lease.upfrontAmount * 100,
+          currency: 'eur',
+          description: `Upfront payment (${UPFRONT_PERCENT}%) for leased NoCloud appliance`,
+        });
+      }
+
+      const cancelAt = Math.floor(Date.now() / 1000) + (lease.months * 31 * 24 * 3600);
+
+      // In this API version, direct subscriptions.create does not accept inline
+      // `price_data.product_data` for items (unlike Checkout sessions). We must first
+      // create a Product and reference it by ID via `price_data.product`.
+      // This is the minimal adaptation to use the direct `subscriptions.create` style
+      // the user requested while keeping dynamic pricing (no pre-created catalog prices).
+      const leaseProduct = await stripe.products.create({
+        name: 'NoCloud Appliance Lease + Services',
+        description: `Monthly lease payment (hardware amortized + services over ${lease.months} months). Includes €${lease.upfrontAmount} upfront payment charged as part of the initial invoice.`,
+      });
+
+      const subParams: any = {
+        customer: stripeCustomerId,
+        collection_method: 'charge_automatically',
+        // Critical for direct subscriptions.create when no PM is attached yet:
+        // Do not attempt to charge the initial invoice (upfront + first month) at creation time.
+        // This allows us to create the sub successfully (status: incomplete), generate the
+        // first invoice (with the pending upfront InvoiceItem + recurring period), then redirect
+        // the user to hosted_invoice_url. The hosted page lets them add card/SEPA and pay.
+        // Without this, creation fails with "no attached payment source or default payment method".
+        payment_behavior: 'default_incomplete',
+        items: [
+          {
+            price_data: {
+              currency: 'eur',
+              product: leaseProduct.id,   // Reference existing Product (required here)
+              unit_amount: monthlyTotal * 100,
+              recurring: { interval: 'month' },
+            },
+          },
+        ],
+        // No add_invoice_items (upfront is injected via the pending InvoiceItem above).
+        // Metadata includes the keys from the user's example payload (contract_type etc.).
+        cancel_at: cancelAt,
+        metadata: {
+          company_name: company || 'N/A',
+          vat_number: vatNumber || 'N/A',
+          po_number: poNumber || 'N/A',
+          address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
+          financing: 'lease',
+          lease_months: lease.months.toString(),
+          lease_cancel_at: cancelAt.toString(),
+          lease_upfront_amount: lease.upfrontAmount.toString(),
+          lease_financed_amount: lease.financedAmount.toString(),
+          services: JSON.stringify(resolvedServicesForMeta),
+          customer_email: email || 'N/A',
+          pricing_version: PRICING_VERSION,
+          locale,
+          contract_type: 'leasing',
+          upfront_percent: String(UPFRONT_PERCENT),
+          total_value: String(hardwareTotal),
+        },
+        expand: ['latest_invoice'],
+      };
+
+      const subscription = await stripe.subscriptions.create(subParams);
+
+      // The initial invoice (created at sub creation) includes the pending upfront InvoiceItem
+      // (created above) + the first recurring period. Redirect to its hosted_invoice_url for payment.
+      // (card/SEPA supported; on success the invoice.paid webhook will fire and send emails.)
+      let hostedUrl: string | undefined;
+      const li = (subscription as any).latest_invoice;
+      if (li && typeof li !== 'string' && li.hosted_invoice_url) {
+        hostedUrl = li.hosted_invoice_url;
+      }
+      if (!hostedUrl && li) {
+        const invId = typeof li === 'string' ? li : li.id;
+        if (invId) {
+          try {
+            const inv = await stripe.invoices.retrieve(invId);
+            hostedUrl = inv.hosted_invoice_url || undefined;
+          } catch (invErr) {
+            console.warn('Could not retrieve invoice for hosted url', invErr);
+          }
+        }
+      }
+      if (!hostedUrl) {
+        console.error('Lease subscription created but no hosted_invoice_url available', subscription.id);
+        return NextResponse.json({ error: 'Lease created but payment link unavailable. Please contact support.' }, { status: 500 });
+      }
+
+      return NextResponse.json({ url: hostedUrl });
     }
+
+    // Direct / full payment (non-lease): one-time for hardware only.
+    // Services (if any) will be turned into real subscriptions by the webhook.
+    // Use proper quantity + unit price (resolved server-side) so Stripe line items correctly reflect qty > 1.
+    const lineItems: any[] = (items || []).map((item: any) => {
+      const qty = item.quantity || 1;
+      const slug = item.product?.slug as string | undefined;
+      const unit = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
+      const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
+      return {
+        price_data: {
+          currency: 'eur',
+          product_data: {
+            name: `NoCloud ${item.product?.name || 'Appliance'}`,
+            description: svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}` : undefined,
+          },
+          unit_amount: unit * 100,
+        },
+        quantity: qty,
+      };
+    });
+
+    const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+      paymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
+
+    const mode: 'payment' | 'subscription' = 'payment';
+
+    // No upfront lease strings for full payment path (custom_text only relevant for lease via checkout, which we no longer use for lease).
+    const leaseUpfrontStr = '';
+    const leaseMonthsStr = '';
+    const leaseCancelAt = '';
+    const leaseFinancedStr = '';
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: pmTypes,
@@ -181,6 +302,8 @@ export async function POST(request: NextRequest) {
         financing,
         lease_months: leaseMonthsStr,
         lease_cancel_at: leaseCancelAt,
+        lease_upfront_amount: leaseUpfrontStr,
+        lease_financed_amount: leaseFinancedStr,
         services: JSON.stringify(resolvedServicesForMeta),
         customer_email: email || 'N/A',
         pricing_version: PRICING_VERSION,
@@ -192,6 +315,7 @@ export async function POST(request: NextRequest) {
     } else if (email) {
       sessionParams.customer_email = email;
     }
+
     const session = await stripe.checkout.sessions.create(sessionParams);
 
     return NextResponse.json({ url: session.url });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
@@ -29,8 +29,15 @@ export default function LocaleHome() {
   // the company/email/address etc. are still there when they retry.
   const [checkoutDraft, setCheckoutDraft] = useState<CheckoutFormDraft | null>(null);
 
+  // Refs to track when we've loaded persisted data from localStorage.
+  // Used to prevent the persist effects from overwriting the real data with the initial empty state
+  // on page load (including after Stripe cancel redirects).
+  const cartLoadedRef = useRef(false);
+  const draftLoadedRef = useRef(false);
+
   // Persist checkout draft
   useEffect(() => {
+    if (!draftLoadedRef.current) return;
     try {
       if (checkoutDraft) {
         localStorage.setItem('nocloud_checkout_draft', JSON.stringify(checkoutDraft));
@@ -42,6 +49,7 @@ export default function LocaleHome() {
 
   // Persist cart to localStorage whenever it changes (survives cancel from Stripe, refreshes, etc.).
   useEffect(() => {
+    if (!cartLoadedRef.current) return;
     try {
       localStorage.setItem('nocloud_cart', JSON.stringify(cart));
     } catch {
@@ -53,6 +61,8 @@ export default function LocaleHome() {
   // This guarantees the server render and the first client render produce identical HTML
   // (both start with empty cart / null draft), avoiding hydration mismatches on the cart badge etc.
   // The actual values from localStorage are applied in a subsequent render via setState.
+  // We also set the *LoadedRef so that persist effects know it's safe to write (prevents
+  // the initial empty state from overwriting previously persisted data on reloads/cancels).
   useEffect(() => {
     try {
       const savedCart = localStorage.getItem('nocloud_cart');
@@ -62,6 +72,7 @@ export default function LocaleHome() {
     } catch {
       // ignore storage / JSON errors (corrupt data, private mode, etc.)
     }
+    cartLoadedRef.current = true;
   }, []);
 
   useEffect(() => {
@@ -71,6 +82,7 @@ export default function LocaleHome() {
         setCheckoutDraft(JSON.parse(savedDraft));
       }
     } catch {}
+    draftLoadedRef.current = true;
   }, []);
 
   // Client-side only check for ?canceled=true (from Stripe cancel_url).

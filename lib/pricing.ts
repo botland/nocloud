@@ -58,6 +58,9 @@ export const INVOICE_ONLY_FULL_NO_SERVICES = false;
 // overhead for net-30 invoices (no lease subscriptions or recurring service subs).
 
 export const UPFRONT_PERCENT = 20;          // % of hardware charged as upfront payment (leasing+pay by invoice)
+// The upfrontAmount returned by calculateLease is both shown in the checkout popup
+// (via leaseDetails) *and* collected as a separate one-time charge (in addition to
+// the recurring subscription) when a lease order is created via Stripe.
 
 export type HardwareSlug = keyof typeof HARDWARE_PRICES;
 export type ServiceKey = keyof typeof SERVICE_PRICES;

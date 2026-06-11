@@ -31,9 +31,9 @@ export async function POST(request: NextRequest) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
 
-    const customerEmail = session.customer_details?.email;
-    const orderId = session.id;
     const metadata = session.metadata || {};
+    const customerEmail = session.customer_details?.email || (metadata as any).customer_email || (metadata as any).customerEmail;
+    const orderId = session.id;
     const amount = session.amount_total ? (session.amount_total / 100).toFixed(2) : '0.00';
     const currency = session.currency?.toUpperCase() || 'EUR';
 
@@ -62,6 +62,8 @@ export async function POST(request: NextRequest) {
     // Customer email - invoice / confirmation
     if (customerEmail && resend) {
       const leaseNote = financing === 'lease' ? `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>` : '';
+      const upfront = (metadata as any).lease_upfront_amount;
+      const upfrontNote = (financing === 'lease' && upfront) ? `<p><strong>Upfront payment:</strong> €${upfront}</p>` : '';
       try {
         const thanksSubj = isFr
           ? `Merci pour votre commande nocloud.ai #${orderId.slice(-8)}`
@@ -86,6 +88,7 @@ export async function POST(request: NextRequest) {
             <h2>${thanksSummary}</h2>
             <p><strong>Total:</strong> ${amount} ${currency}</p>
             <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
+            ${upfrontNote}
             <p><strong>${thanksServices}:</strong> ${servicesStr}</p>
             <p><strong>${thanksCompany}:</strong> ${companyName}</p>
             <p><strong>${thanksVat}:</strong> ${vatNumber}</p>
@@ -119,6 +122,7 @@ export async function POST(request: NextRequest) {
             <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
             <p><strong>Total Paid:</strong> ${amount} ${currency}</p>
             <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
+            ${(financing === 'lease' && (metadata as any).lease_upfront_amount) ? `<p><strong>Upfront payment:</strong> €${(metadata as any).lease_upfront_amount}</p>` : ''}
             <p><strong>Services:</strong> ${servicesStr}</p>
             <p><strong>Company:</strong> ${companyName}</p>
             <p><strong>VAT:</strong> ${vatNumber}</p>
@@ -170,13 +174,19 @@ export async function POST(request: NextRequest) {
 
       for (const s of servicesArray) {
         try {
+          // In this API version, subscriptions.create requires a `product` ID (not inline
+          // `product_data`) inside price_data. Create a lightweight Product per service.
+          const serviceProduct = await stripe.products.create({
+            name: s.name,
+          });
+
           const subParams: any = {
             customer: session.customer as string,
             items: [{
               price_data: {
                 currency: 'eur',
+                product: serviceProduct.id,
                 unit_amount: Math.round(s.price * 100),
-                product_data: { name: s.name },
                 recurring: { interval: 'month' },
               } as any,
             }],
@@ -199,6 +209,7 @@ export async function POST(request: NextRequest) {
     // For lease mode, set cancel_at on the subscription AFTER it's created by Checkout.
     // subscription_data.cancel_at is not a supported parameter when creating
     // Checkout sessions (even with recent API versions).
+    // (New lease flow uses direct subscriptions.create which sets cancel_at at creation time.)
     if (financing === 'lease' && session.subscription && leaseCancelAt) {
       try {
         await stripe.subscriptions.update(session.subscription as string, {
@@ -211,6 +222,147 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Order processed successfully: ${orderId}`);
+  }
+
+  // New lease flow (feature/lease-max-upfront): subscriptions are created directly with
+  // add_invoice_items (upfront one-time) + recurring item. The initial invoice (containing
+  // upfront + first month) is paid via hosted_invoice_url. We confirm the order on invoice.paid.
+  if (event.type === 'invoice.paid') {
+    const invoice = event.data.object as Stripe.Invoice;
+
+    const subId = typeof invoice.subscription === 'string'
+      ? invoice.subscription
+      : (invoice.subscription as Stripe.Subscription | null | undefined)?.id;
+
+    if (!subId) {
+      return NextResponse.json({ received: true });
+    }
+
+    let sub: Stripe.Subscription;
+    try {
+      sub = await stripe.subscriptions.retrieve(subId);
+    } catch (subErr) {
+      console.warn('Could not retrieve subscription for paid invoice', subId, subErr);
+      return NextResponse.json({ received: true });
+    }
+
+    const metadata = sub.metadata || {};
+    const financing = metadata.financing || 'full';
+    if (financing !== 'lease') {
+      // Service-only recurring subs for 'full' purchases are still created from checkout.session.completed path.
+      return NextResponse.json({ received: true });
+    }
+
+    // Lease order paid (upfront + recurring initial invoice paid via hosted invoice page)
+    const orderId = invoice.id || sub.id;
+    const amount = invoice.amount_paid ? (invoice.amount_paid / 100).toFixed(2) : '0.00';
+    const currency = (invoice.currency || 'eur').toUpperCase();
+
+    const customerEmail = invoice.customer_email ||
+      (invoice as any).customer_details?.email ||
+      (metadata as any).customer_email ||
+      (metadata as any).customerEmail ||
+      '';
+
+    const companyName = metadata.company_name || metadata.companyName || 'N/A';
+    const vatNumber = metadata.vat_number || metadata.vatNumber || 'N/A';
+    const poNumber = metadata.po_number || metadata.poNumber || 'N/A';
+    const leaseMonths = metadata.lease_months || metadata.leaseMonths || '';
+    const pricingVersion = metadata.pricing_version || metadata.pricingVersion || 'unknown';
+    const orderLocale = (metadata.locale as string) || 'en';
+    const isFr = orderLocale === 'fr';
+
+    let servicesStr = 'None';
+    let servicesArray: Array<{ name: string; price: number }> = [];
+    try {
+      if (metadata.services) {
+        servicesArray = JSON.parse(metadata.services);
+        servicesStr = servicesArray.map(s => `${s.name} (€${s.price}/mo)`).join(', ') || 'None';
+      }
+    } catch {}
+
+    const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
+    // Customer email
+    if (customerEmail && resend) {
+      const leaseNote = `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>`;
+      const upfront = (metadata as any).lease_upfront_amount;
+      const upfrontNote = upfront ? `<p><strong>Upfront payment:</strong> €${upfront}</p>` : '';
+      try {
+        const thanksSubj = isFr
+          ? `Merci pour votre commande nocloud.ai #${orderId.slice(-8)}`
+          : `Thank you for your nocloud.ai order #${orderId.slice(-8)}`;
+        const thanksTitle = isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!';
+        const thanksBody = isFr ? 'Votre commande a été reçue et le paiement confirmé.' : 'Your order has been received and payment confirmed.';
+        const thanksSummary = isFr ? 'Récapitulatif de commande' : 'Order Summary';
+        const thanksServices = isFr ? 'Services optionnels' : 'Optional Services';
+        const thanksCompany = isFr ? 'Société' : 'Company';
+        const thanksVat = isFr ? 'Numéro de TVA' : 'VAT Number';
+        const thanksPo = isFr ? 'N° de commande' : 'PO Number';
+        const thanksPriceVer = isFr ? 'Version de tarification' : 'Pricing version';
+        const thanksFooter = isFr ? 'Vous recevrez l\'appareil prochainement. Contactez-nous si vous avez des questions.' : 'You will receive the appliance soon. Contact us if you have any questions.';
+        const thanksClose = isFr ? 'Cordialement,<br>L\'équipe nocloud.ai' : 'Best regards,<br>The nocloud.ai Team';
+        await resend.emails.send({
+          from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+          to: customerEmail,
+          subject: thanksSubj,
+          html: `
+            <h1 style="color: #0ea5e9;">${thanksTitle}</h1>
+            <p>${thanksBody}</p>
+            <h2>${thanksSummary}</h2>
+            <p><strong>Total:</strong> ${amount} ${currency}</p>
+            <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
+            ${upfrontNote}
+            <p><strong>${thanksServices}:</strong> ${servicesStr}</p>
+            <p><strong>${thanksCompany}:</strong> ${companyName}</p>
+            <p><strong>${thanksVat}:</strong> ${vatNumber}</p>
+            <p><strong>${thanksPo}:</strong> ${poNumber}</p>
+            <p>Order ID: ${orderId}</p>
+            <p><strong>${thanksPriceVer}:</strong> ${pricingVersion}</p>
+            ${leaseNote}
+            <p>${thanksFooter}</p>
+            <p>${thanksClose}</p>
+          `,
+        });
+      } catch (emailErr) {
+        console.error('Failed to send customer email for lease order', orderId, emailErr);
+      }
+    }
+
+    // Admin notification for lease invoice payment
+    if (process.env.ADMIN_EMAIL && resend) {
+      try {
+        const adminSubj = isFr
+          ? `Nouvelle commande B2B sur nocloud.ai - #${orderId.slice(-8)}`
+          : `New Order Received - #${orderId.slice(-8)}`;
+        const adminTitle = isFr ? 'Nouvelle commande B2B sur nocloud.ai' : 'New B2B Order on nocloud.ai';
+        const adminCheck = isFr ? 'Vérifiez le tableau de bord Stripe pour tous les détails et pour exécuter la commande.' : 'Check Stripe dashboard for full details and fulfill the order.';
+        await resend.emails.send({
+          from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+          to: process.env.ADMIN_EMAIL,
+          subject: adminSubj,
+          html: `
+            <h2>${adminTitle}</h2>
+            <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
+            <p><strong>Total Paid:</strong> ${amount} ${currency}</p>
+            <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
+            ${(metadata as any).lease_upfront_amount ? `<p><strong>Upfront payment:</strong> €${(metadata as any).lease_upfront_amount}</p>` : ''}
+            <p><strong>Services:</strong> ${servicesStr}</p>
+            <p><strong>Company:</strong> ${companyName}</p>
+            <p><strong>VAT:</strong> ${vatNumber}</p>
+            <p><strong>PO #:</strong> ${poNumber}</p>
+            <p><strong>Subscription ID:</strong> ${sub.id}</p>
+            <p><strong>Invoice ID:</strong> ${invoice.id}</p>
+            <p><strong>Pricing version:</strong> ${pricingVersion}</p>
+            <p>${adminCheck}</p>
+          `,
+        });
+      } catch (emailErr) {
+        console.error('Failed to send admin email for lease order', orderId, emailErr);
+      }
+    }
+
+    console.log(`Lease order paid (invoice): ${orderId} (sub ${sub.id})`);
   }
 
   return NextResponse.json({ received: true });
