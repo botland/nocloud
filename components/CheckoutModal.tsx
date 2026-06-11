@@ -278,7 +278,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                     setFinancingWithDraft('full');
                     if (paymentMethod === 'sepa' && isOverSepaLimit(hardwareTotal)) setPaymentMethodWithDraft('stripe');
                     if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
-                    if (paymentMethod === 'invoice' && !isInvoiceAllowed('full', servicesMonthly)) setPaymentMethodWithDraft('stripe');
+                    // Note: full + invoice + services is now supported (send_invoice service subs + first periods on the net30 invoice).
                   }} 
                   className="accent-cyan-400" 
                 />
@@ -305,7 +305,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                     } else {
                       setFinancingWithDraft('full');
                       if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
-                      if (paymentMethod === 'invoice' && !isInvoiceAllowed('full', servicesMonthly)) setPaymentMethodWithDraft('stripe');
+                      // full + invoice + services now supported; no force needed here.
                     }
                   }} 
                   className="accent-cyan-400" 

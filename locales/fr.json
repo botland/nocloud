@@ -168,7 +168,7 @@
     "upfrontDueToday": "€{amount} dus aujourd'hui",
     "leaseRangeNote": "(éligible pour un matériel de €{min} à €{max})",
     "invoiceRangeNote": "(min €{min} – max €{max} — choisissez carte ou réduisez la commande)",
-    "invoicePolicyNote": "(uniquement pour un paiement unique complet sans services récurrents — choisissez carte ou réduisez la commande)",
+    "invoicePolicyNote": "(sélectionnez pour Net 30 ; les paiements complets avec services sont pris en charge via factures récurrentes)",
     "monthlyTotalLabel": "Paiement mensuel ({months} mois)"
   },
   "success": {

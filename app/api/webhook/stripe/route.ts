@@ -140,7 +140,8 @@ export async function POST(request: NextRequest) {
     // For direct purchases (financing=full), turn selected services into real recurring Subscriptions.
     // The pm collected by the one-time Checkout session must be explicitly attached so the
     // monthly subs can actually charge (without this, subs are often created without a default pm
-    // and won't auto-bill, especially noticeable with SEPA).
+    // and won't auto-bill, especially noticeable with SEPA). Robustness added for subsequent cycles:
+    // listPaymentMethods fallback, customer default set before+after loop, and one retry on "no default" errors.
     if (session.customer && financing !== 'lease' && servicesArray.length > 0) {
       // Best-effort: extract the payment method used for this Checkout payment.
       // In 'payment' mode the pm may be directly on session or reachable via the payment_intent.
@@ -161,7 +162,18 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Also set it as the customer's default so any future subscriptions (or retries) work.
+      // Fallback: most recent card or sepa_debit on the customer (covers cases where session/PI do not surface it directly).
+      if (!defaultPaymentMethod && session.customer) {
+        try {
+          const pms = await stripe.customers.listPaymentMethods(session.customer as string, { limit: 5 });
+          const recent = pms.data.find((p: any) => p.type === 'card' || p.type === 'sepa_debit');
+          defaultPaymentMethod = recent?.id;
+        } catch (listErr) {
+          console.warn('Could not list recent PMs for service subs fallback', listErr);
+        }
+      }
+
+      // Set as customer's default (before creations) so any future subscriptions or retries see it.
       if (defaultPaymentMethod) {
         try {
           await stripe.customers.update(session.customer as string, {
@@ -200,8 +212,52 @@ export async function POST(request: NextRequest) {
           }
           await stripe.subscriptions.create(subParams);
           console.log(`Created service subscription for "${s.name}" on customer ${session.customer} (pm: ${defaultPaymentMethod || 'none'})`);
-        } catch (subErr) {
-          console.error('Failed to create service subscription', subErr);
+        } catch (subErr: any) {
+          const msg = (subErr?.message || '').toLowerCase();
+          if (msg.includes('default payment') || msg.includes('no attached') || msg.includes('payment source')) {
+            console.warn(`Service sub create for "${s.name}" hit no-default; re-setting customer default and retrying once`);
+            if (defaultPaymentMethod && session.customer) {
+              try {
+                await stripe.customers.update(session.customer as string, {
+                  invoice_settings: { default_payment_method: defaultPaymentMethod },
+                });
+              } catch {}
+            }
+            try {
+              // Rebuild minimal for retry (product + sub with same PM)
+              const serviceProduct2 = await stripe.products.create({ name: s.name });
+              const subParams2: any = {
+                customer: session.customer as string,
+                items: [{
+                  price_data: {
+                    currency: 'eur',
+                    product: serviceProduct2.id,
+                    unit_amount: Math.round(s.price * 100),
+                    recurring: { interval: 'month' },
+                  } as any,
+                }],
+                metadata: { order_session: orderId, service: s.name },
+              };
+              if (defaultPaymentMethod) subParams2.default_payment_method = defaultPaymentMethod;
+              await stripe.subscriptions.create(subParams2);
+              console.log(`Retry succeeded for service sub "${s.name}" on customer ${session.customer}`);
+            } catch (retryErr) {
+              console.error('Retry also failed for service subscription', retryErr);
+            }
+          } else {
+            console.error('Failed to create service subscription', subErr);
+          }
+        }
+      }
+
+      // Re-set customer default after the loop (defensive against timing windows during the creates).
+      if (defaultPaymentMethod && session.customer) {
+        try {
+          await stripe.customers.update(session.customer as string, {
+            invoice_settings: { default_payment_method: defaultPaymentMethod },
+          });
+        } catch (custErr) {
+          console.warn('Could not re-set default pm on customer after service subs', custErr);
         }
       }
     }
@@ -234,7 +290,45 @@ export async function POST(request: NextRequest) {
       ? invoice.subscription
       : (invoice.subscription as Stripe.Subscription | null | undefined)?.id;
 
+    // Standalone B2B pay-by-invoice (the initial net30 for hardware +/- first services) has no subscription.
+    // Send paid confirmation (we already sent "registered, you will receive the invoice" at creation time).
     if (!subId) {
+      const invMeta = (invoice as any).metadata || {};
+      const invFinancing = invMeta.financing || 'full';
+      if (invFinancing === 'full') {
+        const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+        const customerEmail = invoice.customer_email || (invMeta as any).customer_email || '';
+        const orderLocale = (invMeta.locale as string) || 'en';
+        const isFr = orderLocale === 'fr';
+        if (customerEmail && resend) {
+          try {
+            const subj = isFr
+              ? `Paiement reçu — facture nocloud.ai #${invoice.id.slice(-8)}`
+              : `Payment received — nocloud.ai invoice #${invoice.id.slice(-8)}`;
+            await resend.emails.send({
+              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+              to: customerEmail,
+              subject: subj,
+              html: `
+                <p>${isFr ? 'Merci ! Votre paiement pour la facture Net 30 a été reçu.' : 'Thank you! Your Net 30 invoice payment has been received.'}</p>
+                <p><strong>Invoice:</strong> ${invoice.id}</p>
+                <p><strong>Amount:</strong> ${invoice.amount_paid ? (invoice.amount_paid / 100).toFixed(2) : '0.00'} ${(invoice.currency || 'eur').toUpperCase()}</p>
+              `,
+            });
+          } catch (e) { console.error('Failed to send invoice paid email', e); }
+        }
+        if (process.env.ADMIN_EMAIL && resend) {
+          try {
+            await resend.emails.send({
+              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+              to: process.env.ADMIN_EMAIL,
+              subject: `B2B Invoice Paid (Net 30) - #${invoice.id.slice(-8)}`,
+              html: `<p>Net 30 invoice ${invoice.id} has been paid by ${customerEmail || 'customer'}.</p>`,
+            });
+          } catch (e) { console.error('Failed to send admin invoice paid email', e); }
+        }
+        console.log(`B2B pay-by-invoice paid: ${invoice.id}`);
+      }
       return NextResponse.json({ received: true });
     }
 
@@ -249,7 +343,7 @@ export async function POST(request: NextRequest) {
     const metadata = sub.metadata || {};
     const financing = metadata.financing || 'full';
     if (financing !== 'lease') {
-      // Service-only recurring subs for 'full' purchases are still created from checkout.session.completed path.
+      // Service-only recurring subs for 'full' purchases are still created from checkout.session.completed path (or send subs for invoice).
       return NextResponse.json({ received: true });
     }
 
@@ -275,6 +369,17 @@ export async function POST(request: NextRequest) {
       }
     } catch (pmErr) {
       console.warn('Could not retrieve payment_method from paid lease invoice for default attachment', pmErr);
+    }
+
+    // Additive fallback (list recent PM) for cases where the initial paid invoice's PI does not surface the method (e.g. some SEPA flows or edge timing).
+    if (!defaultPaymentMethod && sub.customer) {
+      try {
+        const pms = await stripe.customers.listPaymentMethods(sub.customer as string, { limit: 5 });
+        const recent = pms.data.find((p: any) => p.type === 'card' || p.type === 'sepa_debit');
+        defaultPaymentMethod = recent?.id;
+      } catch (listErr) {
+        console.warn('Could not list PMs for lease attach fallback', listErr);
+      }
     }
 
     if (defaultPaymentMethod && sub.customer) {

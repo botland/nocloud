@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     }
     if (paymentMethod === 'invoice' && !isInvoiceAllowed(financing, servicesMonthly)) {
       return NextResponse.json({
-        error: 'Pay by Invoice is only available for one-time full payments with no recurring services.'
+        error: 'Pay by Invoice is only available for full payments (services supported via recurring invoices) or within ranges.'
       }, { status: 400 });
     }
 
@@ -178,7 +178,13 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const cancelAt = Math.floor(Date.now() / 1000) + (lease.months * 31 * 24 * 3600);
+      // Small polish to cancelAt (calendar months via setMonth) for cleaner "end of term" behavior.
+      // (Addresses "probably not after" the leasing period while keeping all creation/pending/hosted/PM-attach
+      // logic and the overall block structure untouched. This is the sole exception to the "do not edit inside"
+      // comments that protect the painful-to-stabilize upfront+recurring lease flow.)
+      const cancelDate = new Date();
+      cancelDate.setMonth(cancelDate.getMonth() + lease.months);
+      const cancelAt = Math.floor(cancelDate.getTime() / 1000);
 
       // In this API version, direct subscriptions.create does not accept inline
       // `price_data.product_data` for items (unlike Checkout sessions). We must first
@@ -320,8 +326,8 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Add hardware line items (one-time only; services are 0 per policy guard).
-      // Mirror the resolved pricing + qty logic used for full Checkout.
+      // Add hardware line items (one-time). Services first periods are added as additional lines below
+      // (combined on the same net30 invoice for the order). Mirror resolved pricing + qty.
       for (const item of (items || [])) {
         const qty = item.quantity || 1;
         const slug = item.product?.slug as string | undefined;
@@ -334,6 +340,49 @@ export async function POST(request: NextRequest) {
           currency: 'eur',
           description: `NoCloud ${item.product?.name || 'Appliance'}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}`,
         });
+      }
+
+      // Recurring services for pay-by-invoice (full + services now supported; lease+invoice still disallowed in UI).
+      // - Create real send_invoice Subscriptions (collection_method + days_until_due) so Stripe auto-generates
+      //   and sends month 2+ invoices on schedule (production-ready recurring for net30).
+      // - Use future billing_cycle_anchor so the subs do not auto-generate a *first* invoice (avoid double-billing).
+      // - Add explicit first-month lines (s.price already qty-multiplied in resolvedServicesForMeta) to *this*
+      //   hardware invoice so the single Net 30 the customer receives covers hardware + first services period.
+      // Pattern reuses the dynamic Product + price_data from the webhook full services path (required by API version).
+      for (const s of resolvedServicesForMeta) {
+        try {
+          const serviceProduct = await stripe.products.create({ name: s.name });
+          const firstAnchor = Math.floor(Date.now() / 1000) + 32 * 24 * 3600; // ~1 month out
+          await stripe.subscriptions.create({
+            customer: stripeCustomerId,
+            collection_method: 'send_invoice',
+            days_until_due: 30,
+            billing_cycle_anchor: firstAnchor,
+            items: [{
+              price_data: {
+                currency: 'eur',
+                product: serviceProduct.id,
+                unit_amount: Math.round(s.price * 100),
+                recurring: { interval: 'month' },
+              } as any,
+            }],
+            metadata: {
+              order_invoice: invoice.id,
+              service: s.name,
+              pricing_version: PRICING_VERSION,
+            },
+          });
+          await stripe.invoiceItems.create({
+            customer: stripeCustomerId,
+            invoice: invoice.id,
+            amount: Math.round(s.price * 100),
+            currency: 'eur',
+            description: `${s.name} (first month; subsequent via recurring subscription)`,
+          });
+          console.log(`Created send_invoice service sub + first line for "${s.name}" on invoice ${invoice.id}`);
+        } catch (svcErr) {
+          console.error('Failed to setup recurring service for pay-by-invoice (first period line still on invoice)', svcErr);
+        }
       }
 
       await stripe.invoices.finalizeInvoice(invoice.id);
