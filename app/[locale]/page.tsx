@@ -21,30 +21,13 @@ export default function LocaleHome() {
 
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    // Hydrate cart from localStorage so it survives page reloads and Stripe cancel redirects.
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = localStorage.getItem('nocloud_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
   // Persisted checkout form draft so that if user fills B2B info, goes to Stripe, and cancels,
   // the company/email/address etc. are still there when they retry.
-  const [checkoutDraft, setCheckoutDraft] = useState<CheckoutFormDraft | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const saved = localStorage.getItem('nocloud_checkout_draft');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [checkoutDraft, setCheckoutDraft] = useState<CheckoutFormDraft | null>(null);
 
   // Persist checkout draft
   useEffect(() => {
@@ -65,6 +48,30 @@ export default function LocaleHome() {
       // ignore storage errors (private mode, quota, etc.)
     }
   }, [cart]);
+
+  // Load cart + draft from localStorage *after* the first client render.
+  // This guarantees the server render and the first client render produce identical HTML
+  // (both start with empty cart / null draft), avoiding hydration mismatches on the cart badge etc.
+  // The actual values from localStorage are applied in a subsequent render via setState.
+  useEffect(() => {
+    try {
+      const savedCart = localStorage.getItem('nocloud_cart');
+      if (savedCart) {
+        setCart(JSON.parse(savedCart));
+      }
+    } catch {
+      // ignore storage / JSON errors (corrupt data, private mode, etc.)
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem('nocloud_checkout_draft');
+      if (savedDraft) {
+        setCheckoutDraft(JSON.parse(savedDraft));
+      }
+    } catch {}
+  }, []);
 
   // Client-side only check for ?canceled=true (from Stripe cancel_url).
   // Using useEffect + URLSearchParams avoids useSearchParams() hook entirely,

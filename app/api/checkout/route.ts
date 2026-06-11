@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { calculateLease, isOverSepaLimit, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey } from '@/lib/pricing';
+import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey } from '@/lib/pricing';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -117,6 +117,25 @@ export async function POST(request: NextRequest) {
     // For "full" this is the one-time total; for "lease" it's the monthly recurring charge.
     // Logic centralized in pricing.ts (client + server must agree).
     const dueAmount = financing === 'lease' ? monthlyTotal : hardwareTotal;
+
+    // Enforce lease and pay-by-invoice eligibility ranges using the constants from lib/pricing.ts
+    // (client UX mirrors this; server is authoritative).
+    if (financing === 'lease' && !calculateLease(hardwareTotal, servicesMonthly).isAllowed) {
+      return NextResponse.json({
+        error: `Leasing is only available for hardware totals between €${LEASE_MIN} and €${LEASE_MAX}.`
+      }, { status: 400 });
+    }
+    if (paymentMethod === 'invoice' && !isPbiAllowed(hardwareTotal)) {
+      return NextResponse.json({
+        error: `Pay by Invoice is only available for hardware totals between €${PBI_MIN} and €${PBI_MAX}.`
+      }, { status: 400 });
+    }
+    if (paymentMethod === 'invoice' && !isInvoiceAllowed(financing, servicesMonthly)) {
+      return NextResponse.json({
+        error: 'Pay by Invoice is only available for one-time full payments with no recurring services.'
+      }, { status: 400 });
+    }
+
     if (paymentMethod === 'sepa' && isOverSepaLimit(dueAmount)) {
       return NextResponse.json({
         error: `SEPA Direct Debit payments are limited to €10,000. Your ${financing === 'lease' ? 'monthly lease payment' : 'order total'} is €${dueAmount}. Please select "Credit / Debit card" (or reduce quantity / use Pay in full for smaller hardware totals).`

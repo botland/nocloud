@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { calculateLease, isOverSepaLimit } from '@/lib/pricing';
+import { calculateLease, isOverSepaLimit, isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX } from '@/lib/pricing';
 import { CartItem, CheckoutFormDraft } from '@/lib/types';
 
 interface Props {
@@ -61,6 +61,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const leaseMonths = leaseDetails.months;
   const leaseMonthly = leaseDetails.monthlyTotal;
 
+  const canLease = leaseDetails.isAllowed;
+  const canPbi = isPbiAllowed(hardwareTotal);
+  const canInvoicePolicy = isInvoiceAllowed(financing, servicesMonthly);
+  const canUseInvoice = canPbi && canInvoicePolicy;
+
   // Current selection
   const isLease = financing === 'lease';
 
@@ -78,6 +83,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
   const handleCompleteOrder = async () => {
     if (!company || !email || !address || !city) {
+      alert(t('validation'));
+      return;
+    }
+
+    if ((financing === 'lease' && !canLease) || (paymentMethod === 'invoice' && !canUseInvoice)) {
       alert(t('validation'));
       return;
     }
@@ -261,6 +271,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   onChange={() => {
                     setFinancingWithDraft('full');
                     if (paymentMethod === 'sepa' && isOverSepaLimit(hardwareTotal)) setPaymentMethodWithDraft('stripe');
+                    if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
+                    if (paymentMethod === 'invoice' && !isInvoiceAllowed('full', servicesMonthly)) setPaymentMethodWithDraft('stripe');
                   }} 
                   className="accent-cyan-400" 
                 />
@@ -278,9 +290,17 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   name="financing" 
                   value="lease" 
                   checked={financing === 'lease'} 
+                  disabled={!canLease}
                   onChange={() => {
-                    setFinancingWithDraft('lease');
-                    if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthly)) setPaymentMethodWithDraft('stripe');
+                    if (canLease) {
+                      setFinancingWithDraft('lease');
+                      if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthly)) setPaymentMethodWithDraft('stripe');
+                      if (paymentMethod === 'invoice') setPaymentMethodWithDraft('stripe'); // lease never allows invoice under policy
+                    } else {
+                      setFinancingWithDraft('full');
+                      if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
+                      if (paymentMethod === 'invoice' && !isInvoiceAllowed('full', servicesMonthly)) setPaymentMethodWithDraft('stripe');
+                    }
                   }} 
                   className="accent-cyan-400" 
                 />
@@ -290,6 +310,9 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                     {t('leaseDesc', { months: leaseMonths })} — {t('monthlyPayment', { amount: leaseMonthly, months: leaseMonths })}
                   </div>
                   <div className="text-[10px] text-slate-500 mt-0.5">{t('firstMonthNote')}</div>
+                  {!canLease && (
+                    <div className="text-[10px] text-amber-400 mt-0.5">{t('leaseRangeNote', { min: LEASE_MIN, max: LEASE_MAX })}</div>
+                  )}
                 </div>
               </label>
             </div>
@@ -329,10 +352,27 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               </label>
 
               <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-                <input type="radio" name="payment" value="invoice" checked={paymentMethod === 'invoice'} onChange={() => setPaymentMethodWithDraft('invoice')} className="accent-cyan-400" />
+                <input 
+                  type="radio" 
+                  name="payment" 
+                  value="invoice" 
+                  checked={paymentMethod === 'invoice'} 
+                  disabled={!canUseInvoice}
+                  onChange={() => {
+                    if (canUseInvoice) setPaymentMethodWithDraft('invoice');
+                    else setPaymentMethodWithDraft('stripe');
+                  }} 
+                  className="accent-cyan-400" 
+                />
                 <div className="flex-1">
                   <div className="font-medium">{t('invoice')}</div>
                   <div className="text-xs text-slate-400">{t('invoiceDesc')}</div>
+                  {!canPbi && (
+                    <div className="text-[10px] text-amber-400 mt-0.5">{t('invoiceRangeNote', { min: PBI_MIN, max: PBI_MAX })}</div>
+                  )}
+                  {canPbi && !canInvoicePolicy && (
+                    <div className="text-[10px] text-amber-400 mt-0.5">{t('invoicePolicyNote')}</div>
+                  )}
                 </div>
               </label>
             </div>
