@@ -1,6 +1,5 @@
 .next/
 node_modules/
-package-lock.json
 
 # Environment variables (never commit real secrets; .env.example is the template)
 .env*
