@@ -7,12 +7,13 @@ Real B2B checkout for on-premise AI hardware appliances with optional managed se
 ## Current Features
 
 - **Full i18n** (EN + FR) — every string in UI, configurator, cart, checkout, success, and financing terms is translated and locale-routed (`/en`, `/fr`).
-- **Real Stripe payments** (hosted Checkout):
+- **Real Stripe payments** (hosted Checkout + direct for leases):
   - **Direct / one-time**: full hardware amount charged immediately (services noted in description).
-  - **Recurring services** (for direct purchases): selected Managed Care (€89/mo) and/or SecureVault Backup (€39/mo) are turned into real Stripe Subscriptions in the `checkout.session.completed` webhook using the collected payment method.
-  - **Leasing / financing**: hardware + services amortized into a single monthly subscription using the `stripe.subscriptions.create({ add_invoice_items: [{ amount: upfrontCents }], items: [recurringPriceData] })` pattern for clean upfront (one-time) + recurring. 12 months if hardware total < €10k, else 24 months. Fixed term via `cancel_at` passed at creation. User completes the initial invoice (upfront + month 1) on the subscription's `hosted_invoice_url`. Confirmation emails sent from `invoice.paid` webhook. (Previously approximated via Checkout subscription + pre-created invoice items.)
+  - **Recurring services** (for direct purchases): selected Managed Care (€89/mo) and/or SecureVault Backup (€39/mo) are turned into real Stripe Subscriptions in the `checkout.session.completed` webhook. The PM collected during the one-time Checkout is explicitly attached as the customer's default and passed to each service subscription so monthly recurring auto-bills reliably (especially important for SEPA).
+  - **Leasing / financing**: hardware + services amortized into a single monthly subscription (direct `subscriptions.create` with `payment_behavior: 'default_incomplete'` so it can be created before a PM exists). Upfront % is attached via a pending InvoiceItem (added to the first invoice). The customer pays the initial invoice (upfront + month 1) on the subscription's `hosted_invoice_url`. After successful payment, the PM is explicitly attached (in the `invoice.paid` handler) as the default on the customer and the lease subscription for reliable future recurring cycles under the subscription's `cancel_at`. The lease creation/redirect/initial-payment logic was left completely untouched (it was a painful stabilization process). Confirmation emails sent from `invoice.paid` webhook. Rich metadata (contract_type, upfront_percent, total_value, etc.) is preserved.
+  - **Pay by Invoice (B2B Net 30)**: Now production-ready real Stripe Invoices (previously a client-only mock with no objects or server emails). For allowed cases (full, no services, within PBI range) we create a real Customer + Invoice with `collection_method: 'send_invoice'`, `days_until_due: 30`, full B2B metadata, finalize and send it. Friendly client overlay is still shown; server sends registered emails. Policy still prevents mixing with recurring services. When the customer later pays the net30 invoice, `invoice.paid` can be used for settlement confirmation.
 - **B2B data collection**: Company name, email address, VAT/SIRET, PO number, full billing address + country selector. Email is collected in the checkout form (kept by us), transmitted to Stripe (prefill + explicit Customer creation with metadata). All passed through to Stripe metadata, Customer records, and order emails.
-- **Payment methods**: Card (Stripe), SEPA Direct Debit, or "Pay by Invoice (B2B)" mock (Net 30).
+- **Payment methods**: Card (Stripe), SEPA Direct Debit, or "Pay by Invoice (B2B)" (now real Net 30 Stripe Invoices).
 - **Cart + Configurator**: quantity selector, optional monthly services per appliance, live totals (hardware one-time + services monthly).
 - **Success page**: localized thank-you + optional `session_id` reference. Returns to correct locale.
 - **Emails**: customer confirmation + admin notification via Resend on successful checkout (includes financing details, services list, B2B info).
@@ -54,7 +55,7 @@ Real B2B checkout for on-premise AI hardware appliances with optional managed se
 
 - Choose appliances + services + quantities in configurator → cart.
 - "Proceed to secure checkout" → fill B2B fields **(including email)** + choose **Payment Terms** (Pay in full vs Lease) + **Payment Method**.
-- Invoice path: shows a localized fake success overlay (B2B Net 30, no real charge).
+- Invoice path: real Stripe Invoice (send_invoice, Net 30) is created on the backend with full B2B metadata; customer sees a friendly localized success overlay while the real invoice is sent (Stripe delivers it). Confirmation emails are produced server-side.
 - Card / SEPA: real `stripe.checkout.sessions.create` (mode payment) for full/direct purchases; for leases we use direct `stripe.subscriptions.create` (with add_invoice_items) and redirect to the invoice's hosted payment page → success emails via webhook (no automatic client redirect to /success for the lease payment completion).
 - On `checkout.session.completed`:
   - Emails sent (customer + admin) with accurate details.
@@ -83,7 +84,7 @@ Lease math (server + client consistent, centralized in `lib/pricing.ts`):
 
 ## Known Limitations / Future Ideas
 
-- Invoice method is still a mock (easy to extend to real Stripe Invoices later).
+- Pay by Invoice is now real (Stripe send_invoice + Net 30). The previous policy that restricted it to full/no-services orders is retained (to limit admin work for recurring on net-30).
 - No persistent DB — orders live in Stripe + email + metadata only.
 - Webhook reacts to `checkout.session.completed` (full purchases + legacy) and `invoice.paid` (for lease upfront+recurring initial invoices). No failed payment, subscription lifecycle, or customer portal flows yet.
 - Middleware deprecation warning on build (`middleware.ts` → consider "proxy" per Next 16 guidance; routing still works).

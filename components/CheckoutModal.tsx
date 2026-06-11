@@ -93,76 +93,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
       return;
     }
 
-    if (paymentMethod === 'invoice') {
-      // Keep the legacy B2B invoice fake flow (net 30). Use safe DOM construction (textContent / createElement) to avoid XSS from user fields.
-      onOrderComplete();
+    // Real flow for 'stripe' / 'sepa' / 'invoice' (invoice is now real Stripe send_invoice backend path;
+    // the friendly localized overlay is still shown client-side for consistency after the backend
+    // has created the real Invoice + Customer + sent it).
 
-      const orderNum = `NC-${Date.now().toString().slice(-8)}`;
-      const successMessage = t('success.invoice', { company });
-      const orderConfirmed = t('success.orderConfirmed');
-      const orderNumLabel = t('success.orderNumLabel');
-      const paymentLabel = t('success.paymentLabel');
-      const totalLabel = t('success.totalLabel');
-      const returnHome = t('success.returnHome');
-
-      const successDiv = document.createElement('div');
-      successDiv.className = `fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-6`;
-
-      const inner = document.createElement('div');
-      inner.className = 'bg-slate-900 border border-slate-700 max-w-md w-full rounded-3xl p-8 text-center';
-
-      // icon
-      const iconWrap = document.createElement('div');
-      iconWrap.className = 'mx-auto w-16 h-16 bg-emerald-900/30 rounded-full flex items-center justify-center mb-6';
-      const icon = document.createElement('i');
-      icon.className = 'fa-solid fa-check text-emerald-400 text-4xl';
-      iconWrap.appendChild(icon);
-
-      const h3 = document.createElement('h3');
-      h3.className = 'text-2xl font-semibold tracking-tight mb-3';
-      h3.textContent = orderConfirmed;
-
-      const p = document.createElement('p');
-      p.className = 'text-slate-400 mb-6';
-      p.textContent = successMessage;
-
-      const meta = document.createElement('div');
-      meta.className = 'text-left bg-slate-950 p-4 rounded-2xl text-sm mb-6';
-
-      const row1 = document.createElement('div'); row1.className = 'flex justify-between py-1';
-      const s1 = document.createElement('span'); s1.className = 'text-slate-400'; s1.textContent = orderNumLabel;
-      const v1 = document.createElement('span'); v1.className = 'font-mono'; v1.textContent = orderNum;
-      row1.append(s1, v1);
-
-      const row2 = document.createElement('div'); row2.className = 'flex justify-between py-1';
-      const s2 = document.createElement('span'); s2.className = 'text-slate-400'; s2.textContent = 'Email';
-      const v2 = document.createElement('span'); v2.className = 'font-mono'; v2.textContent = email;
-      row2.append(s2, v2);
-
-      const row3 = document.createElement('div'); row3.className = 'flex justify-between py-1';
-      const s3 = document.createElement('span'); s3.className = 'text-slate-400'; s3.textContent = paymentLabel;
-      const v3 = document.createElement('span'); v3.className = 'capitalize'; v3.textContent = paymentMethod;
-      row3.append(s3, v3);
-
-      const row4 = document.createElement('div'); row4.className = 'flex justify-between py-1';
-      const s4 = document.createElement('span'); s4.className = 'text-slate-400'; s4.textContent = totalLabel;
-      const v4 = document.createElement('span'); v4.className = 'font-semibold'; v4.textContent = `€${hardwareTotal}`;
-      row4.append(s4, v4);
-
-      meta.append(row1, row2, row3, row4);
-
-      const btn = document.createElement('button');
-      btn.className = 'w-full py-3.5 bg-white text-slate-950 font-bold rounded-3xl';
-      btn.textContent = returnHome;
-      btn.onclick = () => { successDiv.remove(); window.location.reload(); };
-
-      inner.append(iconWrap, h3, p, meta, btn);
-      successDiv.appendChild(inner);
-      document.body.appendChild(successDiv);
-      return;
-    }
-
-    // Real Stripe flow for 'stripe' / 'sepa'
+    // Real Stripe flow for 'stripe' / 'sepa' (and now invoice too)
     try {
       const payload = {
         items: cart,
@@ -192,8 +127,78 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
       const data = await res.json();
       if (data.url) {
-        // Redirect to Stripe hosted Checkout (direct payment or subscription)
+        // Redirect to Stripe hosted Checkout (direct payment or subscription) or hosted invoice (lease)
         window.location.href = data.url;
+        return;
+      }
+
+      if (data.success) {
+        // Pay by Invoice (now real Stripe send_invoice path) or other success-only responses.
+        // Show the friendly localized success overlay (same UX the previous mock provided)
+        // while the backend has already created the real Customer + Invoice and finalized it.
+        onOrderComplete();
+
+        const orderNum = `NC-${Date.now().toString().slice(-8)}`;
+        const successMessage = t('success.invoice', { company });
+        const orderConfirmed = t('success.orderConfirmed');
+        const orderNumLabel = t('success.orderNumLabel');
+        const paymentLabel = t('success.paymentLabel');
+        const totalLabel = t('success.totalLabel');
+        const returnHome = t('success.returnHome');
+
+        const successDiv = document.createElement('div');
+        successDiv.className = `fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-6`;
+
+        const inner = document.createElement('div');
+        inner.className = 'bg-slate-900 border border-slate-700 max-w-md w-full rounded-3xl p-8 text-center';
+
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'mx-auto w-16 h-16 bg-emerald-900/30 rounded-full flex items-center justify-center mb-6';
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-check text-emerald-400 text-4xl';
+        iconWrap.appendChild(icon);
+
+        const h3 = document.createElement('h3');
+        h3.className = 'text-2xl font-semibold tracking-tight mb-3';
+        h3.textContent = orderConfirmed;
+
+        const p = document.createElement('p');
+        p.className = 'text-slate-400 mb-6';
+        p.textContent = successMessage;
+
+        const meta = document.createElement('div');
+        meta.className = 'text-left bg-slate-950 p-4 rounded-2xl text-sm mb-6';
+
+        const row1 = document.createElement('div'); row1.className = 'flex justify-between py-1';
+        const s1 = document.createElement('span'); s1.className = 'text-slate-400'; s1.textContent = orderNumLabel;
+        const v1 = document.createElement('span'); v1.className = 'font-mono'; v1.textContent = orderNum;
+        row1.append(s1, v1);
+
+        const row2 = document.createElement('div'); row2.className = 'flex justify-between py-1';
+        const s2 = document.createElement('span'); s2.className = 'text-slate-400'; s2.textContent = 'Email';
+        const v2 = document.createElement('span'); v2.className = 'font-mono'; v2.textContent = email;
+        row2.append(s2, v2);
+
+        const row3 = document.createElement('div'); row3.className = 'flex justify-between py-1';
+        const s3 = document.createElement('span'); s3.className = 'text-slate-400'; s3.textContent = paymentLabel;
+        const v3 = document.createElement('span'); v3.className = 'capitalize'; v3.textContent = paymentMethod;
+        row3.append(s3, v3);
+
+        const row4 = document.createElement('div'); row4.className = 'flex justify-between py-1';
+        const s4 = document.createElement('span'); s4.className = 'text-slate-400'; s4.textContent = totalLabel;
+        const v4 = document.createElement('span'); v4.className = 'font-semibold'; v4.textContent = `€${hardwareTotal}`;
+        row4.append(s4, v4);
+
+        meta.append(row1, row2, row3, row4);
+
+        const btn = document.createElement('button');
+        btn.className = 'w-full py-3.5 bg-white text-slate-950 font-bold rounded-3xl';
+        btn.textContent = returnHome;
+        btn.onclick = () => { successDiv.remove(); window.location.reload(); };
+
+        inner.append(iconWrap, h3, p, meta, btn);
+        successDiv.appendChild(inner);
+        document.body.appendChild(successDiv);
         return;
       }
 

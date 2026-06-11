@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { Resend } from 'resend';
 import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey, UPFRONT_PERCENT } from '@/lib/pricing';
 
 export async function POST(request: NextRequest) {
@@ -117,12 +118,20 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // IMPORTANT (per approved plan "Lease safety rule" + user feedback):
+    // The entire lease block below (direct subscriptions.create, pending InvoiceItem for upfront,
+    // dynamic Product, payment_behavior: 'default_incomplete', hosted_invoice_url redirect, metadata,
+    // cancel_at, etc.) was stabilized through a painful iteration process for the exact "upfront + monthly"
+    // experience the user requested. **Do not edit inside this block** for recurring PM or invoice work.
+    // All lease-related robustness is additive only in the webhook (invoice.paid handler).
     if (financing === 'lease') {
       // For lease we create the subscription directly (not via Checkout) so we can set
       // cancel_at, rich metadata, collection_method etc. at creation time.
       // The customer must exist (we ensure it). We then redirect to the subscription's
       // first invoice hosted payment page to collect the initial charge (upfront + first month).
       // Webhook on invoice.paid sends the confirmation emails.
+      // (PM for subsequent recurring months after the initial hosted pay is attached post-payment
+      // in the invoice.paid handler — see webhook/route.ts. This creation block must stay exactly as-is.)
       if (!stripeCustomerId) {
         if (!email) {
           return NextResponse.json({ error: 'Email is required to create a lease subscription.' }, { status: 400 });
@@ -252,6 +261,121 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ url: hostedUrl });
+    }
+
+    if (paymentMethod === 'invoice') {
+      // Production-ready Pay by Invoice (B2B Net 30).
+      // Previously this was a pure client mock with no Stripe objects or server emails.
+      // Now we create a real Customer (for ownership + metadata) and a real Invoice with
+      // collection_method: 'send_invoice' + days_until_due: 30. The Invoice is finalized/sent
+      // by Stripe (customer receives it via email or dashboard). Confirmation emails are sent
+      // from here (and/or on invoice.paid in webhook for the actual payment later).
+      // Policy (isInvoiceAllowed + guards above) still ensures this path is only for full + no services.
+      //
+      // NOTE (per plan "Lease safety rule"): the entire preceding `if (financing === 'lease')` block
+      // (sub creation, pending InvoiceItem, dynamic Product, payment_behavior, hosted redirect, etc.)
+      // was left completely untouched. The lease upfront+monthly flow that was painful to stabilize
+      // must continue to work exactly as before. Only this invoice branch (and additive webhook code)
+      // was added.
+      if (!stripeCustomerId && email) {
+        try {
+          const customer = await stripe.customers.create({
+            email,
+            name: company || undefined,
+            address: {
+              line1: address || undefined,
+              city: city || undefined,
+              postal_code: postal || undefined,
+              country: country || undefined,
+            },
+            metadata: {
+              company_name: company || 'N/A',
+              vat_number: vatNumber || 'N/A',
+              po_number: poNumber || 'N/A',
+            },
+          });
+          stripeCustomerId = customer.id;
+        } catch (custErr) {
+          console.error('Failed to create Stripe customer for invoice', custErr);
+          return NextResponse.json({ error: 'Unable to prepare customer for invoice.' }, { status: 500 });
+        }
+      }
+
+      // Create the Invoice (send_invoice style).
+      const invoice = await stripe.invoices.create({
+        customer: stripeCustomerId,
+        collection_method: 'send_invoice',
+        days_until_due: 30,
+        auto_advance: true,
+        metadata: {
+          company_name: company || 'N/A',
+          vat_number: vatNumber || 'N/A',
+          po_number: poNumber || 'N/A',
+          address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
+          financing,
+          services: JSON.stringify(resolvedServicesForMeta),
+          customer_email: email || 'N/A',
+          pricing_version: PRICING_VERSION,
+          locale,
+        },
+      });
+
+      // Add hardware line items (one-time only; services are 0 per policy guard).
+      // Mirror the resolved pricing + qty logic used for full Checkout.
+      for (const item of (items || [])) {
+        const qty = item.quantity || 1;
+        const slug = item.product?.slug as string | undefined;
+        const unit = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
+        const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
+        await stripe.invoiceItems.create({
+          customer: stripeCustomerId,
+          invoice: invoice.id,
+          amount: Math.round(unit * 100 * qty),
+          currency: 'eur',
+          description: `NoCloud ${item.product?.name || 'Appliance'}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}`,
+        });
+      }
+
+      await stripe.invoices.finalizeInvoice(invoice.id);
+
+      // Send confirmation emails for the real B2B invoice (registered + "you will receive the invoice").
+      // This replaces the previous client-only mock that sent no server emails.
+      const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+      const customerEmailForInvoice = email; // from top-level destructuring
+      if (customerEmailForInvoice && resend) {
+        try {
+          const isFr = locale === 'fr';
+          const subj = isFr
+            ? `Merci pour votre commande nocloud.ai #${invoice.id.slice(-8)}`
+            : `Thank you for your nocloud.ai order #${invoice.id.slice(-8)}`;
+          await resend.emails.send({
+            from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+            to: customerEmailForInvoice,
+            subject: subj,
+            html: `
+              <h1 style="color: #0ea5e9;">${isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!'}</h1>
+              <p>${isFr ? 'Votre commande a été enregistrée. Vous recevrez sous peu une facture avec les instructions de paiement (Net 30).' : 'Your order has been registered. You will receive an invoice with payment instructions shortly (Net 30).'} </p>
+              <p><strong>Order ID:</strong> ${invoice.id}</p>
+              <p><strong>Company:</strong> ${company || 'N/A'}</p>
+            `,
+          });
+        } catch (e) { console.error('Failed to send invoice registered email', e); }
+      }
+      if (process.env.ADMIN_EMAIL && resend) {
+        try {
+          await resend.emails.send({
+            from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+            to: process.env.ADMIN_EMAIL,
+            subject: `New B2B Invoice (Net 30) - #${invoice.id.slice(-8)}`,
+            html: `<p>New Pay by Invoice order for ${company || email}. Invoice ${invoice.id} created and sent (Net 30).</p>`,
+          });
+        } catch (e) { console.error('Failed to send admin invoice email', e); }
+      }
+
+      // Return success (client will show friendly overlay; no hosted "pay now" URL because this is Net 30 send_invoice).
+      // The real Stripe Invoice is now in the dashboard and will be delivered to the customer.
+      console.log(`Real B2B invoice created and finalized: ${invoice.id} for customer ${stripeCustomerId}`);
+      return NextResponse.json({ success: true, invoiceId: invoice.id });
     }
 
     // Direct / full payment (non-lease): one-time for hardware only.

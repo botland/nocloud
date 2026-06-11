@@ -253,6 +253,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
+    // === LEASE RECURRING PM ATTACHMENT (additive only — see plan "Lease safety rule") ===
+    // The stabilized lease creation path (direct subscriptions.create with payment_behavior default_incomplete,
+    // pending InvoiceItem for upfront, hosted_invoice_url for initial payment) is intentionally left 100% untouched.
+    // This block runs *after* successful payment of the initial invoice (upfront + month 1) and ensures the
+    // PM collected via the hosted page is explicitly set as default on the customer and this subscription.
+    // This mirrors the explicit attachment done for full+services in the session.completed path and guarantees
+    // future monthly invoices (under charge_automatically + the sub's cancel_at) will auto-bill reliably,
+    // especially for SEPA.
+    // Placed here (post-retrieve, inside the lease guard) so it is purely confirmatory and cannot affect
+    // the initial hosted collection or sub creation that took significant effort to stabilize.
+    let defaultPaymentMethod: string | undefined;
+    try {
+      const piId = typeof (invoice as any).payment_intent === 'string'
+        ? (invoice as any).payment_intent
+        : (invoice as any).payment_intent?.id;
+      if (piId) {
+        const pi = await stripe.paymentIntents.retrieve(piId, { expand: ['payment_method'] });
+        const pm = (pi as any).payment_method;
+        defaultPaymentMethod = typeof pm === 'string' ? pm : pm?.id;
+      }
+    } catch (pmErr) {
+      console.warn('Could not retrieve payment_method from paid lease invoice for default attachment', pmErr);
+    }
+
+    if (defaultPaymentMethod && sub.customer) {
+      try {
+        await stripe.customers.update(sub.customer as string, {
+          invoice_settings: { default_payment_method: defaultPaymentMethod },
+        });
+        await stripe.subscriptions.update(sub.id, {
+          default_payment_method: defaultPaymentMethod,
+        });
+        console.log(`Attached default PM ${defaultPaymentMethod} to lease customer/sub ${sub.id} for future recurring cycles`);
+      } catch (attachErr) {
+        console.warn('Failed to set explicit default_payment_method on lease customer/sub (future cycles may still work via hosted payment side-effects)', attachErr);
+      }
+    }
+    // === end additive lease recurring attachment ===
+
     // Lease order paid (upfront + recurring initial invoice paid via hosted invoice page)
     const orderId = invoice.id || sub.id;
     const amount = invoice.amount_paid ? (invoice.amount_paid / 100).toFixed(2) : '0.00';
