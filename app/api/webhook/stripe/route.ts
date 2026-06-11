@@ -194,6 +194,8 @@ export async function POST(request: NextRequest) {
 
           const subParams: any = {
             customer: session.customer as string,
+            collection_method: 'charge_automatically',
+            trial_end: Math.floor(Date.now() / 1000) + 32 * 24 * 3600, // recurring starts ~1 month after initial hardware payment
             items: [{
               price_data: {
                 currency: 'eur',
@@ -210,8 +212,36 @@ export async function POST(request: NextRequest) {
           if (defaultPaymentMethod) {
             subParams.default_payment_method = defaultPaymentMethod;
           }
-          await stripe.subscriptions.create(subParams);
-          console.log(`Created service subscription for "${s.name}" on customer ${session.customer} (pm: ${defaultPaymentMethod || 'none'})`);
+          const createdSub = await stripe.subscriptions.create(subParams);
+
+          // Re-apply default_payment_method explicitly after creation.
+          // Passing it at create time is not always sufficient for *subsequent* billing cycles
+          // (month 2+ invoices) to auto-charge reliably, especially with SEPA or when using dynamic price_data.
+          // Setting it again on the subscription object makes the PM "stick" for future invoices.
+          if (defaultPaymentMethod) {
+            try {
+              await stripe.subscriptions.update(createdSub.id, {
+                default_payment_method: defaultPaymentMethod,
+              });
+            } catch (reapplyErr) {
+              console.warn(`Could not re-apply default PM to service sub ${createdSub.id}`, reapplyErr);
+            }
+          }
+
+          console.log(`Created service subscription ${createdSub.id} for "${s.name}" on customer ${session.customer} (pm: ${defaultPaymentMethod || 'none'})`);
+
+          // Diagnostic: status of the first service invoice (billed at sub creation time using the attached PM).
+          // Helps confirm whether even the initial recurring period succeeded before worrying about month 2+.
+          try {
+            const firstInv = (createdSub as any).latest_invoice;
+            const invId = typeof firstInv === 'string' ? firstInv : firstInv?.id;
+            if (invId) {
+              const inv = await stripe.invoices.retrieve(invId);
+              console.log(`  First invoice ${invId} for sub ${createdSub.id}: status=${inv.status}, paid=${inv.paid}, amount_paid=${inv.amount_paid}`);
+            }
+          } catch (invLogErr) {
+            console.warn('Could not retrieve first service invoice for logging', invLogErr);
+          }
         } catch (subErr: any) {
           const msg = (subErr?.message || '').toLowerCase();
           if (msg.includes('default payment') || msg.includes('no attached') || msg.includes('payment source')) {
@@ -228,6 +258,8 @@ export async function POST(request: NextRequest) {
               const serviceProduct2 = await stripe.products.create({ name: s.name });
               const subParams2: any = {
                 customer: session.customer as string,
+                collection_method: 'charge_automatically',
+                trial_end: Math.floor(Date.now() / 1000) + 32 * 24 * 3600, // recurring starts ~1 month after initial hardware payment
                 items: [{
                   price_data: {
                     currency: 'eur',
@@ -239,8 +271,19 @@ export async function POST(request: NextRequest) {
                 metadata: { order_session: orderId, service: s.name },
               };
               if (defaultPaymentMethod) subParams2.default_payment_method = defaultPaymentMethod;
-              await stripe.subscriptions.create(subParams2);
-              console.log(`Retry succeeded for service sub "${s.name}" on customer ${session.customer}`);
+              const retriedSub = await stripe.subscriptions.create(subParams2);
+
+              if (defaultPaymentMethod) {
+                try {
+                  await stripe.subscriptions.update(retriedSub.id, {
+                    default_payment_method: defaultPaymentMethod,
+                  });
+                } catch (reapplyErr) {
+                  console.warn(`Could not re-apply default PM to retried service sub ${retriedSub.id}`, reapplyErr);
+                }
+              }
+
+              console.log(`Retry succeeded for service sub ${retriedSub.id} "${s.name}" on customer ${session.customer}`);
             } catch (retryErr) {
               console.error('Retry also failed for service subscription', retryErr);
             }
@@ -258,6 +301,59 @@ export async function POST(request: NextRequest) {
           });
         } catch (custErr) {
           console.warn('Could not re-set default pm on customer after service subs', custErr);
+        }
+      }
+    }
+
+    // Handle pre-created lease subscription (from the new lease flow where upfront is paid separately
+    // via Checkout and the sub was created with trial_end so recurring monthly starts ~1 month later).
+    // Attach the PM collected on the upfront payment to the customer and to the lease sub.
+    if (session.customer && (metadata.is_lease_upfront || metadata.lease_subscription_id)) {
+      let defaultPaymentMethod: string | undefined;
+      const sessionPm = (session as any).payment_method as string | undefined;
+      if (sessionPm) {
+        defaultPaymentMethod = sessionPm;
+      } else if (session.payment_intent) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(
+            session.payment_intent as string,
+            { expand: ['payment_method'] }
+          );
+          const pm = (pi as any).payment_method;
+          defaultPaymentMethod = typeof pm === 'string' ? pm : pm?.id;
+        } catch (retrieveErr) {
+          console.warn('Could not expand payment_intent for lease upfront PM attach', retrieveErr);
+        }
+      }
+      if (!defaultPaymentMethod && session.customer) {
+        try {
+          const pms = await stripe.customers.listPaymentMethods(session.customer as string, { limit: 5 });
+          const recent = pms.data.find((p: any) => p.type === 'card' || p.type === 'sepa_debit');
+          defaultPaymentMethod = recent?.id;
+        } catch (listErr) {
+          console.warn('Could not list PMs for lease upfront fallback', listErr);
+        }
+      }
+
+      if (defaultPaymentMethod && session.customer) {
+        try {
+          await stripe.customers.update(session.customer as string, {
+            invoice_settings: { default_payment_method: defaultPaymentMethod },
+          });
+        } catch (custErr) {
+          console.warn('Could not set default pm on customer for lease upfront', custErr);
+        }
+      }
+
+      const leaseSubId = metadata.lease_subscription_id;
+      if (leaseSubId && defaultPaymentMethod) {
+        try {
+          await stripe.subscriptions.update(leaseSubId as string, {
+            default_payment_method: defaultPaymentMethod,
+          });
+          console.log(`Attached PM ${defaultPaymentMethod} to pre-created lease sub ${leaseSubId} (from upfront payment)`);
+        } catch (attachErr) {
+          console.warn('Failed to attach PM to pre-created lease sub', attachErr);
         }
       }
     }
@@ -295,7 +391,58 @@ export async function POST(request: NextRequest) {
     if (!subId) {
       const invMeta = (invoice as any).metadata || {};
       const invFinancing = invMeta.financing || 'full';
-      if (invFinancing === 'full') {
+      if (invFinancing === 'full' || (invFinancing === 'lease' && invMeta.is_upfront_only)) {
+        const isLeaseUpfront = invFinancing === 'lease' && invMeta.is_upfront_only;
+
+        if (isLeaseUpfront) {
+          // Create the recurring lease subscription now that the upfront has been paid.
+          // Use trial_end so the first paid monthly starts ~1 month after this payment (the "initial payment").
+          try {
+            const monthlyAmount = parseFloat(invMeta.lease_monthly_amount || '0');
+            const months = parseInt(invMeta.lease_months || '12');
+            const cancelAt = parseInt(invMeta.lease_cancel_at || '0');
+            const upfrontAmount = parseFloat(invMeta.lease_upfront_amount || '0');
+
+            if (monthlyAmount > 0 && cancelAt > 0) {
+              const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600;
+              const customerId = typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer as any)?.id;
+
+              const leaseProduct = await stripe.products.create({
+                name: 'NoCloud Appliance Lease + Services',
+                description: `Monthly lease payment (hardware amortized + services over ${months} months). Recurring starts ~1 month after payment of upfront invoice ${invoice.id}.`,
+              });
+
+              const sub = await stripe.subscriptions.create({
+                customer: customerId,
+                collection_method: 'send_invoice',
+                days_until_due: 30,
+                trial_end: trialEnd,
+                items: [{
+                  price_data: {
+                    currency: 'eur',
+                    product: leaseProduct.id,
+                    unit_amount: Math.round(monthlyAmount * 100),
+                    recurring: { interval: 'month' },
+                  },
+                }],
+                cancel_at: cancelAt,
+                metadata: {
+                  ...invMeta,
+                  is_upfront_only: undefined, // not an upfront
+                  is_recurring_lease_sub: 'true',
+                  lease_upfront_invoice_paid: invoice.id,
+                },
+              });
+
+              console.log(`Created lease recurring sub ${sub.id} on payment of upfront invoice ${invoice.id} (trial ends ~1 month after payment)`);
+            } else {
+              console.warn('Missing lease details in meta for sub creation on upfront paid', invMeta);
+            }
+          } catch (subErr) {
+            console.error('Failed to create lease sub on upfront payment', subErr);
+          }
+        }
+
         const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
         const customerEmail = invoice.customer_email || (invMeta as any).customer_email || '';
         const orderLocale = (invMeta.locale as string) || 'en';
@@ -305,12 +452,19 @@ export async function POST(request: NextRequest) {
             const subj = isFr
               ? `Paiement reçu — facture nocloud.ai #${invoice.id.slice(-8)}`
               : `Payment received — nocloud.ai invoice #${invoice.id.slice(-8)}`;
+            const body = isLeaseUpfront
+              ? (isFr
+                  ? `Merci ! Votre acompte leasing (Net 30) a été payé. Le contrat de location a été activé ; les paiements mensuels récurrents commenceront dans environ 1 mois.`
+                  : `Thank you! Your lease upfront (Net 30) has been paid. The lease subscription has been activated; recurring monthly payments will begin in approximately 1 month.`)
+              : (isFr
+                  ? 'Merci ! Votre paiement pour la facture Net 30 a été reçu.'
+                  : 'Thank you! Your Net 30 invoice payment has been received.');
             await resend.emails.send({
               from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
               to: customerEmail,
               subject: subj,
               html: `
-                <p>${isFr ? 'Merci ! Votre paiement pour la facture Net 30 a été reçu.' : 'Thank you! Your Net 30 invoice payment has been received.'}</p>
+                <p>${body}</p>
                 <p><strong>Invoice:</strong> ${invoice.id}</p>
                 <p><strong>Amount:</strong> ${invoice.amount_paid ? (invoice.amount_paid / 100).toFixed(2) : '0.00'} ${(invoice.currency || 'eur').toUpperCase()}</p>
               `,
@@ -319,15 +473,18 @@ export async function POST(request: NextRequest) {
         }
         if (process.env.ADMIN_EMAIL && resend) {
           try {
+            const subj = isLeaseUpfront
+              ? `Lease Upfront Invoice Paid (Net 30) - #${invoice.id.slice(-8)}`
+              : `B2B Invoice Paid (Net 30) - #${invoice.id.slice(-8)}`;
             await resend.emails.send({
               from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
               to: process.env.ADMIN_EMAIL,
-              subject: `B2B Invoice Paid (Net 30) - #${invoice.id.slice(-8)}`,
-              html: `<p>Net 30 invoice ${invoice.id} has been paid by ${customerEmail || 'customer'}.</p>`,
+              subject: subj,
+              html: `<p>${isLeaseUpfront ? 'Lease upfront' : 'Net 30'} invoice ${invoice.id} has been paid by ${customerEmail || 'customer'}. ${isLeaseUpfront ? 'Recurring sub created with trial.' : ''}</p>`,
             });
           } catch (e) { console.error('Failed to send admin invoice paid email', e); }
         }
-        console.log(`B2B pay-by-invoice paid: ${invoice.id}`);
+        console.log(`${isLeaseUpfront ? 'Lease upfront' : 'B2B pay-by-invoice'} paid: ${invoice.id}`);
       }
       return NextResponse.json({ received: true });
     }
