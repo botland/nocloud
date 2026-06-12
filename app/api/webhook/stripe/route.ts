@@ -310,8 +310,10 @@ export async function POST(request: NextRequest) {
             const cancelAt = parseInt(invMeta.lease_cancel_at || '0');
             const upfrontAmount = parseFloat(invMeta.lease_upfront_amount || '0');
 
-            if (hardwareMonthly > 0 && cancelAt > 0) {
-              const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600;
+            const preCreatedLeaseSub = invMeta.lease_subscription_id;
+            if (preCreatedLeaseSub) {
+              console.log(`Lease upfront invoice ${invoice.id} paid; pre-created recurring subs (e.g. ${preCreatedLeaseSub}) from hybrid setup exist (PM attach happened on setup), skipping duplicate creation on paid.`);
+            } else if (hardwareMonthly > 0 && cancelAt > 0) {
               const customerId = typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer as any)?.id;
 
               const leaseProduct = await stripe.products.create({
@@ -319,11 +321,25 @@ export async function POST(request: NextRequest) {
                 description: `Monthly lease payment for hardware amortization over ${months} months. Recurring starts ~1 month after payment of upfront invoice ${invoice.id}. (Services on separate perpetual subscriptions.)`,
               });
 
-              const sub = await stripe.subscriptions.create({
+              // Use original order time (if present) to compute trial_end for consistent
+              // "recurring starts 1 month after order time".
+              const orderTs = invMeta.order_placed_at ? parseInt(invMeta.order_placed_at, 10) : Math.floor(Date.now() / 1000);
+              const trialEnd = orderTs + 32 * 24 * 3600;
+
+              const recurringMethod = invMeta.recurring_payment_method;
+              const isAuto = recurringMethod && (recurringMethod === 'stripe' || recurringMethod === 'sepa');
+
+              let defaultPaymentMethod;
+              if (isAuto) {
+                try {
+                  const pms = await stripe.customers.listPaymentMethods(customerId, { limit: 5 });
+                  const recent = pms.data.find((p: any) => p.type === 'card' || p.type === 'sepa_debit');
+                  if (recent?.id) defaultPaymentMethod = recent.id;
+                } catch (e) {}
+              }
+
+              const leaseSubParams: any = {
                 customer: customerId,
-                collection_method: 'send_invoice',
-                days_until_due: 30,
-                trial_end: trialEnd,
                 items: [{
                   price_data: {
                     currency: 'eur',
@@ -332,19 +348,28 @@ export async function POST(request: NextRequest) {
                     recurring: { interval: 'month' },
                   },
                 }],
+                trial_end: trialEnd,
                 cancel_at: cancelAt,
                 metadata: {
                   ...invMeta,
-                  is_upfront_only: undefined, // not an upfront
+                  is_upfront_only: undefined,
                   is_recurring_lease_sub: 'true',
                   lease_upfront_invoice_paid: invoice.id,
+                  order_placed_at: orderTs.toString(),
                 },
-              });
+              };
+              if (isAuto) {
+                leaseSubParams.collection_method = 'charge_automatically';
+                if (defaultPaymentMethod) leaseSubParams.default_payment_method = defaultPaymentMethod;
+              } else {
+                leaseSubParams.collection_method = 'send_invoice';
+                leaseSubParams.days_until_due = 30;
+              }
+              const sub = await stripe.subscriptions.create(leaseSubParams);
 
               console.log(`Created lease recurring sub ${sub.id} on payment of upfront invoice ${invoice.id} (trial ends ~1 month after payment)`);
 
-              // Also create separate perpetual service subs (no cancel_at, so they continue after lease term ends).
-              // Use trial_end so they start ~1 month after this payment.
+              // Also create separate perpetual service subs.
               let servicesArray: Array<{ name: string; price: number }> = [];
               try {
                 if (invMeta.services) servicesArray = JSON.parse(invMeta.services);
@@ -353,12 +378,8 @@ export async function POST(request: NextRequest) {
               for (const s of servicesArray) {
                 try {
                   const serviceProduct = await stripe.products.create({ name: s.name });
-                  const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600;
-                  const svcSub = await stripe.subscriptions.create({
+                  const svcSubParams: any = {
                     customer: customerId,
-                    collection_method: 'send_invoice',
-                    days_until_due: 30,
-                    trial_end: trialEnd,
                     items: [{
                       price_data: {
                         currency: 'eur',
@@ -367,13 +388,24 @@ export async function POST(request: NextRequest) {
                         recurring: { interval: 'month' },
                       },
                     }],
+                    trial_end: trialEnd,
                     metadata: {
                       lease_upfront_invoice_paid: invoice.id,
                       service: s.name,
                       is_lease_service: 'true',
+                      order_placed_at: orderTs.toString(),
                     },
-                  });
-                  // Update the €0 trial draft for this service sub (disable auto finalization, good description).
+                  };
+                  if (isAuto) {
+                    svcSubParams.collection_method = 'charge_automatically';
+                    if (defaultPaymentMethod) svcSubParams.default_payment_method = defaultPaymentMethod;
+                  } else {
+                    svcSubParams.collection_method = 'send_invoice';
+                    svcSubParams.days_until_due = 30;
+                  }
+                  const svcSub = await stripe.subscriptions.create(svcSubParams);
+
+                  // For send_invoice (non-auto) case, update the €0 trial draft.
                   const latestInv = (svcSub as any).latest_invoice;
                   if (latestInv) {
                     const invId = typeof latestInv === 'string' ? latestInv : latestInv.id;
@@ -381,11 +413,14 @@ export async function POST(request: NextRequest) {
                       try {
                         const inv = typeof latestInv === 'string' || !latestInv.status ? await stripe.invoices.retrieve(invId) : latestInv;
                         if (inv.status === 'draft' || inv.status === 'open') {
-                          await stripe.invoices.update(invId, {
-                            auto_advance: false,
+                          const updateParams: any = {
                             description: `Trial period for ${s.name} (lease service subscription ${svcSub.id}). Recurring payments for this service start after trial (~1 month after upfront payment ${invoice.id}). Services continue independently after the lease term ends.`,
                             footer: 'This service subscription continues after the lease hardware payments end.',
-                          });
+                          };
+                          if (!isAuto) {
+                            updateParams.auto_advance = false;
+                          }
+                          await stripe.invoices.update(invId, updateParams);
                           console.log(`Updated trial invoice for lease service sub ${svcSub.id}`);
                         }
                       } catch (updErr) {
@@ -398,7 +433,7 @@ export async function POST(request: NextRequest) {
                   console.error('Failed to create lease service sub on upfront payment', svcErr);
                 }
               }
-            } else {
+            } else if (!preCreatedLeaseSub) {
               console.warn('Missing lease details in meta for sub creation on upfront paid', invMeta);
             }
           } catch (subErr) {

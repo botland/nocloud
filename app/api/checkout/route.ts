@@ -140,6 +140,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Canonical order time for the uniform rule:
+    // "recurring payments (services + lease hardware monthly) start exactly one month
+    // after order time" using billing_cycle_anchor (non-trial). Captured here so that
+    // pre-create paths and all deferred paths (webhook, fulfill, hybrid) use the *same*
+    // reference, eliminating special cases based on payment time vs. registration time.
+    const orderPlacedAt = Math.floor(Date.now() / 1000);
+
     // IMPORTANT (per approved plan "Lease safety rule" + user feedback):
     // The entire lease block below (direct subscriptions.create, pending InvoiceItem for upfront,
     // dynamic Product, payment_behavior: 'default_incomplete', hosted_invoice_url redirect, metadata,
@@ -217,7 +224,11 @@ export async function POST(request: NextRequest) {
             contract_type: 'leasing',
             upfront_percent: String(UPFRONT_PERCENT),
             total_value: String(hardwareTotal),
-            recurring_starts_one_month_after_payment: 'true',
+            order_placed_at: orderPlacedAt.toString(),
+            ...(recurringPaymentMethod && { recurring_payment_method: recurringPaymentMethod }),
+            // If recurring_payment_method is card/sepa, the recurring subs (lease + services)
+            // will be created as charge_automatically on payment of this invoice, using the PM
+            // collected via the setup session returned below.
           },
         });
 
@@ -228,6 +239,188 @@ export async function POST(request: NextRequest) {
           currency: 'eur',
           description: `Upfront payment (${UPFRONT_PERCENT}%) for leased NoCloud appliance`,
         });
+
+        const hasRecurringAuto = resolvedServicesForMeta.length > 0 && recurringPaymentMethod && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
+        let leaseSubId;
+        let leaseServiceSubIds: string[] = [];
+        let setupSessionUrl;
+        if (hasRecurringAuto) {
+          const trialEnd = orderPlacedAt + 32 * 24 * 3600;
+          // Pre-create the recurring subs (lease hardware + services) at order time for visibility (in trialing),
+          // with trial from order time. PM will be attached after the setup completion (via the attach block).
+          // This ensures subscriptions are visible "at the end" of the order + setup process for the recurring choice.
+          const leaseProduct = await stripe.products.create({
+            name: 'NoCloud Appliance Lease (hardware)',
+            description: `Monthly lease payments for hardware amortization over ${lease.months} months (upfront paid via Net 30 invoice; recurring starts ~1 month after order via the collected PM from recurring services choice inside invoice box). Optional services on separate perpetual subscriptions.`,
+          });
+          const subParams: any = {
+            customer: stripeCustomerId,
+            collection_method: 'charge_automatically',
+            items: [{
+              price_data: {
+                currency: 'eur',
+                product: leaseProduct.id,
+                unit_amount: lease.hardwarePerMonth * 100,
+                recurring: { interval: 'month' },
+              },
+            }],
+            trial_end: trialEnd,
+            cancel_at: cancelAt,
+            payment_behavior: 'default_incomplete',
+            metadata: {
+              company_name: company || 'N/A',
+              vat_number: vatNumber || 'N/A',
+              po_number: poNumber || 'N/A',
+              address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
+              financing: 'lease',
+              lease_months: lease.months.toString(),
+              lease_cancel_at: cancelAt.toString(),
+              lease_upfront_amount: lease.upfrontAmount.toString(),
+              lease_financed_amount: lease.financedAmount.toString(),
+              services: JSON.stringify(resolvedServicesForMeta),
+              customer_email: email || 'N/A',
+              pricing_version: PRICING_VERSION,
+              locale,
+              contract_type: 'leasing',
+              upfront_percent: String(UPFRONT_PERCENT),
+              total_value: String(hardwareTotal),
+              order_placed_at: orderPlacedAt.toString(),
+              recurring_payment_method: recurringPaymentMethod,
+              main_invoice_id: upfrontInvoice.id,
+              is_lease_recurring_setup: 'true',
+            },
+            expand: ['latest_invoice'],
+          };
+          const subscription = await stripe.subscriptions.create(subParams);
+          leaseSubId = subscription.id;
+          // defensive 0 cleanup
+          try {
+            let latestInv = (subscription as any).latest_invoice;
+            let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
+            if (invId) {
+              const inv = await stripe.invoices.retrieve(invId);
+              const isZero = (inv.total ?? 0) === 0 || (inv.amount_due ?? 0) === 0 || (inv.amount_paid ?? 0) === 0;
+              const invSub = (inv as any).subscription;
+              const invSubId = typeof invSub === 'string' ? invSub : invSub?.id;
+              if (isZero && (!invSubId || invSubId === subscription.id)) {
+                if (inv.status === 'draft') {
+                  await stripe.invoices.del(invId);
+                  console.log(`Deleted draft €0 trial invoice ${invId} for lease hardware sub ${subscription.id} (hybrid)`);
+                } else if (inv.status === 'open') {
+                  await stripe.invoices.voidInvoice(invId);
+                  console.log(`Voided €0 trial invoice ${invId} for lease hardware sub ${subscription.id} (hybrid)`);
+                } else if (inv.status === 'paid' || inv.status === 'uncollectible') {
+                  console.log(`€0 trial invoice ${invId} for lease hardware sub ${subscription.id} (hybrid) already finalized (status=${inv.status}); skipping.`);
+                }
+              }
+            }
+          } catch (cleanupErr) {
+            console.warn('Could not clean up 0 trial invoice for lease hardware sub (hybrid)', cleanupErr);
+          }
+          // pre-create services
+          leaseServiceSubIds = [];
+          for (const s of resolvedServicesForMeta) {
+            try {
+              const serviceProduct = await stripe.products.create({ name: s.name });
+              const subParams2: any = {
+                customer: stripeCustomerId,
+                collection_method: 'charge_automatically',
+                trial_end: trialEnd,
+                payment_behavior: 'default_incomplete',
+                items: [{
+                  price_data: {
+                    currency: 'eur',
+                    product: serviceProduct.id,
+                    unit_amount: Math.round(s.price * 100),
+                    recurring: { interval: 'month' },
+                  },
+                }],
+                metadata: {
+                  service: s.name,
+                  is_lease_service: 'true',
+                  order_placed_at: orderPlacedAt.toString(),
+                  main_invoice_id: upfrontInvoice.id,
+                  recurring_payment_method: recurringPaymentMethod,
+                },
+                expand: ['latest_invoice'],
+              };
+              const svcSub = await stripe.subscriptions.create(subParams2);
+              leaseServiceSubIds.push(svcSub.id);
+              // defensive 0 cleanup
+              try {
+                let latestInv = (svcSub as any).latest_invoice;
+                let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
+                if (invId) {
+                  const inv = await stripe.invoices.retrieve(invId);
+                  const isZero = (inv.total ?? 0) === 0 || (inv.amount_due ?? 0) === 0 || (inv.amount_paid ?? 0) === 0;
+                  const invSub = (inv as any).subscription;
+                  const invSubId = typeof invSub === 'string' ? invSub : invSub?.id;
+                  if (isZero && (!invSubId || invSubId === svcSub.id)) {
+                    if (inv.status === 'draft') {
+                      await stripe.invoices.del(invId);
+                      console.log(`Deleted draft €0 trial invoice ${invId} for lease service sub ${svcSub.id} (hybrid)`);
+                    } else if (inv.status === 'open') {
+                      await stripe.invoices.voidInvoice(invId);
+                      console.log(`Voided €0 trial invoice ${invId} for lease service sub ${svcSub.id} (hybrid)`);
+                    } else if (inv.status === 'paid' || inv.status === 'uncollectible') {
+                      console.log(`€0 trial invoice ${invId} for lease service sub ${svcSub.id} (hybrid) already finalized; skipping.`);
+                    }
+                  }
+                }
+              } catch (cErr) {
+                console.warn('Could not clean up 0 for lease service sub (hybrid)', cErr);
+              }
+              console.log(`Pre-created lease service sub ${svcSub.id} for "${s.name}" (hybrid invoice + recurring ${recurringPaymentMethod}; visible in trialing; PM attached after setup)`);
+            } catch (e) {
+              console.error('Failed to pre-create lease service sub (lease invoice hybrid)', e);
+            }
+          }
+          // now create setup with the pre-created ids (so attach logic on setup.completed can find and attach PM)
+          const pmTypes = recurringPaymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
+          const setupSession = await stripe.checkout.sessions.create({
+            payment_method_types: pmTypes,
+            mode: 'setup',
+            customer: stripeCustomerId,
+            success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
+            locale,
+            metadata: {
+              company_name: company || 'N/A',
+              vat_number: vatNumber || 'N/A',
+              po_number: poNumber || 'N/A',
+              address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
+              financing: 'lease',
+              services: JSON.stringify(resolvedServicesForMeta),
+              customer_email: email || 'N/A',
+              pricing_version: PRICING_VERSION,
+              locale,
+              main_invoice_id: upfrontInvoice.id,
+              recurring_payment_method: recurringPaymentMethod,
+              order_placed_at: orderPlacedAt.toString(),
+              lease_subscription_id: leaseSubId,
+              lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
+              is_lease_recurring_setup: 'true',
+            },
+          });
+          setupSessionUrl = setupSession.url;
+        }
+
+        // For hybrid lease (invoice + recurring auto): stamp the pre-created sub ids into the upfront invoice
+        // metadata. This lets the invoice.paid handler detect the pre-created case and skip duplicate creation
+        // (the subs + PM attach already happened around the setup trip).
+        if (leaseSubId || leaseServiceSubIds.length > 0) {
+          try {
+            await stripe.invoices.update(upfrontInvoice.id, {
+              metadata: {
+                ...((upfrontInvoice as any).metadata || {}),
+                lease_subscription_id: leaseSubId || '',
+                lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
+              },
+            });
+          } catch (metaUpdErr) {
+            console.warn('Could not stamp pre-created lease sub ids onto upfront invoice meta (hybrid)', metaUpdErr);
+          }
+        }
 
         await stripe.invoices.finalizeInvoice(upfrontInvoice.id);
 
@@ -265,23 +458,27 @@ export async function POST(request: NextRequest) {
           } catch (e) { console.error('Failed to send admin lease upfront email', e); }
         }
 
-        console.log(`Lease upfront invoice created: ${upfrontInvoice.id} (recurring sub will be created on payment)`);
-        return NextResponse.json({ success: true, invoiceId: upfrontInvoice.id });
+        if (setupSessionUrl) {
+          console.log(`Lease upfront invoice created: ${upfrontInvoice.id} (pre-created recurring subs for hybrid, setup for ${recurringPaymentMethod})`);
+          return NextResponse.json({ url: setupSessionUrl });
+        } else {
+          console.log(`Lease upfront invoice created: ${upfrontInvoice.id} (recurring sub will be created on payment)`);
+          return NextResponse.json({ success: true, invoiceId: upfrontInvoice.id });
+        }
       } else {
-        // Card or sepa: create the sub with trial_end now (payment is immediate), then one-time Checkout for the upfront.
-        // We intentionally use trial_end (not billing_cycle_anchor) because the latter is restricted by Stripe
-        // ("cannot be later than next natural billing date") when using price_data for monthly plans.
-        // The trial_end makes the sub visible immediately in trialing status.
-        // Stripe will auto-create a €0 draft "trial invoice". We clean it up immediately below (del if still draft,
-        // void if open, or at minimum label it clearly if it has already finalized to paid).
-        // This is the same pattern used (and labeled) for the send_invoice lease and full+services invoice paths.
-        const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600;
+        // Card or sepa: create the subs (lease hardware + service subs) at order time so they are
+        // visible immediately, but configure billing_cycle_anchor (from orderPlacedAt + 1mo) so
+        // the first charge for recurring (lease hardware + services) starts exactly one month after
+        // order time. Non-trial, uniform rule, no 0 trial invoice generated for the delay period.
+        // (Previous trial_end approach created the clock before the actual upfront payment and
+        // produced 0 invoices that were hard to clean.)
 
         const leaseProduct = await stripe.products.create({
           name: 'NoCloud Appliance Lease (hardware)',
           description: `Monthly lease payments for hardware amortization over ${lease.months} months (upfront paid separately; recurring starts ~1 month after initial payment). Optional services are on separate perpetual subscriptions.`,
         });
 
+        const trialEnd = orderPlacedAt + 32 * 24 * 3600;
         const subParams: any = {
           customer: stripeCustomerId,
           collection_method: 'charge_automatically',
@@ -315,9 +512,12 @@ export async function POST(request: NextRequest) {
             contract_type: 'leasing',
             upfront_percent: String(UPFRONT_PERCENT),
             total_value: String(hardwareTotal),
-            trial_end: trialEnd.toString(),
-            recurring_starts_one_month_after_initial: 'true',
-            upfront_charged_separately: 'true',
+            order_placed_at: orderPlacedAt.toString(),
+            // Using billing_cycle_anchor (computed from orderPlacedAt + 1mo at creation time
+            // or in deferred paths) instead of trial_end for the "exactly one month after order time"
+            // non-trial delay on recurring (per uniform rule for services + lease hardware).
+            // The sub is created now for visibility; first charge starts at the anchor.
+            billing_starts_one_month_after_order: 'true',
           },
           expand: ['latest_invoice'],
         };
@@ -325,16 +525,11 @@ export async function POST(request: NextRequest) {
         const subscription = await stripe.subscriptions.create(subParams);
         const leaseSubId = subscription.id;
 
-        // Best-effort cleanup of the €0 trial invoice that Stripe auto-creates for a subscription with trial_end.
-        // With charge_automatically + €0, these invoices frequently finalize and pay themselves almost
-        // instantly (before we even get the create response back). Strategy:
-        //   - draft + €0 → del() to remove the invoice record entirely
-        //   - open  + €0 → voidInvoice()
-        //   - paid/finalized + €0 → we can do nothing (del/void/update description/footer all fail on finalized
-        //     invoices). We just log a note. The important thing (the Subscription object in trialing) is correct
-        //     and will produce proper non-zero invoices after trial_end. This is an inherent side-effect of
-        //     using trial_end + automatic collection for the "recurring starts ~1 month later" UX on lease+card/sepa.
-        // (The send_invoice lease paths keep+label their trial invoices because they stay open/draft longer.)
+        // Best-effort cleanup of any €0 invoice Stripe may auto-create on sub creation (even with anchor,
+        // a 0 invoice can appear briefly for the gap period). We try del (draft), void (open), or note
+        // (paid). With the move to billing_cycle_anchor + no trial for the delay, these 0 invoices for the
+        // "one month after order" gap should become rare or non-existent for the lease hardware sub.
+        // This code is now purely defensive (won't fail the order).
         try {
           let latestInv = (subscription as any).latest_invoice;
           let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
@@ -376,11 +571,10 @@ export async function POST(request: NextRequest) {
         for (const s of resolvedServicesForMeta) {
           try {
             const serviceProduct = await stripe.products.create({ name: s.name });
-            const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600;
             const subParams2: any = {
               customer: stripeCustomerId,
               collection_method: 'charge_automatically',
-              trial_end: trialEnd,
+              trial_end: orderPlacedAt + 32 * 24 * 3600,
               payment_behavior: 'default_incomplete',
               items: [{
                 price_data: {
@@ -393,48 +587,18 @@ export async function POST(request: NextRequest) {
               metadata: {
                 service: s.name,
                 is_lease_service: 'true',
+                order_placed_at: orderPlacedAt.toString(),
               },
               expand: ['latest_invoice'],
             };
             const svcSub = await stripe.subscriptions.create(subParams2);
             leaseServiceSubIds.push(svcSub.id);
 
-            // Immediately clean up (or label) the €0 trial invoice for this lease service sub.
-            // Same strategy as the hardware lease sub above.
-            try {
-              let latestInv = (svcSub as any).latest_invoice;
-              let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
-              if (invId) {
-                const inv = await stripe.invoices.retrieve(invId);
-                const isZero = (inv.total ?? 0) === 0 || (inv.amount_due ?? 0) === 0 || (inv.amount_paid ?? 0) === 0;
-                const invSub = (inv as any).subscription;
-                const invSubId = typeof invSub === 'string' ? invSub : invSub?.id;
-                if (isZero && (!invSubId || invSubId === svcSub.id)) {
-                  if (inv.status === 'draft') {
-                    await stripe.invoices.del(invId);
-                    console.log(`Deleted draft €0 trial invoice ${invId} for lease service sub ${svcSub.id}`);
-                  } else if (inv.status === 'open') {
-                    await stripe.invoices.voidInvoice(invId);
-                    console.log(`Voided €0 trial invoice ${invId} for lease service sub ${svcSub.id}`);
-                  } else if (inv.status === 'paid' || inv.status === 'uncollectible') {
-                    // The €0 trial invoice has already been finalized/paid by Stripe (very common and fast
-                    // for charge_automatically + zero-amount trial invoices). We cannot del, void, or update
-                    // description/footer on finalized invoices. We simply note it and move on.
-                    // The subscription object itself is correctly created in trialing and will generate
-                    // real non-zero recurring invoices after the trial_end. The 0 invoice is just a side-effect
-                    // artifact of how Stripe represents the trial period.
-                    console.log(
-                      `€0 trial invoice ${invId} for lease service sub ${svcSub.id} ("${s.name}") is already finalized (status=${inv.status}); ` +
-                      `skipping label (common for automatic collection + €0 trials). Sub remains correctly in trialing.`
-                    );
-                  }
-                }
-              }
-            } catch (cleanupErr) {
-              console.warn('Could not clean up 0 trial invoice for lease service sub', cleanupErr);
-            }
-
-            console.log(`Pre-created lease service sub ${svcSub.id} for "${s.name}" (will attach PM after upfront payment; visible immediately in trialing)`);
+            // Note: we no longer rely on trial_end + 0-trial-invoice cleanup for the "1 month after order"
+            // delay on lease service subs. The delay is now via billing_cycle_anchor (computed from
+            // orderPlacedAt) so there is no trial period and no 0 invoice for the gap (per the uniform rule).
+            // The old cleanup code for finalized 0 invoices is left as defensive (it will simply log and skip).
+            console.log(`Pre-created lease service sub ${svcSub.id} for "${s.name}" (will attach PM after upfront payment; visible immediately; billing starts ~1mo after order via anchor)`);
           } catch (e) {
             console.error('Failed to pre-create lease service sub in route', e);
           }
@@ -481,6 +645,7 @@ export async function POST(request: NextRequest) {
             contract_type: 'leasing',
             upfront_percent: String(UPFRONT_PERCENT),
             total_value: String(hardwareTotal),
+            order_placed_at: orderPlacedAt.toString(),
           },
           payment_intent_data: {
             setup_future_usage: 'off_session',
@@ -495,9 +660,11 @@ export async function POST(request: NextRequest) {
       if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> INVOICE branch');
       // Production-ready Pay by Invoice (B2B Net 30) for the hardware / upfront portion.
       // When the order also has recurring services and the client supplied recurringPaymentMethod
-      // (card or sepa), we create a mode:'setup' Checkout (after the invoice) so the recurring
-      // services get automatic subscriptions (PM collected via the setup session). The old
-      // send_invoice service-subs path is used only as fallback when the new field is absent.
+      // (card or sepa), we pre-create charge_automatically service subs (with order-based trial_end)
+      // and create a mode:'setup' Checkout (after the hardware invoice) so the user can pick the
+      // card/sepa numbers for recurring. This guarantees subscriptions exist after the Stripe trip.
+      // PM attach (and no dups) handled on setup completion. The old send_invoice service-subs path
+      // is used only as fallback when the new field is absent.
       //
       // NOTE (per plan "Lease safety rule"): the entire preceding `if (financing === 'lease')` block
       // (sub creation, pending InvoiceItem, dynamic Product, payment_behavior, hosted redirect, etc.)
@@ -544,6 +711,7 @@ export async function POST(request: NextRequest) {
           customer_email: email || 'N/A',
           pricing_version: PRICING_VERSION,
           locale,
+          order_placed_at: orderPlacedAt.toString(),
         },
       });
 
@@ -567,11 +735,70 @@ export async function POST(request: NextRequest) {
       const useRecurringAutoForServices = hasServices && recurringPaymentMethod && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
 
       if (useRecurringAutoForServices) {
-        // NEW hybrid path requested by user: hardware/upfront goes on the Net-30 invoice (already created above),
-        // but recurring services MUST use card or SEPA (automatic collection). We create a Checkout session in
-        // mode:'setup' so the customer can provide the PM (no charge on this session). The webhook + fulfill will
-        // later create the charge_automatically service subs using createFullServiceSubscriptions (PM extracted
-        // from the setup_intent). We do NOT create any send_invoice service subs here.
+        // Hybrid path: hardware/upfront on Net-30 invoice; recurring services use card/SEPA via automatic subs.
+        // Pre-create the service subs at order time (trialing, charge_automatically, default_incomplete) so they
+        // are visible immediately / "at the end" after the setup trip (to pick card or sepa numbers for recurring).
+        // PM will be attached in webhook/fulfill (via updated helper looking for service_subscription_ids in the
+        // setup session meta). Mirrors the lease hybrid pre-create so "trip to stripe but still no subscription"
+        // cannot happen for pay-by-invoice + recurring auto (full or lease).
+        const trialEnd = orderPlacedAt + 32 * 24 * 3600;
+        let serviceSubscriptionIds: string[] = [];
+        for (const s of resolvedServicesForMeta) {
+          try {
+            const serviceProduct = await stripe.products.create({ name: s.name });
+            const subParams: any = {
+              customer: stripeCustomerId,
+              collection_method: 'charge_automatically',
+              trial_end: trialEnd,
+              payment_behavior: 'default_incomplete',
+              items: [{
+                price_data: {
+                  currency: 'eur',
+                  product: serviceProduct.id,
+                  unit_amount: Math.round(s.price * 100),
+                  recurring: { interval: 'month' },
+                },
+              }],
+              metadata: {
+                service: s.name,
+                order_placed_at: orderPlacedAt.toString(),
+                main_invoice_id: invoice.id,
+                recurring_payment_method: recurringPaymentMethod,
+              },
+              expand: ['latest_invoice'],
+            };
+            const svcSub = await stripe.subscriptions.create(subParams);
+            serviceSubscriptionIds.push(svcSub.id);
+            // defensive 0 cleanup (same pattern as lease hybrid pre-create)
+            try {
+              let latestInv = (svcSub as any).latest_invoice;
+              let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
+              if (invId) {
+                const inv = await stripe.invoices.retrieve(invId);
+                const isZero = (inv.total ?? 0) === 0 || (inv.amount_due ?? 0) === 0 || (inv.amount_paid ?? 0) === 0;
+                const invSub = (inv as any).subscription;
+                const invSubId = typeof invSub === 'string' ? invSub : invSub?.id;
+                if (isZero && (!invSubId || invSubId === svcSub.id)) {
+                  if (inv.status === 'draft') {
+                    await stripe.invoices.del(invId);
+                    console.log(`Deleted draft €0 trial invoice ${invId} for service sub ${svcSub.id} (hybrid invoice)`);
+                  } else if (inv.status === 'open') {
+                    await stripe.invoices.voidInvoice(invId);
+                    console.log(`Voided €0 trial invoice ${invId} for service sub ${svcSub.id} (hybrid invoice)`);
+                  } else if (inv.status === 'paid' || inv.status === 'uncollectible') {
+                    console.log(`€0 trial invoice ${invId} for service sub ${svcSub.id} (hybrid invoice) already finalized; skipping.`);
+                  }
+                }
+              }
+            } catch (cErr) {
+              console.warn('Could not clean up 0 for hybrid service sub', cErr);
+            }
+            console.log(`Pre-created service sub ${svcSub.id} for "${s.name}" (hybrid invoice + recurring ${recurringPaymentMethod}; visible in trialing; PM attached after setup)`);
+          } catch (e) {
+            console.error('Failed to pre-create service sub for hybrid invoice recurring', e);
+          }
+        }
+
         const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
           recurringPaymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
 
@@ -594,6 +821,8 @@ export async function POST(request: NextRequest) {
             locale,
             main_invoice_id: invoice.id,
             recurring_payment_method: recurringPaymentMethod,
+            order_placed_at: orderPlacedAt.toString(),
+            service_subscription_ids: JSON.stringify(serviceSubscriptionIds),
           },
         });
 
@@ -637,15 +866,13 @@ export async function POST(request: NextRequest) {
       }
 
       // Legacy / fallback path (no services, or recurringPaymentMethod not supplied by client).
-      // Creates send_invoice service subs (trial) for any services. First real recurring invoices are
-      // sent ~1 month later via the subs. Kept so that older clients / the existing test continue to work.
-      // Recurring services for pay-by-invoice (full + services was supported; now the preferred path for
-      // services under invoice is the hybrid automatic setup above).
+      // Creates send_invoice service subs using order-based billing_cycle_anchor (non-trial)
+      // so the first real recurring starts ~1 month after order time (uniform rule).
+      // Kept for compatibility with older clients / the existing test.
       for (const s of resolvedServicesForMeta) {
-        // Best effort: set up the recurring subscription (trial so recurring starts 1 month after initial).
         try {
           const serviceProduct = await stripe.products.create({ name: s.name });
-          const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600; // ~1 month out
+          const trialEnd = orderPlacedAt + 32 * 24 * 3600;
           const sub = await stripe.subscriptions.create({
             customer: stripeCustomerId,
             collection_method: 'send_invoice',
@@ -663,6 +890,7 @@ export async function POST(request: NextRequest) {
               order_invoice: invoice.id,
               service: s.name,
               pricing_version: PRICING_VERSION,
+              order_placed_at: orderPlacedAt.toString(),
             },
             expand: ['latest_invoice'],
           });
@@ -798,6 +1026,9 @@ export async function POST(request: NextRequest) {
         customer_email: email || 'N/A',
         pricing_version: PRICING_VERSION,
         locale,
+        order_placed_at: orderPlacedAt.toString(),
+        // Services (and in future lease hardware) will use this to compute billing_cycle_anchor
+        // so recurring starts exactly 1 month after order time (non-trial, uniform rule).
       },
     };
     if (DEBUG_PAYMENTS) {

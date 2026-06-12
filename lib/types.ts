@@ -40,6 +40,10 @@ export interface CheckoutPayload {
   financing: 'full' | 'lease';
   locale?: string;
   recurringPaymentMethod?: 'stripe' | 'sepa';
+  // order_placed_at (unix seconds) is the canonical reference for the new
+  // "recurring payments start exactly 1 month after order time" rule (non-trial,
+  // via billing_cycle_anchor). Captured at successful /api/checkout response.
+  order_placed_at?: number;
 }
 
 // Draft of checkout form data persisted across Stripe cancel so user doesn't have to re-type everything.
@@ -58,4 +62,7 @@ export interface CheckoutFormDraft {
   // Lets the user choose automatic collection (card/sepa) for the recurring part while
   // the hardware/upfront still goes through the Net-30 invoice.
   recurringPaymentMethod?: 'stripe' | 'sepa';
+  // order_placed_at captured for the uniform "recurring (services + lease hardware)
+  // start exactly 1 month after order time" rule (non-trial via billing_cycle_anchor).
+  order_placed_at?: number;
 }

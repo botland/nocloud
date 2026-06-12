@@ -227,7 +227,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(subjects.some((s: string) => s.includes('nocloud.ai order'))).toBe(true)
   })
 
-  it('full + invoice (with services) + recurring card (hybrid): returns url (setup), creates main invoice (hardware only) + Resend, does NOT create service send-subs in route (they are created later via webhook/fulfill from the setup session)', async () => {
+  it('full + invoice (with services) + recurring card (hybrid): returns url (setup), creates main invoice (hardware only) + Resend, pre-creates charge_automatically service subs in route (for visibility after setup trip; PM attached later), no send_invoice service subs', async () => {
     const payload = withServices(basePayload({ paymentMethod: 'invoice', financing: 'full' }))
     // Explicitly request automatic (card) for the recurring services while the hardware stays on Net-30 invoice.
     ;(payload as any).recurringPaymentMethod = 'stripe'
@@ -248,9 +248,11 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     )
     expect(mockStripeInstance.invoiceItems.create).toHaveBeenCalled() // at least the hardware line
 
-    // In the hybrid path we do NOT create the send_invoice service subs in the route
-    // (the legacy path would have done subscriptions.create with collection_method send_invoice for services).
-    // The service subs will be created later (automatic) from the setup session via createFullServiceSubscriptions.
+    // In the hybrid path we pre-create charge_automatically service subs (with trial from order time)
+    // right in the route before returning the setup url. This guarantees subscriptions exist
+    // "at the end" of the trip to Stripe (to pick card/sepa numbers). The helper on setup.completed
+    // (webhook or fulfill) will attach the PM rather than create.
+    // We still must not create any legacy send_invoice service subs here.
     const subCreates = mockStripeInstance.subscriptions.create.mock.calls || []
     const anySendServiceSub = subCreates.some((c: any[]) => {
       const arg = c[0] || {}
@@ -258,7 +260,17 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     })
     expect(anySendServiceSub).toBe(false)
 
-    // A setup session was created for the recurring PM
+    // Pre-created (charge auto + trial) service subs should have been created for the hybrid
+    const anyChargeServicePreCreate = subCreates.some((c: any[]) => {
+      const arg = c[0] || {}
+      return arg.collection_method === 'charge_automatically' &&
+             arg.payment_behavior === 'default_incomplete' &&
+             arg.trial_end &&
+             arg.items && arg.items.some((it: any) => it.price_data && it.price_data.recurring)
+    })
+    expect(anyChargeServicePreCreate).toBe(true)
+
+    // A setup session was created for the recurring PM, with pre-created ids for attach
     const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls.find((c: any[]) => (c[0] || {}).mode === 'setup')
     expect(sessionCall).toBeTruthy()
     const setupArg = sessionCall[0]
@@ -270,6 +282,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     })
     expect(setupArg.metadata.services).toBeTruthy()
     expect(setupArg.metadata.main_invoice_id).toBeTruthy()
+    expect(setupArg.metadata.service_subscription_ids).toBeTruthy()
 
     // Invoice registered emails still sent (2)
     expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)

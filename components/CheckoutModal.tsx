@@ -119,11 +119,14 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
         financing,
         locale,
       };
-      // Only include the sub-choice when the main payment is invoice AND services are present.
-      // Server will use it to decide between a pure send_invoice path (no services) vs. the hybrid
-      // path (hardware on Net-30 invoice + mode:'setup' Checkout to collect the PM for automatic service subs).
       if (paymentMethod === 'invoice' && servicesMonthly > 0) {
         payload.recurringPaymentMethod = recurringPaymentMethod;
+      }
+      // Include order_placed_at if known from draft (server captures the authoritative value
+      // at the successful response for the "recurring starts exactly 1 month after order time"
+      // rule using billing_cycle_anchor). This helps keep the value stable across cancels/retries.
+      if (initialData?.order_placed_at) {
+        payload.order_placed_at = initialData.order_placed_at;
       }
 
       const res = await fetch('/api/checkout', {

@@ -124,6 +124,38 @@ export async function createFullServiceSubscriptions(
     }
   }
 
+  // For the uniform "recurring starts exactly 1 month after order time" rule,
+  // we set trial_end based on the order_placed_at from metadata (if present).
+  // This achieves the delayed start for full+card/sepa services and hybrid recurring,
+  // using the order time rather than creation time (no special cases).
+  // trial_end is the reliable way to delay first charge by ~1mo for monthly subs.
+  const meta = (completedSession as any).metadata || {};
+  const orderTs = meta.order_placed_at ? parseInt(meta.order_placed_at, 10) : null;
+  const servicesTrialEnd = orderTs ? orderTs + 32 * 24 * 3600 : null;
+
+  // Support for hybrid "pay by invoice (hardware) + recurring services by card/sepa (setup)" path:
+  // The service subs are now pre-created in the checkout route (for visibility right after order,
+  // before/during the setup trip to collect the PM "numbers"). On setup completion (webhook or fulfill),
+  // we attach the collected PM instead of creating new subs.
+  const preSubIdsStr = meta.service_subscription_ids || meta.serviceSubscriptionIds;
+  if (preSubIdsStr) {
+    let preIds: string[] = [];
+    try { preIds = JSON.parse(preSubIdsStr); } catch {}
+    for (const preId of preIds) {
+      if (defaultPaymentMethod) {
+        try {
+          await stripe.subscriptions.update(preId, {
+            default_payment_method: defaultPaymentMethod,
+          });
+          console.log(`Attached PM to pre-created service sub ${preId} (hybrid invoice + recurring auto via setup)`);
+        } catch (attachErr) {
+          console.warn('Failed to attach PM to pre-created hybrid service sub', preId, attachErr);
+        }
+      }
+    }
+    return;
+  }
+
   for (const svc of servicesArray) {
     try {
       const serviceProduct = await stripe.products.create({
@@ -144,8 +176,12 @@ export async function createFullServiceSubscriptions(
         metadata: {
           order_session: orderId,
           service: svc.name,
+          ...(orderTs && { order_placed_at: orderTs.toString() }),
         },
       };
+      if (servicesTrialEnd) {
+        subParams.trial_end = servicesTrialEnd;
+      }
       if (defaultPaymentMethod) {
         subParams.default_payment_method = defaultPaymentMethod;
       } else {
@@ -153,7 +189,7 @@ export async function createFullServiceSubscriptions(
       }
 
       if (DEBUG_PAYMENTS) {
-        console.log('[PAYMENT DEBUG] (fulfill) creating service sub for', svc.name, 'hasDefaultPM=', !!subParams.default_payment_method, 'hasPaymentBehavior=', !!subParams.payment_behavior);
+        console.log('[PAYMENT DEBUG] (fulfill) creating service sub for', svc.name, 'hasDefaultPM=', !!subParams.default_payment_method, 'hasPaymentBehavior=', !!subParams.payment_behavior, 'hasTrial=', !!servicesTrialEnd);
       }
 
       const createdSub = await stripe.subscriptions.create(subParams);
@@ -205,8 +241,11 @@ export async function createFullServiceSubscriptions(
                 recurring: { interval: 'month' },
               } as any,
             }],
-            metadata: { order_session: orderId, service: svc.name },
+            metadata: { order_session: orderId, service: svc.name, ...(orderTs && { order_placed_at: orderTs.toString() }) },
           };
+          if (servicesTrialEnd) {
+            subParams2.trial_end = servicesTrialEnd;
+          }
           if (defaultPaymentMethod) {
             subParams2.default_payment_method = defaultPaymentMethod;
           } else {
