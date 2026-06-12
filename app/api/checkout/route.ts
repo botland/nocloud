@@ -6,6 +6,7 @@ import { sendRegisteredInvoiceCustomerEmail, sendAdminInvoiceRegisteredEmail } f
 import { buildPaymentContext, validatePaymentEligibility } from '@/lib/payment-flow';
 import { cleanupZeroTrialInvoice } from '@/lib/stripe-invoices';
 import { buildOrderMetadata } from '@/lib/stripe-metadata';
+import { createMonthlyRecurringPriceDataItem } from '@/lib/stripe-subscriptions';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -314,20 +315,13 @@ export async function POST(request: NextRequest) {
           leaseServiceSubIds = [];
           for (const s of resolvedServicesForMeta) {
             try {
-              const serviceProduct = await stripe.products.create({ name: s.name });
+              const item = await createMonthlyRecurringPriceDataItem(stripe, s.name, s.price);
               const subParams2: any = {
                 customer: stripeCustomerId,
                 collection_method: 'charge_automatically',
                 trial_end: trialEnd,
                 payment_behavior: 'default_incomplete',
-                items: [{
-                  price_data: {
-                    currency: 'eur',
-                    product: serviceProduct.id,
-                    unit_amount: Math.round(s.price * 100),
-                    recurring: { interval: 'month' },
-                  },
-                }],
+                items: [item],
                 metadata: {
                   service: s.name,
                   is_lease_service: 'true',

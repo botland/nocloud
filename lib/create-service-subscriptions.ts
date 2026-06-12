@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { DEBUG_PAYMENTS } from './pricing';
 import { extractPaymentMethodFromSession, setDefaultPaymentMethodOnCustomerAndSubs } from './stripe-pm';
+import { createMonthlyRecurringPriceDataItem } from './stripe-subscriptions';
 
 /**
  * Shared helper to create the monthly service subscriptions for a completed
@@ -96,21 +97,12 @@ export async function createFullServiceSubscriptions(
 
   for (const svc of servicesArray) {
     try {
-      const serviceProduct = await stripe.products.create({
-        name: svc.name,
-      });
+      const item = await createMonthlyRecurringPriceDataItem(stripe, svc.name, svc.price);
 
       const subParams: any = {
         customer: customerId,
         collection_method: 'charge_automatically',
-        items: [{
-          price_data: {
-            currency: 'eur',
-            product: serviceProduct.id,
-            unit_amount: Math.round(svc.price * 100),
-            recurring: { interval: 'month' },
-          } as any,
-        }],
+        items: [item],
         metadata: {
           order_session: orderId,
           service: svc.name,
@@ -167,18 +159,11 @@ export async function createFullServiceSubscriptions(
           } catch {}
         }
         try {
-          const serviceProduct2 = await stripe.products.create({ name: svc.name });
+          const item2 = await createMonthlyRecurringPriceDataItem(stripe, svc.name, svc.price);
           const subParams2: any = {
             customer: customerId,
             collection_method: 'charge_automatically',
-            items: [{
-              price_data: {
-                currency: 'eur',
-                product: serviceProduct2.id,
-                unit_amount: Math.round(svc.price * 100),
-                recurring: { interval: 'month' },
-              } as any,
-            }],
+            items: [item2],
             metadata: { order_session: orderId, service: svc.name, ...(orderTs && { order_placed_at: orderTs.toString() }) },
           };
           if (servicesTrialEnd) {
