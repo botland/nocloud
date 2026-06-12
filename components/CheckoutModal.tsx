@@ -405,39 +405,44 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                       The backend will create the Net-30 invoice for hardware and a mode:'setup' Checkout for the
                       recurring PM so that service subs are automatic (charge_automatically) instead of send_invoice. */}
                   {servicesMonthly > 0 && paymentMethod === 'invoice' && (
-                    <div className="mt-3 pl-4 border-l-2 border-slate-600 space-y-2">
-                      <div className="text-xs font-medium text-slate-300">{t('recurringPaymentForServices')}</div>
-                      <label className="flex items-center gap-x-2 text-sm cursor-pointer">
-                        <input
-                          type="radio"
-                          name="recurringPayment"
-                          value="stripe"
-                          checked={recurringPaymentMethod === 'stripe'}
-                          onChange={() => setRecurringPaymentMethodWithDraft('stripe')}
-                          className="accent-cyan-400"
-                        />
-                        <span className="font-medium flex items-center gap-x-1">
-                          {t('recurringCard')} <span className="text-[10px] px-1.5 py-px bg-slate-800 rounded">{t('recurringCardTag')}</span>
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-x-2 text-sm cursor-pointer">
-                        <input
-                          type="radio"
-                          name="recurringPayment"
-                          value="sepa"
-                          checked={recurringPaymentMethod === 'sepa'}
-                          onChange={() => setRecurringPaymentMethodWithDraft('sepa')}
-                          disabled={isOverSepaLimit(servicesMonthly)}
-                          className="accent-cyan-400"
-                        />
-                        <span>
-                          {t('recurringSepa')}
-                          <span className="text-xs text-slate-400 block">{t('recurringSepaDesc')}</span>
-                          {isOverSepaLimit(servicesMonthly) && (
-                            <span className="text-amber-400 text-[10px]">(max €10,000 — choose card)</span>
-                          )}
-                        </span>
-                      </label>
+                    <div className="mt-3 rounded-xl bg-slate-950 p-3 border border-slate-700/60">
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-medium">
+                        {t('recurringPaymentForServices')}
+                      </div>
+                      <div className="space-y-2">
+                        <label className="flex items-start gap-x-2.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="recurringPayment"
+                            value="stripe"
+                            checked={recurringPaymentMethod === 'stripe'}
+                            onChange={() => setRecurringPaymentMethodWithDraft('stripe')}
+                            className="accent-cyan-400 mt-0.5"
+                          />
+                          <div className="text-sm leading-tight">
+                            <span className="font-medium">{t('recurringCard')}</span>{' '}
+                            <span className="text-[10px] px-1.5 py-px bg-slate-800 rounded align-baseline">{t('recurringCardTag')}</span>
+                          </div>
+                        </label>
+                        <label className="flex items-start gap-x-2.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="recurringPayment"
+                            value="sepa"
+                            checked={recurringPaymentMethod === 'sepa'}
+                            onChange={() => setRecurringPaymentMethodWithDraft('sepa')}
+                            disabled={isOverSepaLimit(servicesMonthly)}
+                            className="accent-cyan-400 mt-0.5"
+                          />
+                          <div className="text-sm leading-tight">
+                            <div className="font-medium">{t('recurringSepa')}</div>
+                            <div className="text-xs text-slate-400 mt-0.5">{t('recurringSepaDesc')}</div>
+                            {isOverSepaLimit(servicesMonthly) && (
+                              <div className="text-amber-400 text-[10px] mt-0.5">(max €10,000 — choose card)</div>
+                            )}
+                          </div>
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
