@@ -30,6 +30,11 @@ export const PRICING_VERSION = '2026-06-11-invoice-policy';
 // Bump this (and document the change) whenever any price, threshold, lease rule, or invoice policy changes.
 // It is passed through to Stripe session metadata and surfaced in order emails.
 
+export const DEBUG_PAYMENTS = process.env.DEBUG_PAYMENTS === 'true' || process.env.DEBUG_PAYMENTS === '1';
+// Set DEBUG_PAYMENTS=true (or 1) in env to enable verbose console logs for tracing
+// checkout routing, metadata, webhook branches, PM extraction, and subscription creation/fallbacks.
+// Useful to diagnose why full credit card + services produces no recurring subs.
+
 export const HARDWARE_PRICES = {
   edge: 4990,
   studio: 7990,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
-import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey, UPFRONT_PERCENT } from '@/lib/pricing';
+import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey, UPFRONT_PERCENT, DEBUG_PAYMENTS } from '@/lib/pricing';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -53,6 +53,19 @@ export async function POST(request: NextRequest) {
         const displayName = s.name || (key ? key : 'Service');
         resolvedServicesForMeta.push({ name: displayName, price: lineTotal });
       }
+    }
+
+    if (DEBUG_PAYMENTS) {
+      console.log('[PAYMENT DEBUG] checkout received payload', {
+        financing,
+        paymentMethod,
+        itemsCount: (items || []).length,
+        servicesInItems: (items || []).reduce((n: number, it: any) => n + ((it.services || []).length || 0), 0),
+        resolvedServicesForMetaLen: resolvedServicesForMeta.length,
+        resolvedServicesForMeta,
+        hardwareTotal,
+        servicesMonthly,
+      });
     }
 
     // Email is collected in our form (kept) and transmitted here.
@@ -125,6 +138,7 @@ export async function POST(request: NextRequest) {
     // experience the user requested. **Do not edit inside this block** for recurring PM or invoice work.
     // All lease-related robustness is additive only in the webhook (invoice.paid handler).
     if (financing === 'lease') {
+      if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> LEASE branch');
       // Lease: upfront (or full hardware upfront %) charged as the *initial* payment (due today).
       // The recurring monthly lease payments (hardware amortized + services) only start ~1 month later.
       // We create the subscription with trial_end so the first paid monthly invoice comes after the trial.
@@ -296,6 +310,7 @@ export async function POST(request: NextRequest) {
         const subscription = await stripe.subscriptions.create(subParams);
         const leaseSubId = subscription.id;
 
+        if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] lease: pre-creating', resolvedServicesForMeta.length, 'service subs (for card/sepa lease)');
         // Pre-create the perpetual service subs early (like the lease hardware sub), in trialing with default_incomplete.
         // They will get the default PM attached in the webhook after the upfront payment.
         // This ensures the user sees the service subs immediately after placing the lease order.
@@ -382,6 +397,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (paymentMethod === 'invoice') {
+      if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> INVOICE branch');
       // Production-ready Pay by Invoice (B2B Net 30).
       // Previously this was a pure client mock with no Stripe objects or server emails.
       // Now we create a real Customer (for ownership + metadata) and a real Invoice with
@@ -562,6 +578,7 @@ export async function POST(request: NextRequest) {
     // Direct / full payment (non-lease): one-time for hardware only.
     // Services (if any) will be turned into real subscriptions by the webhook.
     // Use proper quantity + unit price (resolved server-side) so Stripe line items correctly reflect qty > 1.
+    if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> FULL (non-lease) branch');
     const lineItems: any[] = (items || []).map((item: any) => {
       const qty = item.quantity || 1;
       const slug = item.product?.slug as string | undefined;
@@ -619,6 +636,9 @@ export async function POST(request: NextRequest) {
         locale,
       },
     };
+    if (DEBUG_PAYMENTS) {
+      console.log('[PAYMENT DEBUG] full session metadata.services =', JSON.stringify(resolvedServicesForMeta));
+    }
     if (stripeCustomerId) {
       sessionParams.customer = stripeCustomerId;
     } else if (email) {

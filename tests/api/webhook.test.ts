@@ -85,8 +85,9 @@ describe('api/webhook/stripe (functional contract + resilience)', () => {
       paymentIntents: { retrieve: vi.fn() },
       customers: { listPaymentMethods: vi.fn(), update: vi.fn() },
       products: { create: vi.fn() },
-      subscriptions: { create: vi.fn(), update: vi.fn(), retrieve: vi.fn() },
+      subscriptions: { create: vi.fn(), update: vi.fn(), retrieve: vi.fn(), list: vi.fn() },
       invoices: { retrieve: vi.fn(), update: vi.fn() },
+      checkout: { sessions: { retrieve: vi.fn() } },
     }
     mockResendInstance = { emails: { send: vi.fn() } }
 
@@ -110,8 +111,20 @@ describe('api/webhook/stripe (functional contract + resilience)', () => {
     stripeMocks.subscriptions.create.mockResolvedValue({ id: 'sub_new', latest_invoice: null })
     stripeMocks.subscriptions.update.mockResolvedValue({})
     stripeMocks.subscriptions.retrieve.mockResolvedValue({ id: 'sub_lease_123', metadata: { financing: 'lease' } })
+    stripeMocks.subscriptions.list.mockResolvedValue({ data: [] })
     stripeMocks.invoices.retrieve.mockResolvedValue({ id: 'inv_trial', status: 'draft' })
     stripeMocks.invoices.update.mockResolvedValue({})
+
+    // Return shape with *string* payment_intent (simulates real webhook event payload).
+    // This forces the forced-PI-retrieve branch in the improved extraction (per plan), which
+    // then uses the per-test controlled paymentIntents.retrieve + list mocks. This keeps
+    // graceful "no sources" and happy pm paths behaving exactly as before while exercising new logic.
+    // (An object-with-nested-pm shape would short-circuit to the nested branch; we can add explicit
+    // coverage later if needed.)
+    stripeMocks.checkout.sessions.retrieve.mockResolvedValue({
+      id: 'cs_test_123',
+      payment_intent: 'pi_test_from_expand',
+    })
 
     mockResendInstance.emails.send.mockResolvedValue({ id: 'em_1' })
   })
@@ -132,7 +145,7 @@ describe('api/webhook/stripe (functional contract + resilience)', () => {
     expect(res.status).toBe(400)
   })
 
-  it('full + services (session.completed): sends emails + robust PM attach + creates service subs with trial + re-applies default_pm + logs first invoice', async () => {
+  it('full + services (session.completed): sends emails + robust PM attach + creates service subs (no forced 1mo delay for full) + re-applies default_pm + logs first invoice', async () => {
     const event = fakeSessionCompleted({
       financing: 'full',
       services: JSON.stringify([{ name: 'Managed Care', price: 99 }]),
@@ -153,11 +166,11 @@ describe('api/webhook/stripe (functional contract + resilience)', () => {
     }))
 
     // Service sub creation + re-apply + first-invoice diagnostic
+    // Note: full (non-lease) path no longer forces a long trial_end (restores pre-delay card full+services behavior)
     expect(stripeMocks.products.create).toHaveBeenCalled()
     expect(stripeMocks.subscriptions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         collection_method: 'charge_automatically',
-        trial_end: expect.any(Number),
         metadata: expect.objectContaining({ service: 'Managed Care' }),
       })
     )

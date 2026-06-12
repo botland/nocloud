@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
+import { DEBUG_PAYMENTS } from '@/lib/pricing';
+import { createFullServiceSubscriptions } from '@/lib/create-service-subscriptions';
 
 export async function POST(request: NextRequest) {
+  console.log('[PAYMENT DEBUG] /api/webhook/stripe route invoked, STRIPE_WEBHOOK_SECRET present:', !!process.env.STRIPE_WEBHOOK_SECRET, 'STRIPE_SECRET_KEY present:', !!process.env.STRIPE_SECRET_KEY);
+
   if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
     console.error('Webhook misconfigured: missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET');
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
@@ -28,8 +32,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Webhook error' }, { status: 400 });
   }
 
+  if (DEBUG_PAYMENTS) {
+    console.log('[PAYMENT DEBUG] webhook event parsed successfully, type=', event.type, 'id=', event.id);
+  }
+
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
+
+    // Re-retrieve the session with expansion to reliably obtain the payment_method used
+    // for card (and sepa) payments in 'payment' mode. The raw webhook payload often only
+    // includes the payment_intent ID; expanding ensures we get the PM for service sub
+    // creation (full path) and lease PM attachment even in the presence of timing or
+    // payload differences between card and async SEPA flows. Falls back to prior logic.
+    let expandedSession: Stripe.Checkout.Session = session;
+    try {
+      expandedSession = await stripe.checkout.sessions.retrieve(session.id, {
+        expand: ['payment_intent.payment_method'],
+      });
+    } catch (expErr) {
+      console.warn('Could not re-retrieve/expand checkout session for PM; using event payload + fallbacks', expErr);
+    }
 
     const metadata = session.metadata || {};
     const customerEmail = session.customer_details?.email || (metadata as any).customer_email || (metadata as any).customerEmail;
@@ -56,6 +78,11 @@ export async function POST(request: NextRequest) {
         servicesStr = servicesArray.map(s => `${s.name} (€${s.price}/mo)`).join(', ') || 'None';
       }
     } catch {}
+    if (DEBUG_PAYMENTS || servicesArray.length > 0) {
+      console.log(`[PAYMENT DEBUG] checkout.session.completed: order=${orderId} financing=${financing} customer=${session.customer} servicesLen=${servicesArray.length} rawServicesMeta=${metadata.services}`);
+    } else {
+      console.log(`checkout.session.completed: order=${orderId} financing=${financing} customer=${session.customer} servicesLen=${servicesArray.length}`);
+    }
 
     const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
@@ -140,196 +167,51 @@ export async function POST(request: NextRequest) {
     // For direct purchases (financing=full), turn selected services into real recurring Subscriptions.
     // The pm collected by the one-time Checkout session must be explicitly attached so the
     // monthly subs can actually charge (without this, subs are often created without a default pm
-    // and won't auto-bill, especially noticeable with SEPA). Robustness added for subsequent cycles:
-    // listPaymentMethods fallback, customer default set before+after loop, and one retry on "no default" errors.
+    // and won't auto-bill, especially noticeable with SEPA). Robustness added for subsequent cycles...
+    // Now delegated to shared helper (with idempotency check + default_incomplete fallback).
     if (session.customer && financing !== 'lease' && servicesArray.length > 0) {
-      // Best-effort: extract the payment method used for this Checkout payment.
-      // In 'payment' mode the pm may be directly on session or reachable via the payment_intent.
-      let defaultPaymentMethod: string | undefined;
-      const sessionPm = (session as any).payment_method as string | undefined;
-      if (sessionPm) {
-        defaultPaymentMethod = sessionPm;
-      } else if (session.payment_intent) {
-        try {
-          const pi = await stripe.paymentIntents.retrieve(
-            session.payment_intent as string,
-            { expand: ['payment_method'] }
-          );
-          const pm = (pi as any).payment_method;
-          defaultPaymentMethod = typeof pm === 'string' ? pm : pm?.id;
-        } catch (retrieveErr) {
-          console.warn('Could not expand payment_intent to obtain payment_method for service subs', retrieveErr);
-        }
+      if (DEBUG_PAYMENTS) {
+        console.log('[PAYMENT DEBUG] delegating to createFullServiceSubscriptions (webhook path) for', orderId);
       }
-
-      // Fallback: most recent card or sepa_debit on the customer (covers cases where session/PI do not surface it directly).
-      if (!defaultPaymentMethod && session.customer) {
-        try {
-          const pms = await stripe.customers.listPaymentMethods(session.customer as string, { limit: 5 });
-          const recent = pms.data.find((p: any) => p.type === 'card' || p.type === 'sepa_debit');
-          defaultPaymentMethod = recent?.id;
-        } catch (listErr) {
-          console.warn('Could not list recent PMs for service subs fallback', listErr);
-        }
-      }
-
-      // Set as customer's default (before creations) so any future subscriptions or retries see it.
-      if (defaultPaymentMethod) {
-        try {
-          await stripe.customers.update(session.customer as string, {
-            invoice_settings: { default_payment_method: defaultPaymentMethod },
-          });
-        } catch (custErr) {
-          console.warn('Could not set default pm on customer', custErr);
-        }
-      }
-
-      for (const s of servicesArray) {
-        try {
-          // In this API version, subscriptions.create requires a `product` ID (not inline
-          // `product_data`) inside price_data. Create a lightweight Product per service.
-          const serviceProduct = await stripe.products.create({
-            name: s.name,
-          });
-
-          const subParams: any = {
-            customer: session.customer as string,
-            collection_method: 'charge_automatically',
-            trial_end: Math.floor(Date.now() / 1000) + 32 * 24 * 3600, // recurring starts ~1 month after initial hardware payment
-            items: [{
-              price_data: {
-                currency: 'eur',
-                product: serviceProduct.id,
-                unit_amount: Math.round(s.price * 100),
-                recurring: { interval: 'month' },
-              } as any,
-            }],
-            metadata: {
-              order_session: orderId,
-              service: s.name,
-            },
-          };
-          if (defaultPaymentMethod) {
-            subParams.default_payment_method = defaultPaymentMethod;
-          }
-          const createdSub = await stripe.subscriptions.create(subParams);
-
-          // Re-apply default_payment_method explicitly after creation.
-          // Passing it at create time is not always sufficient for *subsequent* billing cycles
-          // (month 2+ invoices) to auto-charge reliably, especially with SEPA or when using dynamic price_data.
-          // Setting it again on the subscription object makes the PM "stick" for future invoices.
-          if (defaultPaymentMethod) {
-            try {
-              await stripe.subscriptions.update(createdSub.id, {
-                default_payment_method: defaultPaymentMethod,
-              });
-            } catch (reapplyErr) {
-              console.warn(`Could not re-apply default PM to service sub ${createdSub.id}`, reapplyErr);
-            }
-          }
-
-          console.log(`Created service subscription ${createdSub.id} for "${s.name}" on customer ${session.customer} (pm: ${defaultPaymentMethod || 'none'})`);
-
-          // Diagnostic: status of the first service invoice (billed at sub creation time using the attached PM).
-          // Helps confirm whether even the initial recurring period succeeded before worrying about month 2+.
-          try {
-            const firstInv = (createdSub as any).latest_invoice;
-            const invId = typeof firstInv === 'string' ? firstInv : firstInv?.id;
-            if (invId) {
-              const inv = await stripe.invoices.retrieve(invId);
-              console.log(`  First invoice ${invId} for sub ${createdSub.id}: status=${inv.status}, paid=${inv.paid}, amount_paid=${inv.amount_paid}`);
-            }
-          } catch (invLogErr) {
-            console.warn('Could not retrieve first service invoice for logging', invLogErr);
-          }
-        } catch (subErr: any) {
-          const msg = (subErr?.message || '').toLowerCase();
-          if (msg.includes('default payment') || msg.includes('no attached') || msg.includes('payment source')) {
-            console.warn(`Service sub create for "${s.name}" hit no-default; re-setting customer default and retrying once`);
-            if (defaultPaymentMethod && session.customer) {
-              try {
-                await stripe.customers.update(session.customer as string, {
-                  invoice_settings: { default_payment_method: defaultPaymentMethod },
-                });
-              } catch {}
-            }
-            try {
-              // Rebuild minimal for retry (product + sub with same PM)
-              const serviceProduct2 = await stripe.products.create({ name: s.name });
-              const subParams2: any = {
-                customer: session.customer as string,
-                collection_method: 'charge_automatically',
-                trial_end: Math.floor(Date.now() / 1000) + 32 * 24 * 3600, // recurring starts ~1 month after initial hardware payment
-                items: [{
-                  price_data: {
-                    currency: 'eur',
-                    product: serviceProduct2.id,
-                    unit_amount: Math.round(s.price * 100),
-                    recurring: { interval: 'month' },
-                  } as any,
-                }],
-                metadata: { order_session: orderId, service: s.name },
-              };
-              if (defaultPaymentMethod) subParams2.default_payment_method = defaultPaymentMethod;
-              const retriedSub = await stripe.subscriptions.create(subParams2);
-
-              if (defaultPaymentMethod) {
-                try {
-                  await stripe.subscriptions.update(retriedSub.id, {
-                    default_payment_method: defaultPaymentMethod,
-                  });
-                } catch (reapplyErr) {
-                  console.warn(`Could not re-apply default PM to retried service sub ${retriedSub.id}`, reapplyErr);
-                }
-              }
-
-              console.log(`Retry succeeded for service sub ${retriedSub.id} "${s.name}" on customer ${session.customer}`);
-            } catch (retryErr) {
-              console.error('Retry also failed for service subscription', retryErr);
-            }
-          } else {
-            console.error('Failed to create service subscription', subErr);
-          }
-        }
-      }
-
-      // Re-set customer default after the loop (defensive against timing windows during the creates).
-      if (defaultPaymentMethod && session.customer) {
-        try {
-          await stripe.customers.update(session.customer as string, {
-            invoice_settings: { default_payment_method: defaultPaymentMethod },
-          });
-        } catch (custErr) {
-          console.warn('Could not re-set default pm on customer after service subs', custErr);
-        }
-      }
+      await createFullServiceSubscriptions(stripe, session, servicesArray);
     }
 
     // Handle pre-created lease subscription (from the new lease flow where upfront is paid separately
     // via Checkout and the sub was created with trial_end so recurring monthly starts ~1 month later).
     // Attach the PM collected on the upfront payment to the customer and to the lease sub.
     if (session.customer && (metadata.is_lease_upfront || metadata.lease_subscription_id)) {
+      if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] entering lease upfront PM attach block');
       let defaultPaymentMethod: string | undefined;
-      const sessionPm = (session as any).payment_method as string | undefined;
+      const s = expandedSession || session;
+
+      // 1. Rare direct
+      const sessionPm = (s as any).payment_method as string | undefined;
       if (sessionPm) {
         defaultPaymentMethod = sessionPm;
-      } else if (session.payment_intent) {
-        try {
-          const pi = await stripe.paymentIntents.retrieve(
-            session.payment_intent as string,
-            { expand: ['payment_method'] }
-          );
-          const pm = (pi as any).payment_method;
-          defaultPaymentMethod = typeof pm === 'string' ? pm : pm?.id;
-        } catch (retrieveErr) {
-          console.warn('Could not expand payment_intent for lease upfront PM attach', retrieveErr);
+      }
+
+      // 2. Force direct PI retrieve (tx pm)
+      if (!defaultPaymentMethod) {
+        let pi: any = s.payment_intent;
+        const piId = typeof pi === 'string' ? pi : (pi && pi.id);
+        if (piId) {
+          try {
+            const retrievedPi = await stripe.paymentIntents.retrieve(piId, { expand: ['payment_method'] });
+            const pm = (retrievedPi as any).payment_method;
+            const candidate = typeof pm === 'string' ? pm : pm?.id;
+            if (candidate) defaultPaymentMethod = candidate;
+          } catch (retrieveErr) {
+            console.warn('Could not expand payment_intent for lease upfront PM attach', retrieveErr);
+          }
         }
       }
-      if (!defaultPaymentMethod && session.customer) {
+
+      // 3. Always list (attached PMs)
+      if (!defaultPaymentMethod && s.customer) {
         try {
-          const pms = await stripe.customers.listPaymentMethods(session.customer as string, { limit: 5 });
+          const pms = await stripe.customers.listPaymentMethods(s.customer as string, { limit: 5 });
           const recent = pms.data.find((p: any) => p.type === 'card' || p.type === 'sepa_debit');
-          defaultPaymentMethod = recent?.id;
+          if (recent?.id) defaultPaymentMethod = recent.id;
         } catch (listErr) {
           console.warn('Could not list PMs for lease upfront fallback', listErr);
         }
