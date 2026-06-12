@@ -118,4 +118,4 @@ Private project. Built with Next.js, Stripe, next-intl, Resend, Tailwind.
 
 ---
 
-**Branch history note**: Core i18n landed on `feature/i18n-support`. Full payments + leasing (direct / recurring services / lease) on `feature/payments-leasing`. Subsequent hygiene, bug fixes (e.g. recurring pm attachment for services), polish, and docs on `fix/post-payments-issues`.
+**Branch history note**: Core i18n landed on `feature/i18n-support`. Full payments + leasing (direct / recurring services / lease) on `feature/payments-leasing`. Subsequent hygiene, bug fixes (e.g. recurring pm attachment for services), polish, and docs on `fix/post-payments-issues`. Complexity reduction (shared customer / emails / PM helpers + initial payment context) started on `refacto/reduce-complexity`.

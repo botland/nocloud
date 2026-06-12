@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey, UPFRONT_PERCENT, DEBUG_PAYMENTS } from '@/lib/pricing';
 import { createB2BStripeCustomer } from '@/lib/stripe-customer';
 import { sendRegisteredInvoiceCustomerEmail, sendAdminInvoiceRegisteredEmail } from '@/lib/emails';
+import { buildPaymentContext, validatePaymentEligibility } from '@/lib/payment-flow';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -71,6 +72,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const paymentContext = buildPaymentContext({
+      financing: financing as any,
+      paymentMethod: paymentMethod as any,
+      servicesMonthly,
+      hardwareTotal,
+      recurringPaymentMethod: recurringPaymentMethod as any,
+    });
+
+    if (DEBUG_PAYMENTS) {
+      console.log('[PAYMENT DEBUG] paymentContext strategy=', paymentContext.strategy, 'hybrid=', paymentContext.isHybridRecurringSetup);
+    }
+
     // Email is collected in our form (kept) and transmitted here.
     // We explicitly create a Stripe Customer (with email + rich B2B metadata and structured address)
     // so we "own" the customer record in Stripe. The address is set on the customer object
@@ -105,31 +118,29 @@ export async function POST(request: NextRequest) {
     const dueAmount = financing === 'lease' ? monthlyTotal : hardwareTotal;
 
     // Enforce lease and pay-by-invoice eligibility ranges using the constants from lib/pricing.ts
-    // (client UX mirrors this; server is authoritative).
-    if (financing === 'lease' && !calculateLease(hardwareTotal, servicesMonthly).isAllowed) {
+    // (client UX mirrors this; server is authoritative). Now delegated to shared validator.
+    const eligibilityError = validatePaymentEligibility(paymentContext, hardwareTotal, dueAmount, servicesMonthly);
+    if (eligibilityError === 'LEASE_RANGE') {
       return NextResponse.json({
         error: `Leasing is only available for hardware totals between €${LEASE_MIN} and €${LEASE_MAX}.`
       }, { status: 400 });
     }
-    if (paymentMethod === 'invoice' && !isPbiAllowed(hardwareTotal)) {
+    if (eligibilityError === 'PBI_RANGE') {
       return NextResponse.json({
         error: `Pay by Invoice is only available for hardware totals between €${PBI_MIN} and €${PBI_MAX}.`
       }, { status: 400 });
     }
-    if (paymentMethod === 'invoice' && !isInvoiceAllowed(financing, servicesMonthly)) {
+    if (eligibilityError === 'INVOICE_POLICY') {
       return NextResponse.json({
         error: 'Pay by Invoice is only available for full payments (recurring services use a separate card/SEPA choice inside the invoice box) or within ranges.'
       }, { status: 400 });
     }
-
-    // SEPA limit check. When the main payment is invoice but the user picked SEPA for the recurring services
-    // (new hybrid flow), the relevant amount for the cap is servicesMonthly (the hardware is on Net-30 invoice).
-    if (paymentMethod === 'sepa' && isOverSepaLimit(dueAmount)) {
+    if (eligibilityError === 'SEPA_MAIN') {
       return NextResponse.json({
         error: `SEPA Direct Debit payments are limited to €10,000. Your ${financing === 'lease' ? 'monthly lease payment' : 'order total'} is €${dueAmount}. Please select "Credit / Debit card" (or reduce quantity / use Pay in full for smaller hardware totals).`
       }, { status: 400 });
     }
-    if (paymentMethod === 'invoice' && recurringPaymentMethod === 'sepa' && isOverSepaLimit(servicesMonthly)) {
+    if (eligibilityError === 'SEPA_SERVICES') {
       return NextResponse.json({
         error: `SEPA Direct Debit payments are limited to €10,000. Your recurring services total is €${servicesMonthly}. Please select "Credit / Debit card" for the recurring services (inside the Pay by Invoice box) or reduce the services.`
       }, { status: 400 });
@@ -149,7 +160,7 @@ export async function POST(request: NextRequest) {
     // experience the user requested. **Do not edit inside this block** for recurring PM or invoice work.
     // All lease-related robustness is additive only in the webhook (invoice.paid handler).
     if (financing === 'lease') {
-      if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> LEASE branch');
+      if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> LEASE branch (strategy:', paymentContext.strategy, ')');
       // Lease: upfront (or full hardware upfront %) charged as the *initial* payment (due today).
       // The recurring monthly lease payments (hardware amortized + services) only start ~1 month later.
       // We create the subscription with trial_end so the first paid monthly invoice comes after the trial.
@@ -365,7 +376,8 @@ export async function POST(request: NextRequest) {
             }
           }
           // now create setup with the pre-created ids (so attach logic on setup.completed can find and attach PM)
-          const pmTypes = recurringPaymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
+          const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+            recurringPaymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
           const setupSession = await stripe.checkout.sessions.create({
             payment_method_types: pmTypes,
             mode: 'setup',
@@ -630,7 +642,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (paymentMethod === 'invoice') {
-      if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> INVOICE branch');
+      if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> INVOICE branch (strategy:', paymentContext.strategy, ')');
       // Production-ready Pay by Invoice (B2B Net 30) for the hardware / upfront portion.
       // When the order also has recurring services and the client supplied recurringPaymentMethod
       // (card or sepa), we pre-create charge_automatically service subs (with order-based trial_end)
@@ -907,7 +919,7 @@ export async function POST(request: NextRequest) {
     // Direct / full payment (non-lease): one-time for hardware only.
     // Services (if any) will be turned into real subscriptions by the webhook.
     // Use proper quantity + unit price (resolved server-side) so Stripe line items correctly reflect qty > 1.
-    if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> FULL (non-lease) branch');
+    if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> FULL (non-lease) branch (strategy:', paymentContext.strategy, ')');
     const lineItems: any[] = (items || []).map((item: any) => {
       const qty = item.quantity || 1;
       const slug = item.product?.slug as string | undefined;
