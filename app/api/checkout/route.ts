@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey, UPFRONT_PERCENT, DEBUG_PAYMENTS } from '@/lib/pricing';
 import { createB2BStripeCustomer } from '@/lib/stripe-customer';
 import { sendRegisteredInvoiceCustomerEmail, sendAdminInvoiceRegisteredEmail } from '@/lib/emails';
-import { buildPaymentContext, validatePaymentEligibility } from '@/lib/payment-flow';
+import { buildPaymentContext, validatePaymentEligibility, resolvePricesAndServices } from '@/lib/payment-flow';
 import { cleanupZeroTrialInvoice } from '@/lib/stripe-invoices';
 import { buildOrderMetadata } from '@/lib/stripe-metadata';
 import { createMonthlyRecurringPriceDataItem } from '@/lib/stripe-subscriptions';
@@ -37,29 +37,8 @@ export async function POST(request: NextRequest) {
       recurringPaymentMethod,   // only present+relevant for paymentMethod==='invoice' + services; 'stripe'|'sepa' means use automatic subs for recurring (collected via mode:'setup')
     } = body;
 
-    // Authoritative prices + totals resolved server-side from lib/pricing.ts using slugs + service keys.
-    // Client-provided prices (in product.price / services[].price) are IGNORED for charge amounts to prevent tampering.
-    let hardwareTotal = 0;
-    let servicesMonthly = 0;
-    const resolvedServicesForMeta: Array<{ name: string; price: number }> = [];
-
-    for (const item of (items || [])) {
-      const qty = item.quantity || 1;
-      const slug = item.product?.slug as string | undefined;
-      const hwPrice = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
-      hardwareTotal += hwPrice * qty;
-
-      const svcs = item.services || [];
-      for (const s of svcs) {
-        const key = (s.key as ServiceKey | undefined) || undefined;
-        const svcPrice = key ? getServicePrice(key) : (s.price || 0);
-        const lineTotal = svcPrice * qty;
-        servicesMonthly += lineTotal;
-        // Store with translated-or-fallback name; qty-multiplied price for legacy consumers in emails/webhook.
-        const displayName = s.name || (key ? key : 'Service');
-        resolvedServicesForMeta.push({ name: displayName, price: lineTotal });
-      }
-    }
+    // Authoritative prices + totals (pure, now extracted). Client prices ignored.
+    const { hardwareTotal, servicesMonthly, resolvedServicesForMeta } = resolvePricesAndServices(items || []);
 
     if (DEBUG_PAYMENTS) {
       console.log('[PAYMENT DEBUG] checkout received payload', {

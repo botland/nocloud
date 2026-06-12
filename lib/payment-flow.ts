@@ -1,4 +1,4 @@
-import { isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, isOverSepaLimit } from './pricing';
+import { isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, isOverSepaLimit, getHardwarePrice, getServicePrice, ServiceKey, PRICING_VERSION } from './pricing';
 
 export type Financing = 'full' | 'lease';
 export type PaymentMethod = 'stripe' | 'sepa' | 'invoice';
@@ -94,3 +94,41 @@ export function validatePaymentEligibility(context: PaymentContext, hardwareTota
   }
   return null;
 }
+
+/**
+ * Pure resolver for authoritative prices (server never trusts client prices).
+ * Returns hardware total, services monthly, and the resolved services array
+ * (with display names) that goes into metadata.
+ */
+export interface ResolvedOrderAmounts {
+  hardwareTotal: number;
+  servicesMonthly: number;
+  resolvedServicesForMeta: Array<{ name: string; price: number }>;
+}
+
+export function resolvePricesAndServices(items: any[] = []): ResolvedOrderAmounts {
+  let hardwareTotal = 0;
+  let servicesMonthly = 0;
+  const resolvedServicesForMeta: Array<{ name: string; price: number }> = [];
+
+  for (const item of items) {
+    const qty = item.quantity || 1;
+    const slug = item.product?.slug as string | undefined;
+    const hwPrice = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
+    hardwareTotal += hwPrice * qty;
+
+    const svcs = item.services || [];
+    for (const s of svcs) {
+      const key = (s.key as ServiceKey | undefined) || undefined;
+      const svcPrice = key ? getServicePrice(key) : (s.price || 0);
+      const lineTotal = svcPrice * qty;
+      servicesMonthly += lineTotal;
+
+      const displayName = s.name || (key ? key : 'Service');
+      resolvedServicesForMeta.push({ name: displayName, price: lineTotal });
+    }
+  }
+
+  return { hardwareTotal, servicesMonthly, resolvedServicesForMeta };
+}
+
