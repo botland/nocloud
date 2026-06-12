@@ -14,7 +14,7 @@ export default function ProductCard({ product, onConfigure }: Props) {
   const bestFor = t(`bestFor.${product.id}`);
 
   return (
-    <div className="product-card bg-slate-900 border border-slate-800 rounded-3xl p-7 flex flex-col">
+    <div className="product-card bg-slate-900 border border-slate-800 rounded-3xl p-7 flex flex-col transition-all duration-200 hover:-translate-y-1 hover:border-slate-700 hover:shadow-xl">
       <div className="flex justify-between mb-4">
         <div>
           <div className={`${product.id === 0 ? 'text-emerald-400' : product.id === 1 ? 'text-cyan-400' : 'text-violet-400'} text-xs font-extrabold tracking-widest`}>

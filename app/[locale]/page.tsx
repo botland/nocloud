@@ -6,6 +6,7 @@ import ProductCard from '@/components/ProductCard';
 import ConfiguratorModal from '@/components/ConfiguratorModal';
 import CartSidebar from '@/components/CartSidebar';
 import CheckoutModal from '@/components/CheckoutModal';
+import Container from '@/components/Container';
 import { Product, CartItem, CheckoutFormDraft } from '@/lib/types';
 import { HARDWARE_PRICES, SERVICE_PRICES } from '@/lib/pricing';
 import LogoIcon from '@/icons/logo.svg';
@@ -185,7 +186,7 @@ export default function LocaleHome() {
     <div className="min-h-screen bg-slate-950 text-slate-200">
       {/* Navbar */}
       <nav className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-screen-2xl mx-auto px-8">
+        <Container>
           <div className="flex items-center justify-between h-20">
             {/* Logo with white background + Cloud Slash */}
             <div className="flex items-center gap-x-3">
@@ -220,13 +221,13 @@ export default function LocaleHome() {
               </button>
             </div>
           </div>
-        </div>
+        </Container>
       </nav>
 
       {/* Canceled payment feedback (from Stripe cancel_url) */}
       {showCanceled && (
         <div className="border-b border-amber-900/50 bg-amber-950/60">
-          <div className="max-w-screen-2xl mx-auto px-8 py-3 text-sm flex items-center gap-x-3 text-amber-300">
+          <Container className="py-3 text-sm flex items-center gap-x-3 text-amber-300">
             <i className="fa-solid fa-exclamation-triangle"></i>
             <span className="font-medium">{t('canceledTitle')}</span>
             <span className="text-amber-400/80">{t('canceledMessage')}</span>
@@ -248,12 +249,12 @@ export default function LocaleHome() {
             >
               ×
             </button>
-          </div>
+          </Container>
         </div>
       )}
 
       {/* Hero */}
-      <div className="max-w-screen-2xl mx-auto px-8 pt-16 pb-14">
+      <Container className="pt-16 pb-14">
         <div className="max-w-4xl">
           <div className="inline-flex items-center gap-x-2 px-4 h-9 rounded-3xl bg-slate-900 border border-slate-800 text-sm mb-6">
             <div className="flex items-center gap-x-2">
@@ -281,11 +282,12 @@ export default function LocaleHome() {
             <div className="text-slate-400">{t('hero.trusted')}</div>
           </div>
         </div>
-      </div>
+      </Container>
 
       {/* Products */}
-      <div id="products" className="max-w-screen-2xl mx-auto px-8 pb-16">
-        <div className="flex items-end justify-between mb-8">
+      <div id="products" className="pb-16">
+        <Container>
+          <div className="flex items-end justify-between mb-8">
           <div>
             <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-1">{t('products.tag')}</div>
             <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">{t('products.title')}</h2>
@@ -300,11 +302,12 @@ export default function LocaleHome() {
             <ProductCard key={product.id} product={product} onConfigure={() => openConfigurator(product)} />
           ))}
         </div>
+          </Container>
       </div>
 
       {/* Services */}
       <div id="services" className="bg-slate-900 border-y border-slate-800 py-16">
-        <div className="max-w-screen-2xl mx-auto px-8">
+        <Container>
           <div className="max-w-xl mb-9">
             <div className="text-cyan-400 text-xs font-bold tracking-[2.5px] mb-2">{t('services.tag')}</div>
             <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">{t('services.title1')}<br />{t('services.title2')}</h2>
@@ -345,12 +348,13 @@ export default function LocaleHome() {
               </div>
             </div>
           </div>
-        </div>
+        </Container>
       </div>
 
       {/* Why NoCloud */}
-      <div id="why" className="max-w-screen-2xl mx-auto px-8 py-20">
-        <div className="grid md:grid-cols-12 gap-x-10">
+      <div id="why" className="py-20">
+        <Container>
+          <div className="grid md:grid-cols-12 gap-x-10">
           <div className="md:col-span-5 mb-10 md:mb-0">
             <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-3">{t('why.tag')}</div>
             <h2 className="text-[2.1rem] leading-none font-semibold tracking-tighter">{t('why.title1')}<br />{t('why.title2')}<br />{t('why.title3')}</h2>
@@ -379,28 +383,29 @@ export default function LocaleHome() {
     </div>
   </div>
 </div>
-        </div>
+          </div>
+        </Container>
       </div>
 
       <div className="border-t border-slate-800 bg-slate-900 py-14">
-        <div className="max-w-screen-2xl mx-auto px-8 text-center">
+        <Container className="text-center">
           <h3 className="text-3xl font-semibold tracking-tight mb-3">{t('custom.title')}</h3>
           <p className="text-slate-400 mb-6 max-w-md mx-auto">{t('custom.subtitle')}</p>
           <a href="mailto:sales@nocloud.ai" className="px-9 py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-all inline-flex items-center gap-x-3">
             {t('custom.cta')}
           </a>
-        </div>
+        </Container>
       </div>
 
       <footer className="border-t border-slate-800 py-9 text-sm">
-        <div className="max-w-screen-2xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-y-4 text-slate-400">
+        <Container className="flex flex-col md:flex-row justify-between items-center gap-y-4 text-slate-400">
           <div>{t('footer.copyright', { year: new Date().getFullYear() })}</div>
           <div className="flex gap-x-6 text-xs">
             <a href="#" className="hover:text-slate-300">{t('footer.legal')}</a>
             <a href="#" className="hover:text-slate-300">{t('footer.privacy')}</a>
             <a href="#" className="hover:text-slate-300">{t('footer.support')}</a>
           </div>
-        </div>
+        </Container>
       </footer>
 
       {isConfiguratorOpen && selectedProduct && (
