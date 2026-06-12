@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { DEBUG_PAYMENTS } from './pricing';
+import { extractPaymentMethodFromSession, setDefaultPaymentMethodOnCustomerAndSubs } from './stripe-pm';
 
 /**
  * Shared helper to create the monthly service subscriptions for a completed
@@ -48,64 +49,8 @@ export async function createFullServiceSubscriptions(
     console.log('[PAYMENT DEBUG] createFullServiceSubscriptions starting for', orderId, 'services:', servicesArray.length);
   }
 
-  // PM extraction - robust logic supporting both classic payment-mode sessions (hardware one-time)
-  // and the new mode:'setup' sessions used for the hybrid "invoice for hardware + card/sepa for recurring services" flow.
-  // We expand both payment_intent and setup_intent so the helper works for either.
-  let defaultPaymentMethod: string | undefined;
-
-  // Try to get from the session if expanded, or re-retrieve (now expanding both kinds of intent)
-  let sessionForPm: any = completedSession;
-  const needsReRetrieve = !completedSession.payment_intent || typeof completedSession.payment_intent === 'string'
-    || !completedSession.setup_intent || typeof completedSession.setup_intent === 'string';
-  if (needsReRetrieve) {
-    try {
-      sessionForPm = await stripe.checkout.sessions.retrieve(completedSession.id, {
-        expand: ['payment_intent.payment_method', 'setup_intent.payment_method'],
-      });
-    } catch (e) {
-      console.warn('Could not re-retrieve session for PM in fulfill path', e);
-    }
-  }
-
-  const s = sessionForPm;
-  const sessionPm = (s as any).payment_method as string | undefined;
-  if (sessionPm) {
-    defaultPaymentMethod = sessionPm;
-  }
-
-  if (!defaultPaymentMethod) {
-    // Support either a payment_intent (classic full + card/sepa) or a setup_intent (hybrid invoice + recurring auto)
-    let intent: any = s.payment_intent || s.setup_intent;
-    const intentId = typeof intent === 'string' ? intent : (intent && intent.id);
-    if (intentId) {
-      try {
-        const isSetup = !!s.setup_intent || (intent && (intent.object === 'setup_intent' || (typeof intent === 'object' && !intent.client_secret /*heuristic*/)));
-        if (isSetup) {
-          const retrievedSi = await stripe.setupIntents.retrieve(intentId, { expand: ['payment_method'] });
-          const pm = (retrievedSi as any).payment_method;
-          const candidate = typeof pm === 'string' ? pm : pm?.id;
-          if (candidate) defaultPaymentMethod = candidate;
-        } else {
-          const retrievedPi = await stripe.paymentIntents.retrieve(intentId, { expand: ['payment_method'] });
-          const pm = (retrievedPi as any).payment_method;
-          const candidate = typeof pm === 'string' ? pm : pm?.id;
-          if (candidate) defaultPaymentMethod = candidate;
-        }
-      } catch (retrieveErr) {
-        console.warn('Could not expand payment_intent/setup_intent to obtain payment_method for service subs', retrieveErr);
-      }
-    }
-  }
-
-  if (!defaultPaymentMethod && s.customer) {
-    try {
-      const pms = await stripe.customers.listPaymentMethods(s.customer as string, { limit: 5 });
-      const recent = pms.data.find((p: any) => p.type === 'card' || p.type === 'sepa_debit');
-      if (recent?.id) defaultPaymentMethod = recent.id;
-    } catch (listErr) {
-      console.warn('Could not list recent PMs for service subs', listErr);
-    }
-  }
+  // PM extraction + attach now delegated to shared helpers (see lib/stripe-pm.ts)
+  const defaultPaymentMethod = await extractPaymentMethodFromSession(stripe, completedSession);
 
   if (!defaultPaymentMethod) {
     console.warn(`No usable default PM found for full services on ${orderId} (creating subs with default_incomplete so they are visible). customer=${customerId} services=${servicesArray.length}`);
@@ -113,15 +58,8 @@ export async function createFullServiceSubscriptions(
     console.log('[PAYMENT DEBUG] fulfill/full services: using defaultPaymentMethod=', defaultPaymentMethod);
   }
 
-  // Set as customer's default (before creations)
   if (defaultPaymentMethod) {
-    try {
-      await stripe.customers.update(customerId, {
-        invoice_settings: { default_payment_method: defaultPaymentMethod },
-      });
-    } catch (custErr) {
-      console.warn('Could not set default pm on customer (fulfill path)', custErr);
-    }
+    await setDefaultPaymentMethodOnCustomerAndSubs(stripe, customerId, defaultPaymentMethod);
   }
 
   // For the uniform "recurring starts exactly 1 month after order time" rule,

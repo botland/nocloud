@@ -7,6 +7,7 @@ import {
   sendAdminOrderNotificationEmail,
   sendInvoicePaidCustomerEmail,
 } from '@/lib/emails';
+import { extractPaymentMethodFromSession, setDefaultPaymentMethodOnCustomerAndSubs } from '@/lib/stripe-pm';
 
 export async function POST(request: NextRequest) {
   console.log('[PAYMENT DEBUG] /api/webhook/stripe route invoked, STRIPE_WEBHOOK_SECRET present:', !!process.env.STRIPE_WEBHOOK_SECRET, 'STRIPE_SECRET_KEY present:', !!process.env.STRIPE_SECRET_KEY);
@@ -150,81 +151,28 @@ export async function POST(request: NextRequest) {
     // Attach the PM collected on the upfront payment to the customer and to the lease sub.
     if (session.customer && (metadata.is_lease_upfront || metadata.lease_subscription_id)) {
       if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] entering lease upfront PM attach block');
-      let defaultPaymentMethod: string | undefined;
-      const s = expandedSession || session;
 
-      // 1. Rare direct
-      const sessionPm = (s as any).payment_method as string | undefined;
-      if (sessionPm) {
-        defaultPaymentMethod = sessionPm;
-      }
-
-      // 2. Force direct PI retrieve (tx pm)
-      if (!defaultPaymentMethod) {
-        let pi: any = s.payment_intent;
-        const piId = typeof pi === 'string' ? pi : (pi && pi.id);
-        if (piId) {
-          try {
-            const retrievedPi = await stripe.paymentIntents.retrieve(piId, { expand: ['payment_method'] });
-            const pm = (retrievedPi as any).payment_method;
-            const candidate = typeof pm === 'string' ? pm : pm?.id;
-            if (candidate) defaultPaymentMethod = candidate;
-          } catch (retrieveErr) {
-            console.warn('Could not expand payment_intent for lease upfront PM attach', retrieveErr);
-          }
-        }
-      }
-
-      // 3. Always list (attached PMs)
-      if (!defaultPaymentMethod && s.customer) {
-        try {
-          const pms = await stripe.customers.listPaymentMethods(s.customer as string, { limit: 5 });
-          const recent = pms.data.find((p: any) => p.type === 'card' || p.type === 'sepa_debit');
-          if (recent?.id) defaultPaymentMethod = recent.id;
-        } catch (listErr) {
-          console.warn('Could not list PMs for lease upfront fallback', listErr);
-        }
-      }
+      const defaultPaymentMethod = await extractPaymentMethodFromSession(stripe, expandedSession || session);
 
       if (defaultPaymentMethod && session.customer) {
-        try {
-          await stripe.customers.update(session.customer as string, {
-            invoice_settings: { default_payment_method: defaultPaymentMethod },
-          });
-        } catch (custErr) {
-          console.warn('Could not set default pm on customer for lease upfront', custErr);
-        }
-      }
-
-      const leaseSubId = metadata.lease_subscription_id;
-      if (leaseSubId && defaultPaymentMethod) {
-        try {
-          await stripe.subscriptions.update(leaseSubId as string, {
-            default_payment_method: defaultPaymentMethod,
-          });
-          console.log(`Attached PM ${defaultPaymentMethod} to pre-created lease sub ${leaseSubId} (from upfront payment)`);
-        } catch (attachErr) {
-          console.warn('Failed to attach PM to pre-created lease sub', attachErr);
-        }
-      }
-
-      // Attach PM to pre-created lease service subs (created in the route before the upfront payment).
-      if (metadata.lease_service_sub_ids) {
+        const leaseSubId = metadata.lease_subscription_id as string | undefined;
         let serviceSubIds: string[] = [];
-        try {
-          serviceSubIds = JSON.parse(metadata.lease_service_sub_ids);
-        } catch {}
+        if (metadata.lease_service_sub_ids) {
+          try { serviceSubIds = JSON.parse(metadata.lease_service_sub_ids as string); } catch {}
+        }
+
+        await setDefaultPaymentMethodOnCustomerAndSubs(
+          stripe,
+          session.customer as string,
+          defaultPaymentMethod,
+          [leaseSubId, ...serviceSubIds].filter(Boolean) as string[]
+        );
+
+        if (leaseSubId) {
+          console.log(`Attached PM ${defaultPaymentMethod} to pre-created lease sub ${leaseSubId} (from upfront payment)`);
+        }
         for (const svcSubId of serviceSubIds) {
-          if (defaultPaymentMethod) {
-            try {
-              await stripe.subscriptions.update(svcSubId, {
-                default_payment_method: defaultPaymentMethod,
-              });
-              console.log(`Attached PM to pre-created lease service sub ${svcSubId} from upfront payment`);
-            } catch (attachErr) {
-              console.warn('Failed to attach PM to lease service sub', attachErr);
-            }
-          }
+          console.log(`Attached PM to pre-created lease service sub ${svcSubId} from upfront payment`);
         }
       }
     }
@@ -466,6 +414,9 @@ export async function POST(request: NextRequest) {
     // especially for SEPA.
     // Placed here (post-retrieve, inside the lease guard) so it is purely confirmatory and cannot affect
     // the initial hosted collection or sub creation that took significant effort to stabilize.
+    //
+    // Note: for invoice.paid we don't have a full Checkout Session, so we use a lightweight extraction
+    // from the invoice's payment_intent + customer list fallback (the shared helper is session-oriented).
     let defaultPaymentMethod: string | undefined;
     try {
       const piId = typeof (invoice as any).payment_intent === 'string'
@@ -480,7 +431,7 @@ export async function POST(request: NextRequest) {
       console.warn('Could not retrieve payment_method from paid lease invoice for default attachment', pmErr);
     }
 
-    // Additive fallback (list recent PM) for cases where the initial paid invoice's PI does not surface the method (e.g. some SEPA flows or edge timing).
+    // Additive fallback (list recent PM)
     if (!defaultPaymentMethod && sub.customer) {
       try {
         const pms = await stripe.customers.listPaymentMethods(sub.customer as string, { limit: 5 });
@@ -492,17 +443,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (defaultPaymentMethod && sub.customer) {
-      try {
-        await stripe.customers.update(sub.customer as string, {
-          invoice_settings: { default_payment_method: defaultPaymentMethod },
-        });
-        await stripe.subscriptions.update(sub.id, {
-          default_payment_method: defaultPaymentMethod,
-        });
-        console.log(`Attached default PM ${defaultPaymentMethod} to lease customer/sub ${sub.id} for future recurring cycles`);
-      } catch (attachErr) {
-        console.warn('Failed to set explicit default_payment_method on lease customer/sub (future cycles may still work via hosted payment side-effects)', attachErr);
-      }
+      await setDefaultPaymentMethodOnCustomerAndSubs(stripe, sub.customer as string, defaultPaymentMethod, [sub.id]);
+      console.log(`Attached default PM ${defaultPaymentMethod} to lease customer/sub ${sub.id} for future recurring cycles`);
     }
     // === end additive lease recurring attachment ===
 
