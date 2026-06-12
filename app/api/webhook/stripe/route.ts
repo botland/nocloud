@@ -40,14 +40,14 @@ export async function POST(request: NextRequest) {
     const session = event.data.object as Stripe.Checkout.Session;
 
     // Re-retrieve the session with expansion to reliably obtain the payment_method used
-    // for card (and sepa) payments in 'payment' mode. The raw webhook payload often only
-    // includes the payment_intent ID; expanding ensures we get the PM for service sub
-    // creation (full path) and lease PM attachment even in the presence of timing or
-    // payload differences between card and async SEPA flows. Falls back to prior logic.
+    // for card (and sepa) payments in 'payment' mode *and* for mode:'setup' sessions (the hybrid
+    // Pay-by-Invoice-for-hardware + card/SEPA-for-recurring-services flow). Expanding both kinds of
+    // intent ensures we get the PM for service sub creation (full path) and lease PM attachment.
+    // Falls back to prior logic.
     let expandedSession: Stripe.Checkout.Session = session;
     try {
       expandedSession = await stripe.checkout.sessions.retrieve(session.id, {
-        expand: ['payment_intent.payment_method'],
+        expand: ['payment_intent.payment_method', 'setup_intent.payment_method'],
       });
     } catch (expErr) {
       console.warn('Could not re-retrieve/expand checkout session for PM; using event payload + fallbacks', expErr);
@@ -86,8 +86,13 @@ export async function POST(request: NextRequest) {
 
     const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
+    // In the hybrid "invoice for hardware + setup for recurring services" flow we already sent the
+    // "invoice registered" email from the route. Skip the generic checkout confirmation email here
+    // to avoid duplicates. Subs creation (below) still runs.
+    const isSetupForRecurringServicesUnderInvoice = session.mode === 'setup' && servicesArray.length > 0 && financing !== 'lease' && !metadata.lease_subscription_id && !metadata.is_lease_upfront;
+
     // Customer email - invoice / confirmation
-    if (customerEmail && resend) {
+    if (customerEmail && resend && !isSetupForRecurringServicesUnderInvoice) {
       const leaseNote = financing === 'lease' ? `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>` : '';
       const upfront = (metadata as any).lease_upfront_amount;
       const upfrontNote = (financing === 'lease' && upfront) ? `<p><strong>Upfront payment:</strong> €${upfront}</p>` : '';
@@ -133,7 +138,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Admin notification
-    if (process.env.ADMIN_EMAIL && resend) {
+    if (process.env.ADMIN_EMAIL && resend && !isSetupForRecurringServicesUnderInvoice) {
       try {
         const adminSubj = isFr
           ? `Nouvelle commande B2B sur nocloud.ai - #${orderId.slice(-8)}`

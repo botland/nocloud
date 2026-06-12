@@ -18,9 +18,12 @@ export async function GET(request: NextRequest) {
   });
 
   try {
-    // Retrieve the completed checkout session with expansion so we have PM info if needed
+    // Retrieve the completed checkout session with expansion so we have PM info if needed.
+    // We expand both payment_intent (classic full+card/sepa) and setup_intent (the hybrid
+    // "Pay by Invoice for hardware + card/SEPA for recurring services" flow) so that
+    // createFullServiceSubscriptions can extract the PM for the service subs in either case.
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['payment_intent.payment_method'],
+      expand: ['payment_intent.payment_method', 'setup_intent.payment_method'],
     });
 
     const metadata = session.metadata || {};

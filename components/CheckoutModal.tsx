@@ -30,6 +30,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>(initialData?.paymentMethod || 'stripe');
   const [financing, setFinancing] = useState<'full' | 'lease'>(initialData?.financing || 'full');
 
+  // When paymentMethod==='invoice' AND the cart contains recurring services, the user picks (inside the
+  // invoice box) how the recurring services will be paid: 'stripe' (card) or 'sepa'. The main hardware/upfront
+  // still uses the Net-30 invoice; this only affects creation of automatic service subs (via a mode:'setup' session).
+  const [recurringPaymentMethod, setRecurringPaymentMethod] = useState<'stripe' | 'sepa'>(initialData?.recurringPaymentMethod || 'stripe');
+
   // Email collected here (part of checkout), kept in payload, transmitted to Stripe (pre-created Customer preferred; falls back to customer_email).
   const [email, setEmail] = useState(initialData?.email || '');
 
@@ -46,6 +51,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const setCountryWithDraft = (v: string) => { setCountry(v); updateDraft({ country: v }); };
   const setPaymentMethodWithDraft = (v: 'stripe' | 'sepa' | 'invoice') => { setPaymentMethod(v); updateDraft({ paymentMethod: v }); };
   const setFinancingWithDraft = (v: 'full' | 'lease') => { setFinancing(v); updateDraft({ financing: v }); };
+  const setRecurringPaymentMethodWithDraft = (v: 'stripe' | 'sepa') => { setRecurringPaymentMethod(v); updateDraft({ recurringPaymentMethod: v }); };
   const setEmailWithDraft = (v: string) => { setEmail(v); updateDraft({ email: v }); };
 
 
@@ -99,7 +105,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
     // Real Stripe flow for 'stripe' / 'sepa' (and now invoice too)
     try {
-      const payload = {
+      const payload: any = {
         items: cart,
         email,
         company,
@@ -113,6 +119,12 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
         financing,
         locale,
       };
+      // Only include the sub-choice when the main payment is invoice AND services are present.
+      // Server will use it to decide between a pure send_invoice path (no services) vs. the hybrid
+      // path (hardware on Net-30 invoice + mode:'setup' Checkout to collect the PM for automatic service subs).
+      if (paymentMethod === 'invoice' && servicesMonthly > 0) {
+        payload.recurringPaymentMethod = recurringPaymentMethod;
+      }
 
       const res = await fetch('/api/checkout', {
         method: 'POST',
@@ -383,6 +395,47 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   )}
                   {canPbi && !canInvoicePolicy && (
                     <div className="text-[10px] text-amber-400 mt-0.5">{t('invoicePolicyNote')}</div>
+                  )}
+
+                  {/* When the user chooses Pay by Invoice for the hardware/upfront but the order has recurring services,
+                      they must pick (inside this box) how the *recurring* part is paid: card or SEPA.
+                      The backend will create the Net-30 invoice for hardware and a mode:'setup' Checkout for the
+                      recurring PM so that service subs are automatic (charge_automatically) instead of send_invoice. */}
+                  {servicesMonthly > 0 && paymentMethod === 'invoice' && (
+                    <div className="mt-3 pl-4 border-l-2 border-slate-600 space-y-2">
+                      <div className="text-xs font-medium text-slate-300">{t('recurringPaymentForServices')}</div>
+                      <label className="flex items-center gap-x-2 text-sm cursor-pointer">
+                        <input
+                          type="radio"
+                          name="recurringPayment"
+                          value="stripe"
+                          checked={recurringPaymentMethod === 'stripe'}
+                          onChange={() => setRecurringPaymentMethodWithDraft('stripe')}
+                          className="accent-cyan-400"
+                        />
+                        <span className="font-medium flex items-center gap-x-1">
+                          {t('recurringCard')} <span className="text-[10px] px-1.5 py-px bg-slate-800 rounded">{t('recurringCardTag')}</span>
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-x-2 text-sm cursor-pointer">
+                        <input
+                          type="radio"
+                          name="recurringPayment"
+                          value="sepa"
+                          checked={recurringPaymentMethod === 'sepa'}
+                          onChange={() => setRecurringPaymentMethodWithDraft('sepa')}
+                          disabled={isOverSepaLimit(servicesMonthly)}
+                          className="accent-cyan-400"
+                        />
+                        <span>
+                          {t('recurringSepa')}
+                          <span className="text-xs text-slate-400 block">{t('recurringSepaDesc')}</span>
+                          {isOverSepaLimit(servicesMonthly) && (
+                            <span className="text-amber-400 text-[10px]">(max €10,000 — choose card)</span>
+                          )}
+                        </span>
+                      </label>
+                    </div>
                   )}
                 </div>
               </label>

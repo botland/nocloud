@@ -24,6 +24,8 @@ export interface CartItem {
 // Payload sent from CheckoutModal to /api/checkout (and used for invoice mock path too).
 // Email added as part of central ownership + transmission to Stripe customer.
 // NOTE: prices in items are *not* trusted by server; server resolves via lib/pricing using slugs + service keys.
+// recurringPaymentMethod (only sent for paymentMethod==='invoice' + services) lets the user pick
+// card/sepa for the recurring services while the main hardware/upfront uses Net-30 invoice.
 export interface CheckoutPayload {
   items: CartItem[];
   email: string;
@@ -37,6 +39,7 @@ export interface CheckoutPayload {
   paymentMethod: 'stripe' | 'sepa' | 'invoice';
   financing: 'full' | 'lease';
   locale?: string;
+  recurringPaymentMethod?: 'stripe' | 'sepa';
 }
 
 // Draft of checkout form data persisted across Stripe cancel so user doesn't have to re-type everything.
@@ -51,4 +54,8 @@ export interface CheckoutFormDraft {
   country: string;
   paymentMethod: 'stripe' | 'sepa' | 'invoice';
   financing: 'full' | 'lease';
+  // Only relevant when paymentMethod==='invoice' and cart has recurring services.
+  // Lets the user choose automatic collection (card/sepa) for the recurring part while
+  // the hardware/upfront still goes through the Net-30 invoice.
+  recurringPaymentMethod?: 'stripe' | 'sepa';
 }

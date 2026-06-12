@@ -99,7 +99,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     // Re-create fresh mock instances for every test (prevents cross-test pollution)
     mockStripeInstance = {
       customers: { create: vi.fn() },
-      invoices: { create: vi.fn(), finalizeInvoice: vi.fn() },
+      invoices: { create: vi.fn(), finalizeInvoice: vi.fn(), retrieve: vi.fn(), update: vi.fn(), del: vi.fn(), voidInvoice: vi.fn() },
       invoiceItems: { create: vi.fn() },
       products: { create: vi.fn() },
       subscriptions: { create: vi.fn() },
@@ -122,10 +122,14 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     // Default successful returns for common objects
     mockStripeInstance.customers.create.mockResolvedValue({ id: 'cus_test' })
     mockStripeInstance.invoices.create.mockResolvedValue({ id: 'in_test' })
+    mockStripeInstance.invoices.retrieve.mockResolvedValue({ id: 'inv0', status: 'draft', total: 0, amount_due: 0, subscription: 'sub_test' })
+    mockStripeInstance.invoices.update.mockResolvedValue({})
+    mockStripeInstance.invoices.del.mockResolvedValue({})
+    mockStripeInstance.invoices.voidInvoice.mockResolvedValue({})
     mockStripeInstance.invoiceItems.create.mockResolvedValue({})
     mockStripeInstance.invoices.finalizeInvoice.mockResolvedValue({})
     mockStripeInstance.products.create.mockResolvedValue({ id: 'prod_test' })
-    mockStripeInstance.subscriptions.create.mockResolvedValue({ id: 'sub_test' })
+    mockStripeInstance.subscriptions.create.mockResolvedValue({ id: 'sub_test', latest_invoice: { id: 'inv_test', status: 'draft', total: 0, amount_due: 0 } })
     mockStripeInstance.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.test/pay' })
 
     mockResendInstance.emails.send.mockResolvedValue({ id: 'email_123' })
@@ -223,6 +227,54 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(subjects.some((s: string) => s.includes('nocloud.ai order'))).toBe(true)
   })
 
+  it('full + invoice (with services) + recurring card (hybrid): returns url (setup), creates main invoice (hardware only) + Resend, does NOT create service send-subs in route (they are created later via webhook/fulfill from the setup session)', async () => {
+    const payload = withServices(basePayload({ paymentMethod: 'invoice', financing: 'full' }))
+    // Explicitly request automatic (card) for the recurring services while the hardware stays on Net-30 invoice.
+    ;(payload as any).recurringPaymentMethod = 'stripe'
+
+    const res = await POST(makeRequest(payload))
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json).toHaveProperty('url')          // setup redirect, not the pure success overlay path
+    expect(json).not.toHaveProperty('invoiceId')
+
+    // Hardware invoice + lines still created (the "pay by invoice" part)
+    expect(mockStripeInstance.invoices.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        collection_method: 'send_invoice',
+        days_until_due: 30,
+      })
+    )
+    expect(mockStripeInstance.invoiceItems.create).toHaveBeenCalled() // at least the hardware line
+
+    // In the hybrid path we do NOT create the send_invoice service subs in the route
+    // (the legacy path would have done subscriptions.create with collection_method send_invoice for services).
+    // The service subs will be created later (automatic) from the setup session via createFullServiceSubscriptions.
+    const subCreates = mockStripeInstance.subscriptions.create.mock.calls || []
+    const anySendServiceSub = subCreates.some((c: any[]) => {
+      const arg = c[0] || {}
+      return arg.collection_method === 'send_invoice' && arg.items && arg.items.some((it: any) => it.price_data && it.price_data.recurring)
+    })
+    expect(anySendServiceSub).toBe(false)
+
+    // A setup session was created for the recurring PM
+    const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls.find((c: any[]) => (c[0] || {}).mode === 'setup')
+    expect(sessionCall).toBeTruthy()
+    const setupArg = sessionCall[0]
+    expect(setupArg.mode).toBe('setup')
+    expect(setupArg.payment_method_types).toEqual(['card'])
+    expect(setupArg.metadata).toMatchObject({
+      financing: 'full',
+      recurring_payment_method: 'stripe',
+    })
+    expect(setupArg.metadata.services).toBeTruthy()
+    expect(setupArg.metadata.main_invoice_id).toBeTruthy()
+
+    // Invoice registered emails still sent (2)
+    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
+  })
+
   it('lease + card: creates lease sub (with trial + cancel_at) + pre-creates service subs + upfront Checkout session (returns url); no route-level Resend', async () => {
     const payload = withServices(basePayload({ paymentMethod: 'stripe', financing: 'lease' }), ['managedCare'])
     const hw = HARDWARE_PRICES.studio
@@ -234,7 +286,8 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     const json = await res.json()
     expect(json).toHaveProperty('url')
 
-    // Lease sub created (direct path)
+    // Lease sub created (direct path) + service subs pre-created (1 service in this payload)
+    expect(mockStripeInstance.subscriptions.create).toHaveBeenCalledTimes(2) // 1 hardware lease + 1 service
     const subCall = mockStripeInstance.subscriptions.create.mock.calls[0][0]
     expect(subCall).toMatchObject({
       collection_method: 'charge_automatically',
@@ -248,6 +301,21 @@ describe('api/checkout (functional contract tests - black box over payload + Str
       upfront_percent: String(UPFRONT_PERCENT),
       pricing_version: PRICING_VERSION,
     })
+
+    // Service sub pre-create call (2nd subscriptions.create)
+    const svcSubCall = mockStripeInstance.subscriptions.create.mock.calls[1][0]
+    expect(svcSubCall).toMatchObject({
+      collection_method: 'charge_automatically',
+      trial_end: expect.any(Number),
+      payment_behavior: 'default_incomplete',
+    })
+    expect(svcSubCall.items[0].price_data.unit_amount).toBe(SERVICE_PRICES.managedCare * 100)
+    expect(svcSubCall.metadata).toMatchObject({ service: 'Managed Care', is_lease_service: 'true' })
+
+    // The 0-trial-invoice cleanup (del/void/label) runs after each sub create (defensive, in a try/catch).
+    // In the test mock the create responses include a draft €0 latest_invoice, so retrieve + del are exercised.
+    expect(mockStripeInstance.invoices.retrieve).toHaveBeenCalled()
+    // Upfront-only checkout session continues below.
 
     // Upfront-only checkout session
     const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]

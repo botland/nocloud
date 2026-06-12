@@ -168,8 +168,13 @@
     "upfrontDueToday": "€{amount} dus aujourd'hui",
     "leaseRangeNote": "(éligible pour un matériel de €{min} à €{max})",
     "invoiceRangeNote": "(min €{min} – max €{max} — choisissez carte ou réduisez la commande)",
-    "invoicePolicyNote": "(sélectionnez pour Net 30 ; les paiements complets avec services sont pris en charge via factures récurrentes)",
-    "monthlyTotalLabel": "Paiement mensuel ({months} mois)"
+    "invoicePolicyNote": "(Net 30 pour le matériel/acompte ; choisissez carte ou SEPA ci-dessous pour les services récurrents)",
+    "monthlyTotalLabel": "Paiement mensuel ({months} mois)",
+    "recurringPaymentForServices": "Méthode de paiement pour les services récurrents",
+    "recurringCard": "Carte de crédit / débit",
+    "recurringCardTag": "Stripe",
+    "recurringSepa": "Prélèvement SEPA",
+    "recurringSepaDesc": "Pour les charges mensuelles des services (prélèvement automatique)"
   },
   "success": {
     "title": "Merci pour votre commande !",

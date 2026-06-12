@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       paymentMethod,
       financing = 'full',
       locale = 'en',
+      recurringPaymentMethod,   // only present+relevant for paymentMethod==='invoice' + services; 'stripe'|'sepa' means use automatic subs for recurring (collected via mode:'setup')
     } = body;
 
     // Authoritative prices + totals resolved server-side from lib/pricing.ts using slugs + service keys.
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
       console.log('[PAYMENT DEBUG] checkout received payload', {
         financing,
         paymentMethod,
+        recurringPaymentMethod,
         itemsCount: (items || []).length,
         servicesInItems: (items || []).reduce((n: number, it: any) => n + ((it.services || []).length || 0), 0),
         resolvedServicesForMetaLen: resolvedServicesForMeta.length,
@@ -121,13 +123,20 @@ export async function POST(request: NextRequest) {
     }
     if (paymentMethod === 'invoice' && !isInvoiceAllowed(financing, servicesMonthly)) {
       return NextResponse.json({
-        error: 'Pay by Invoice is only available for full payments (services supported via recurring invoices) or within ranges.'
+        error: 'Pay by Invoice is only available for full payments (recurring services use a separate card/SEPA choice inside the invoice box) or within ranges.'
       }, { status: 400 });
     }
 
+    // SEPA limit check. When the main payment is invoice but the user picked SEPA for the recurring services
+    // (new hybrid flow), the relevant amount for the cap is servicesMonthly (the hardware is on Net-30 invoice).
     if (paymentMethod === 'sepa' && isOverSepaLimit(dueAmount)) {
       return NextResponse.json({
         error: `SEPA Direct Debit payments are limited to €10,000. Your ${financing === 'lease' ? 'monthly lease payment' : 'order total'} is €${dueAmount}. Please select "Credit / Debit card" (or reduce quantity / use Pay in full for smaller hardware totals).`
+      }, { status: 400 });
+    }
+    if (paymentMethod === 'invoice' && recurringPaymentMethod === 'sepa' && isOverSepaLimit(servicesMonthly)) {
+      return NextResponse.json({
+        error: `SEPA Direct Debit payments are limited to €10,000. Your recurring services total is €${servicesMonthly}. Please select "Credit / Debit card" for the recurring services (inside the Pay by Invoice box) or reduce the services.`
       }, { status: 400 });
     }
 
@@ -260,6 +269,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, invoiceId: upfrontInvoice.id });
       } else {
         // Card or sepa: create the sub with trial_end now (payment is immediate), then one-time Checkout for the upfront.
+        // We intentionally use trial_end (not billing_cycle_anchor) because the latter is restricted by Stripe
+        // ("cannot be later than next natural billing date") when using price_data for monthly plans.
+        // The trial_end makes the sub visible immediately in trialing status.
+        // Stripe will auto-create a €0 draft "trial invoice". We clean it up immediately below (del if still draft,
+        // void if open, or at minimum label it clearly if it has already finalized to paid).
+        // This is the same pattern used (and labeled) for the send_invoice lease and full+services invoice paths.
         const trialEnd = Math.floor(Date.now() / 1000) + 32 * 24 * 3600;
 
         const leaseProduct = await stripe.products.create({
@@ -310,6 +325,49 @@ export async function POST(request: NextRequest) {
         const subscription = await stripe.subscriptions.create(subParams);
         const leaseSubId = subscription.id;
 
+        // Best-effort cleanup of the €0 trial invoice that Stripe auto-creates for a subscription with trial_end.
+        // With charge_automatically + €0, these invoices frequently finalize and pay themselves almost
+        // instantly (before we even get the create response back). Strategy:
+        //   - draft + €0 → del() to remove the invoice record entirely
+        //   - open  + €0 → voidInvoice()
+        //   - paid/finalized + €0 → we can do nothing (del/void/update description/footer all fail on finalized
+        //     invoices). We just log a note. The important thing (the Subscription object in trialing) is correct
+        //     and will produce proper non-zero invoices after trial_end. This is an inherent side-effect of
+        //     using trial_end + automatic collection for the "recurring starts ~1 month later" UX on lease+card/sepa.
+        // (The send_invoice lease paths keep+label their trial invoices because they stay open/draft longer.)
+        try {
+          let latestInv = (subscription as any).latest_invoice;
+          let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
+          if (invId) {
+            const inv = await stripe.invoices.retrieve(invId);
+            const isZero = (inv.total ?? 0) === 0 || (inv.amount_due ?? 0) === 0 || (inv.amount_paid ?? 0) === 0;
+            const invSub = (inv as any).subscription;
+            const invSubId = typeof invSub === 'string' ? invSub : invSub?.id;
+            if (isZero && (!invSubId || invSubId === subscription.id)) {
+              if (inv.status === 'draft') {
+                await stripe.invoices.del(invId);
+                console.log(`Deleted draft €0 trial invoice ${invId} for lease hardware sub ${subscription.id}`);
+              } else if (inv.status === 'open') {
+                await stripe.invoices.voidInvoice(invId);
+                console.log(`Voided €0 trial invoice ${invId} for lease hardware sub ${subscription.id}`);
+              } else if (inv.status === 'paid' || inv.status === 'uncollectible') {
+                // The €0 trial invoice has already been finalized/paid by Stripe (very common and fast
+                // for charge_automatically + zero-amount trial invoices). We cannot del, void, or update
+                // description/footer on finalized invoices. We simply note it and move on.
+                // The subscription object itself is correctly created in trialing and will generate
+                // real non-zero recurring invoices after the trial_end. The 0 invoice is just a side-effect
+                // artifact of how Stripe represents the trial period.
+                console.log(
+                  `€0 trial invoice ${invId} for lease hardware sub ${subscription.id} is already finalized (status=${inv.status}); ` +
+                  `skipping label (common for automatic collection + €0 trials). Sub remains correctly in trialing.`
+                );
+              }
+            }
+          }
+        } catch (cleanupErr) {
+          console.warn('Could not clean up 0 trial invoice for main lease hardware sub', cleanupErr);
+        }
+
         if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] lease: pre-creating', resolvedServicesForMeta.length, 'service subs (for card/sepa lease)');
         // Pre-create the perpetual service subs early (like the lease hardware sub), in trialing with default_incomplete.
         // They will get the default PM attached in the webhook after the upfront payment.
@@ -336,9 +394,46 @@ export async function POST(request: NextRequest) {
                 service: s.name,
                 is_lease_service: 'true',
               },
+              expand: ['latest_invoice'],
             };
             const svcSub = await stripe.subscriptions.create(subParams2);
             leaseServiceSubIds.push(svcSub.id);
+
+            // Immediately clean up (or label) the €0 trial invoice for this lease service sub.
+            // Same strategy as the hardware lease sub above.
+            try {
+              let latestInv = (svcSub as any).latest_invoice;
+              let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
+              if (invId) {
+                const inv = await stripe.invoices.retrieve(invId);
+                const isZero = (inv.total ?? 0) === 0 || (inv.amount_due ?? 0) === 0 || (inv.amount_paid ?? 0) === 0;
+                const invSub = (inv as any).subscription;
+                const invSubId = typeof invSub === 'string' ? invSub : invSub?.id;
+                if (isZero && (!invSubId || invSubId === svcSub.id)) {
+                  if (inv.status === 'draft') {
+                    await stripe.invoices.del(invId);
+                    console.log(`Deleted draft €0 trial invoice ${invId} for lease service sub ${svcSub.id}`);
+                  } else if (inv.status === 'open') {
+                    await stripe.invoices.voidInvoice(invId);
+                    console.log(`Voided €0 trial invoice ${invId} for lease service sub ${svcSub.id}`);
+                  } else if (inv.status === 'paid' || inv.status === 'uncollectible') {
+                    // The €0 trial invoice has already been finalized/paid by Stripe (very common and fast
+                    // for charge_automatically + zero-amount trial invoices). We cannot del, void, or update
+                    // description/footer on finalized invoices. We simply note it and move on.
+                    // The subscription object itself is correctly created in trialing and will generate
+                    // real non-zero recurring invoices after the trial_end. The 0 invoice is just a side-effect
+                    // artifact of how Stripe represents the trial period.
+                    console.log(
+                      `€0 trial invoice ${invId} for lease service sub ${svcSub.id} ("${s.name}") is already finalized (status=${inv.status}); ` +
+                      `skipping label (common for automatic collection + €0 trials). Sub remains correctly in trialing.`
+                    );
+                  }
+                }
+              }
+            } catch (cleanupErr) {
+              console.warn('Could not clean up 0 trial invoice for lease service sub', cleanupErr);
+            }
+
             console.log(`Pre-created lease service sub ${svcSub.id} for "${s.name}" (will attach PM after upfront payment; visible immediately in trialing)`);
           } catch (e) {
             console.error('Failed to pre-create lease service sub in route', e);
@@ -398,13 +493,11 @@ export async function POST(request: NextRequest) {
 
     if (paymentMethod === 'invoice') {
       if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> INVOICE branch');
-      // Production-ready Pay by Invoice (B2B Net 30).
-      // Previously this was a pure client mock with no Stripe objects or server emails.
-      // Now we create a real Customer (for ownership + metadata) and a real Invoice with
-      // collection_method: 'send_invoice' + days_until_due: 30. The Invoice is finalized/sent
-      // by Stripe (customer receives it via email or dashboard). Confirmation emails are sent
-      // from here (and/or on invoice.paid in webhook for the actual payment later).
-      // Policy (isInvoiceAllowed + guards above) still ensures this path is only for full + no services.
+      // Production-ready Pay by Invoice (B2B Net 30) for the hardware / upfront portion.
+      // When the order also has recurring services and the client supplied recurringPaymentMethod
+      // (card or sepa), we create a mode:'setup' Checkout (after the invoice) so the recurring
+      // services get automatic subscriptions (PM collected via the setup session). The old
+      // send_invoice service-subs path is used only as fallback when the new field is absent.
       //
       // NOTE (per plan "Lease safety rule"): the entire preceding `if (financing === 'lease')` block
       // (sub creation, pending InvoiceItem, dynamic Product, payment_behavior, hosted redirect, etc.)
@@ -454,8 +547,8 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Add hardware line items (one-time). Services first periods are added as additional lines below
-      // (combined on the same net30 invoice for the order). Mirror resolved pricing + qty.
+      // Add hardware line items (one-time). (Services are never on the initial Net-30 invoice when the user
+      // chose a card/SEPA method for recurring inside the invoice box; they are handled via automatic subs.)
       for (const item of (items || [])) {
         const qty = item.quantity || 1;
         const slug = item.product?.slug as string | undefined;
@@ -470,13 +563,84 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Recurring services for pay-by-invoice (full + services now supported; lease+invoice still disallowed in UI).
-      // The initial net30 invoice contains hardware only.
-      // Best-effort create real send_invoice Subscriptions using a trial_end (~1 month) so that the
-      // first paid recurring service invoices are generated ~1 month after the initial payment.
-      // After creation we update the auto-generated €0 trial invoice (if present) with a clear description
-      // pointing back to the main order invoice.
-      // Pattern reuses the dynamic Product + price_data from the webhook full services path.
+      const hasServices = resolvedServicesForMeta.length > 0;
+      const useRecurringAutoForServices = hasServices && recurringPaymentMethod && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
+
+      if (useRecurringAutoForServices) {
+        // NEW hybrid path requested by user: hardware/upfront goes on the Net-30 invoice (already created above),
+        // but recurring services MUST use card or SEPA (automatic collection). We create a Checkout session in
+        // mode:'setup' so the customer can provide the PM (no charge on this session). The webhook + fulfill will
+        // later create the charge_automatically service subs using createFullServiceSubscriptions (PM extracted
+        // from the setup_intent). We do NOT create any send_invoice service subs here.
+        const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+          recurringPaymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
+
+        const setupSession = await stripe.checkout.sessions.create({
+          payment_method_types: pmTypes,
+          mode: 'setup',
+          customer: stripeCustomerId,
+          success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
+          locale,
+          metadata: {
+            company_name: company || 'N/A',
+            vat_number: vatNumber || 'N/A',
+            po_number: poNumber || 'N/A',
+            address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
+            financing,
+            services: JSON.stringify(resolvedServicesForMeta),
+            customer_email: email || 'N/A',
+            pricing_version: PRICING_VERSION,
+            locale,
+            main_invoice_id: invoice.id,
+            recurring_payment_method: recurringPaymentMethod,
+          },
+        });
+
+        // We still finalize/send the hardware invoice and the "you will receive the Net 30 invoice" emails.
+        await stripe.invoices.finalizeInvoice(invoice.id);
+
+        const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+        const customerEmailForInvoice = email;
+        if (customerEmailForInvoice && resend) {
+          try {
+            const isFr = locale === 'fr';
+            const subj = isFr
+              ? `Merci pour votre commande nocloud.ai #${invoice.id.slice(-8)}`
+              : `Thank you for your nocloud.ai order #${invoice.id.slice(-8)}`;
+            await resend.emails.send({
+              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+              to: customerEmailForInvoice,
+              subject: subj,
+              html: `
+                <h1 style="color: #0ea5e9;">${isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!'}</h1>
+                <p>${isFr ? 'Votre commande a été enregistrée. Vous recevrez sous peu une facture avec les instructions de paiement (Net 30) pour le matériel. Veuillez également finaliser la méthode de paiement pour les services récurrents sur la page de configuration Stripe.' : 'Your order has been registered. You will receive an invoice with payment instructions shortly (Net 30) for the hardware. Please also complete the payment method setup for recurring services on the Stripe page.'} </p>
+                <p><strong>Order ID:</strong> ${invoice.id}</p>
+                <p><strong>Company:</strong> ${company || 'N/A'}</p>
+              `,
+            });
+          } catch (e) { console.error('Failed to send invoice registered email (hybrid recurring)', e); }
+        }
+        if (process.env.ADMIN_EMAIL && resend) {
+          try {
+            await resend.emails.send({
+              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+              to: process.env.ADMIN_EMAIL,
+              subject: `New B2B Invoice (Net 30) + Recurring Setup - #${invoice.id.slice(-8)}`,
+              html: `<p>New hybrid Pay by Invoice order for ${company || email}. Invoice ${invoice.id} created and sent (Net 30 for hardware). Setup session ${setupSession.id} created for recurring services (${recurringPaymentMethod}).</p>`,
+            });
+          } catch (e) { console.error('Failed to send admin invoice email (hybrid)', e); }
+        }
+
+        console.log(`Real B2B invoice created (hybrid): ${invoice.id}. Redirecting to setup session ${setupSession.id} for recurring services (${recurringPaymentMethod}).`);
+        return NextResponse.json({ url: setupSession.url });
+      }
+
+      // Legacy / fallback path (no services, or recurringPaymentMethod not supplied by client).
+      // Creates send_invoice service subs (trial) for any services. First real recurring invoices are
+      // sent ~1 month later via the subs. Kept so that older clients / the existing test continue to work.
+      // Recurring services for pay-by-invoice (full + services was supported; now the preferred path for
+      // services under invoice is the hybrid automatic setup above).
       for (const s of resolvedServicesForMeta) {
         // Best effort: set up the recurring subscription (trial so recurring starts 1 month after initial).
         try {

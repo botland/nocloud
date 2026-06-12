@@ -48,15 +48,19 @@ export async function createFullServiceSubscriptions(
     console.log('[PAYMENT DEBUG] createFullServiceSubscriptions starting for', orderId, 'services:', servicesArray.length);
   }
 
-  // PM extraction - same robust logic as before (force PI + list)
+  // PM extraction - robust logic supporting both classic payment-mode sessions (hardware one-time)
+  // and the new mode:'setup' sessions used for the hybrid "invoice for hardware + card/sepa for recurring services" flow.
+  // We expand both payment_intent and setup_intent so the helper works for either.
   let defaultPaymentMethod: string | undefined;
 
-  // Try to get from the session if expanded, or re-retrieve
+  // Try to get from the session if expanded, or re-retrieve (now expanding both kinds of intent)
   let sessionForPm: any = completedSession;
-  if (!completedSession.payment_intent || typeof completedSession.payment_intent === 'string') {
+  const needsReRetrieve = !completedSession.payment_intent || typeof completedSession.payment_intent === 'string'
+    || !completedSession.setup_intent || typeof completedSession.setup_intent === 'string';
+  if (needsReRetrieve) {
     try {
       sessionForPm = await stripe.checkout.sessions.retrieve(completedSession.id, {
-        expand: ['payment_intent.payment_method'],
+        expand: ['payment_intent.payment_method', 'setup_intent.payment_method'],
       });
     } catch (e) {
       console.warn('Could not re-retrieve session for PM in fulfill path', e);
@@ -70,16 +74,25 @@ export async function createFullServiceSubscriptions(
   }
 
   if (!defaultPaymentMethod) {
-    let pi: any = s.payment_intent;
-    const piId = typeof pi === 'string' ? pi : (pi && pi.id);
-    if (piId) {
+    // Support either a payment_intent (classic full + card/sepa) or a setup_intent (hybrid invoice + recurring auto)
+    let intent: any = s.payment_intent || s.setup_intent;
+    const intentId = typeof intent === 'string' ? intent : (intent && intent.id);
+    if (intentId) {
       try {
-        const retrievedPi = await stripe.paymentIntents.retrieve(piId, { expand: ['payment_method'] });
-        const pm = (retrievedPi as any).payment_method;
-        const candidate = typeof pm === 'string' ? pm : pm?.id;
-        if (candidate) defaultPaymentMethod = candidate;
+        const isSetup = !!s.setup_intent || (intent && (intent.object === 'setup_intent' || (typeof intent === 'object' && !intent.client_secret /*heuristic*/)));
+        if (isSetup) {
+          const retrievedSi = await stripe.setupIntents.retrieve(intentId, { expand: ['payment_method'] });
+          const pm = (retrievedSi as any).payment_method;
+          const candidate = typeof pm === 'string' ? pm : pm?.id;
+          if (candidate) defaultPaymentMethod = candidate;
+        } else {
+          const retrievedPi = await stripe.paymentIntents.retrieve(intentId, { expand: ['payment_method'] });
+          const pm = (retrievedPi as any).payment_method;
+          const candidate = typeof pm === 'string' ? pm : pm?.id;
+          if (candidate) defaultPaymentMethod = candidate;
+        }
       } catch (retrieveErr) {
-        console.warn('Could not expand payment_intent to obtain payment_method for service subs', retrieveErr);
+        console.warn('Could not expand payment_intent/setup_intent to obtain payment_method for service subs', retrieveErr);
       }
     }
   }

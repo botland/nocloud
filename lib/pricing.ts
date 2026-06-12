@@ -58,10 +58,12 @@ export const PBI_MIN = 5000;                // EUR - pay by invoice not availabl
 export const SEPA_MAX = 10000;              // EUR — Stripe-enforced soft cap for SEPA Direct Debit (we guard both sides)
 
 export const INVOICE_ONLY_FULL_NO_SERVICES = false;
-// When true, "Pay by Invoice (B2B)" would be restricted to financing='full' with no services.
-// Currently false: full support for recurring services on invoice (send_invoice subs created for services;
-// first periods included as lines on the initial net30 hardware invoice; future periods auto-sent by the subs).
-// Lease + invoice remains disallowed in UI for now (to avoid changing stabilized lease flows).
+// "Pay by Invoice (B2B)" is allowed for full (hardware/upfront) even when services are present.
+// Recurring services are never paid via invoice: the UI forces a separate card/SEPA choice inside
+// the invoice box for the recurring part (which triggers a mode:'setup' Checkout to collect the PM
+// and later creates automatic charge_automatically service subs). The old send_invoice service subs
+// path is kept only as a fallback when the new field is not supplied (keeps existing tests working).
+// Lease + invoice remains disallowed in UI (safety rule).
 
 export const UPFRONT_PERCENT = 20;          // % of hardware charged as upfront payment (leasing+pay by invoice)
 // The upfrontAmount returned by calculateLease is both shown in the checkout popup
