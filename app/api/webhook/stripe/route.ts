@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { Resend } from 'resend';
 import { DEBUG_PAYMENTS } from '@/lib/pricing';
 import { createFullServiceSubscriptions } from '@/lib/create-service-subscriptions';
+import {
+  sendOrderConfirmationCustomerEmail,
+  sendAdminOrderNotificationEmail,
+  sendInvoicePaidCustomerEmail,
+} from '@/lib/emails';
 
 export async function POST(request: NextRequest) {
   console.log('[PAYMENT DEBUG] /api/webhook/stripe route invoked, STRIPE_WEBHOOK_SECRET present:', !!process.env.STRIPE_WEBHOOK_SECRET, 'STRIPE_SECRET_KEY present:', !!process.env.STRIPE_SECRET_KEY);
@@ -84,89 +88,49 @@ export async function POST(request: NextRequest) {
       console.log(`checkout.session.completed: order=${orderId} financing=${financing} customer=${session.customer} servicesLen=${servicesArray.length}`);
     }
 
-    const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-
     // In the hybrid "invoice for hardware + setup for recurring services" flow we already sent the
     // "invoice registered" email from the route. Skip the generic checkout confirmation email here
     // to avoid duplicates. Subs creation (below) still runs.
     const isSetupForRecurringServicesUnderInvoice = session.mode === 'setup' && servicesArray.length > 0 && financing !== 'lease' && !metadata.lease_subscription_id && !metadata.is_lease_upfront;
 
-    // Customer email - invoice / confirmation
-    if (customerEmail && resend && !isSetupForRecurringServicesUnderInvoice) {
-      const leaseNote = financing === 'lease' ? `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>` : '';
-      const upfront = (metadata as any).lease_upfront_amount;
-      const upfrontNote = (financing === 'lease' && upfront) ? `<p><strong>Upfront payment:</strong> €${upfront}</p>` : '';
-      try {
-        const thanksSubj = isFr
-          ? `Merci pour votre commande nocloud.ai #${orderId.slice(-8)}`
-          : `Thank you for your nocloud.ai order #${orderId.slice(-8)}`;
-        const thanksTitle = isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!';
-        const thanksBody = isFr ? 'Votre commande a été reçue et le paiement confirmé.' : 'Your order has been received and payment confirmed.';
-        const thanksSummary = isFr ? 'Récapitulatif de commande' : 'Order Summary';
-        const thanksServices = isFr ? 'Services optionnels' : 'Optional Services';
-        const thanksCompany = isFr ? 'Société' : 'Company';
-        const thanksVat = isFr ? 'Numéro de TVA' : 'VAT Number';
-        const thanksPo = isFr ? 'N° de commande' : 'PO Number';
-        const thanksPriceVer = isFr ? 'Version de tarification' : 'Pricing version';
-        const thanksFooter = isFr ? 'Vous recevrez l\'appareil prochainement. Contactez-nous si vous avez des questions.' : 'You will receive the appliance soon. Contact us if you have any questions.';
-        const thanksClose = isFr ? 'Cordialement,<br>L\'équipe nocloud.ai' : 'Best regards,<br>The nocloud.ai Team';
-        await resend.emails.send({
-          from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-          to: customerEmail,
-          subject: thanksSubj,
-          html: `
-            <h1 style="color: #0ea5e9;">${thanksTitle}</h1>
-            <p>${thanksBody}</p>
-            <h2>${thanksSummary}</h2>
-            <p><strong>Total:</strong> ${amount} ${currency}</p>
-            <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
-            ${upfrontNote}
-            <p><strong>${thanksServices}:</strong> ${servicesStr}</p>
-            <p><strong>${thanksCompany}:</strong> ${companyName}</p>
-            <p><strong>${thanksVat}:</strong> ${vatNumber}</p>
-            <p><strong>${thanksPo}:</strong> ${poNumber}</p>
-            <p>Order ID: ${orderId}</p>
-            <p><strong>${thanksPriceVer}:</strong> ${pricingVersion}</p>
-            ${leaseNote}
-            <p>${thanksFooter}</p>
-            <p>${thanksClose}</p>
-          `,
-        });
-      } catch (emailErr) {
-        console.error('Failed to send customer email for order', orderId, emailErr);
-      }
+    const upfrontAmountForEmail = (metadata as any).lease_upfront_amount;
+
+    // Customer email - invoice / confirmation (rich thanks)
+    if (customerEmail && !isSetupForRecurringServicesUnderInvoice) {
+      await sendOrderConfirmationCustomerEmail({
+        to: customerEmail,
+        orderId,
+        amount,
+        currency,
+        financing,
+        leaseMonths,
+        upfrontAmount: upfrontAmountForEmail,
+        servicesStr,
+        companyName,
+        vatNumber,
+        poNumber,
+        pricingVersion,
+        locale: orderLocale,
+      });
     }
 
     // Admin notification
-    if (process.env.ADMIN_EMAIL && resend && !isSetupForRecurringServicesUnderInvoice) {
-      try {
-        const adminSubj = isFr
-          ? `Nouvelle commande B2B sur nocloud.ai - #${orderId.slice(-8)}`
-          : `New Order Received - #${orderId.slice(-8)}`;
-        const adminTitle = isFr ? 'Nouvelle commande B2B sur nocloud.ai' : 'New B2B Order on nocloud.ai';
-        const adminCheck = isFr ? 'Vérifiez le tableau de bord Stripe pour tous les détails et pour exécuter la commande.' : 'Check Stripe dashboard for full details and fulfill the order.';
-        await resend.emails.send({
-          from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-          to: process.env.ADMIN_EMAIL,
-          subject: adminSubj,
-          html: `
-            <h2>${adminTitle}</h2>
-            <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
-            <p><strong>Total Paid:</strong> ${amount} ${currency}</p>
-            <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
-            ${(financing === 'lease' && (metadata as any).lease_upfront_amount) ? `<p><strong>Upfront payment:</strong> €${(metadata as any).lease_upfront_amount}</p>` : ''}
-            <p><strong>Services:</strong> ${servicesStr}</p>
-            <p><strong>Company:</strong> ${companyName}</p>
-            <p><strong>VAT:</strong> ${vatNumber}</p>
-            <p><strong>PO #:</strong> ${poNumber}</p>
-            <p><strong>Full Session ID:</strong> ${orderId}</p>
-            <p><strong>Pricing version:</strong> ${pricingVersion}</p>
-            <p>${adminCheck}</p>
-          `,
-        });
-      } catch (emailErr) {
-        console.error('Failed to send admin email for order', orderId, emailErr);
-      }
+    if (process.env.ADMIN_EMAIL && !isSetupForRecurringServicesUnderInvoice) {
+      await sendAdminOrderNotificationEmail({
+        orderId,
+        amount,
+        currency,
+        financing,
+        leaseMonths,
+        upfrontAmount: upfrontAmountForEmail,
+        servicesStr,
+        companyName,
+        vatNumber,
+        poNumber,
+        pricingVersion,
+        locale: orderLocale,
+        customerEmail,
+      });
     }
 
     // For direct purchases (financing=full), turn selected services into real recurring Subscriptions.
@@ -441,47 +405,37 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
         const customerEmail = invoice.customer_email || (invMeta as any).customer_email || '';
         const orderLocale = (invMeta.locale as string) || 'en';
-        const isFr = orderLocale === 'fr';
-        if (customerEmail && resend) {
-          try {
-            const subj = isFr
-              ? `Paiement reçu — facture nocloud.ai #${invoice.id.slice(-8)}`
-              : `Payment received — nocloud.ai invoice #${invoice.id.slice(-8)}`;
-            const body = isLeaseUpfront
-              ? (isFr
-                  ? `Merci ! Votre acompte leasing (Net 30) a été payé. Le contrat de location a été activé ; les paiements mensuels récurrents commenceront dans environ 1 mois.`
-                  : `Thank you! Your lease upfront (Net 30) has been paid. The lease subscription has been activated; recurring monthly payments will begin in approximately 1 month.`)
-              : (isFr
-                  ? 'Merci ! Votre paiement pour la facture Net 30 a été reçu.'
-                  : 'Thank you! Your Net 30 invoice payment has been received.');
-            await resend.emails.send({
-              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-              to: customerEmail,
-              subject: subj,
-              html: `
-                <p>${body}</p>
-                <p><strong>Invoice:</strong> ${invoice.id}</p>
-                <p><strong>Amount:</strong> ${invoice.amount_paid ? (invoice.amount_paid / 100).toFixed(2) : '0.00'} ${(invoice.currency || 'eur').toUpperCase()}</p>
-              `,
-            });
-          } catch (e) { console.error('Failed to send invoice paid email', e); }
-        }
-        if (process.env.ADMIN_EMAIL && resend) {
-          try {
-            const subj = isLeaseUpfront
-              ? `Lease Upfront Invoice Paid (Net 30) - #${invoice.id.slice(-8)}`
-              : `B2B Invoice Paid (Net 30) - #${invoice.id.slice(-8)}`;
-            await resend.emails.send({
-              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-              to: process.env.ADMIN_EMAIL,
-              subject: subj,
-              html: `<p>${isLeaseUpfront ? 'Lease upfront' : 'Net 30'} invoice ${invoice.id} has been paid by ${customerEmail || 'customer'}. ${isLeaseUpfront ? 'Recurring sub created with trial.' : ''}</p>`,
-            });
-          } catch (e) { console.error('Failed to send admin invoice paid email', e); }
-        }
+        const amountPaid = invoice.amount_paid ? (invoice.amount_paid / 100).toFixed(2) : '0.00';
+        const curr = (invoice.currency || 'eur').toUpperCase();
+
+        await sendInvoicePaidCustomerEmail({
+          to: customerEmail,
+          invoiceId: invoice.id,
+          amountPaid,
+          currency: curr,
+          locale: orderLocale,
+          isLeaseUpfront,
+        });
+
+        await sendAdminOrderNotificationEmail({
+          orderId: invoice.id,
+          amount: amountPaid,
+          currency: curr,
+          financing: invFinancing,
+          servicesStr: 'None',
+          companyName: invMeta.company_name || invMeta.companyName || 'N/A',
+          vatNumber: invMeta.vat_number || invMeta.vatNumber || 'N/A',
+          poNumber: invMeta.po_number || invMeta.poNumber || 'N/A',
+          pricingVersion: invMeta.pricing_version || invMeta.pricingVersion || 'unknown',
+          locale: orderLocale,
+          customerEmail,
+          invoiceId: invoice.id,
+          isLeaseInvoicePaid: isLeaseUpfront,
+          isPaidNotification: true,
+        });
+
         console.log(`${isLeaseUpfront ? 'Lease upfront' : 'B2B pay-by-invoice'} paid: ${invoice.id}`);
       }
       return NextResponse.json({ received: true });
@@ -580,86 +534,43 @@ export async function POST(request: NextRequest) {
       }
     } catch {}
 
-    const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-
-    // Customer email
-    if (customerEmail && resend) {
-      const leaseNote = `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>`;
-      const upfront = (metadata as any).lease_upfront_amount;
-      const upfrontNote = upfront ? `<p><strong>Upfront payment:</strong> €${upfront}</p>` : '';
-      try {
-        const thanksSubj = isFr
-          ? `Merci pour votre commande nocloud.ai #${orderId.slice(-8)}`
-          : `Thank you for your nocloud.ai order #${orderId.slice(-8)}`;
-        const thanksTitle = isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!';
-        const thanksBody = isFr ? 'Votre commande a été reçue et le paiement confirmé.' : 'Your order has been received and payment confirmed.';
-        const thanksSummary = isFr ? 'Récapitulatif de commande' : 'Order Summary';
-        const thanksServices = isFr ? 'Services optionnels' : 'Optional Services';
-        const thanksCompany = isFr ? 'Société' : 'Company';
-        const thanksVat = isFr ? 'Numéro de TVA' : 'VAT Number';
-        const thanksPo = isFr ? 'N° de commande' : 'PO Number';
-        const thanksPriceVer = isFr ? 'Version de tarification' : 'Pricing version';
-        const thanksFooter = isFr ? 'Vous recevrez l\'appareil prochainement. Contactez-nous si vous avez des questions.' : 'You will receive the appliance soon. Contact us if you have any questions.';
-        const thanksClose = isFr ? 'Cordialement,<br>L\'équipe nocloud.ai' : 'Best regards,<br>The nocloud.ai Team';
-        await resend.emails.send({
-          from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-          to: customerEmail,
-          subject: thanksSubj,
-          html: `
-            <h1 style="color: #0ea5e9;">${thanksTitle}</h1>
-            <p>${thanksBody}</p>
-            <h2>${thanksSummary}</h2>
-            <p><strong>Total:</strong> ${amount} ${currency}</p>
-            <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
-            ${upfrontNote}
-            <p><strong>${thanksServices}:</strong> ${servicesStr}</p>
-            <p><strong>${thanksCompany}:</strong> ${companyName}</p>
-            <p><strong>${thanksVat}:</strong> ${vatNumber}</p>
-            <p><strong>${thanksPo}:</strong> ${poNumber}</p>
-            <p>Order ID: ${orderId}</p>
-            <p><strong>${thanksPriceVer}:</strong> ${pricingVersion}</p>
-            ${leaseNote}
-            <p>${thanksFooter}</p>
-            <p>${thanksClose}</p>
-          `,
-        });
-      } catch (emailErr) {
-        console.error('Failed to send customer email for lease order', orderId, emailErr);
-      }
-    }
+    // Customer email (rich thanks for lease paid)
+    await sendOrderConfirmationCustomerEmail({
+      to: customerEmail,
+      orderId,
+      amount,
+      currency,
+      financing,
+      leaseMonths,
+      upfrontAmount: (metadata as any).lease_upfront_amount,
+      servicesStr,
+      companyName,
+      vatNumber,
+      poNumber,
+      pricingVersion,
+      locale: orderLocale,
+      isLeaseInvoicePaid: true,
+    });
 
     // Admin notification for lease invoice payment
-    if (process.env.ADMIN_EMAIL && resend) {
-      try {
-        const adminSubj = isFr
-          ? `Nouvelle commande B2B sur nocloud.ai - #${orderId.slice(-8)}`
-          : `New Order Received - #${orderId.slice(-8)}`;
-        const adminTitle = isFr ? 'Nouvelle commande B2B sur nocloud.ai' : 'New B2B Order on nocloud.ai';
-        const adminCheck = isFr ? 'Vérifiez le tableau de bord Stripe pour tous les détails et pour exécuter la commande.' : 'Check Stripe dashboard for full details and fulfill the order.';
-        await resend.emails.send({
-          from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-          to: process.env.ADMIN_EMAIL,
-          subject: adminSubj,
-          html: `
-            <h2>${adminTitle}</h2>
-            <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
-            <p><strong>Total Paid:</strong> ${amount} ${currency}</p>
-            <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
-            ${(metadata as any).lease_upfront_amount ? `<p><strong>Upfront payment:</strong> €${(metadata as any).lease_upfront_amount}</p>` : ''}
-            <p><strong>Services:</strong> ${servicesStr}</p>
-            <p><strong>Company:</strong> ${companyName}</p>
-            <p><strong>VAT:</strong> ${vatNumber}</p>
-            <p><strong>PO #:</strong> ${poNumber}</p>
-            <p><strong>Subscription ID:</strong> ${sub.id}</p>
-            <p><strong>Invoice ID:</strong> ${invoice.id}</p>
-            <p><strong>Pricing version:</strong> ${pricingVersion}</p>
-            <p>${adminCheck}</p>
-          `,
-        });
-      } catch (emailErr) {
-        console.error('Failed to send admin email for lease order', orderId, emailErr);
-      }
-    }
+    await sendAdminOrderNotificationEmail({
+      orderId,
+      amount,
+      currency,
+      financing,
+      leaseMonths,
+      upfrontAmount: (metadata as any).lease_upfront_amount,
+      servicesStr,
+      companyName,
+      vatNumber,
+      poNumber,
+      pricingVersion,
+      locale: orderLocale,
+      customerEmail,
+      subscriptionId: sub.id,
+      invoiceId: invoice.id,
+      isLeaseInvoicePaid: true,
+    });
 
     console.log(`Lease order paid (invoice): ${orderId} (sub ${sub.id})`);
   }

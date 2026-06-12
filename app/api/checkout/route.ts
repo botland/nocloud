@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { Resend } from 'resend';
 import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey, UPFRONT_PERCENT, DEBUG_PAYMENTS } from '@/lib/pricing';
+import { createB2BStripeCustomer } from '@/lib/stripe-customer';
+import { sendRegisteredInvoiceCustomerEmail, sendAdminInvoiceRegisteredEmail } from '@/lib/emails';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -78,22 +79,16 @@ export async function POST(request: NextRequest) {
     let stripeCustomerId: string | undefined;
     if (email) {
       try {
-        const customer = await stripe.customers.create({
+        stripeCustomerId = await createB2BStripeCustomer(stripe, {
           email,
-          name: company || undefined,
-          address: {
-            line1: address || undefined,
-            city: city || undefined,
-            postal_code: postal || undefined,
-            country: country || undefined,
-          },
-          metadata: {
-            company_name: company || 'N/A',
-            vat_number: vatNumber || 'N/A',
-            po_number: poNumber || 'N/A',
-          },
+          company,
+          vatNumber,
+          poNumber,
+          address,
+          city,
+          postal,
+          country,
         });
-        stripeCustomerId = customer.id;
       } catch (custErr) {
         console.warn('Failed to pre-create Stripe customer (Checkout will create one); proceeding anyway', custErr);
       }
@@ -165,22 +160,16 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Email is required to create a lease subscription.' }, { status: 400 });
         }
         try {
-          const customer = await stripe.customers.create({
+          stripeCustomerId = await createB2BStripeCustomer(stripe, {
             email,
-            name: company || undefined,
-            address: {
-              line1: address || undefined,
-              city: city || undefined,
-              postal_code: postal || undefined,
-              country: country || undefined,
-            },
-            metadata: {
-              company_name: company || 'N/A',
-              vat_number: vatNumber || 'N/A',
-              po_number: poNumber || 'N/A',
-            },
+            company,
+            vatNumber,
+            poNumber,
+            address,
+            city,
+            postal,
+            country,
           });
-          stripeCustomerId = customer.id;
         } catch (custErr) {
           console.error('Failed to create Stripe customer for lease', custErr);
           return NextResponse.json({ error: 'Unable to prepare customer for lease payment.' }, { status: 500 });
@@ -426,37 +415,21 @@ export async function POST(request: NextRequest) {
 
         // Registered emails for the upfront B2B invoice. Note that the subscription will be created on payment,
         // with recurring starting ~1 month after this invoice is paid.
-        const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
         const customerEmailForInvoice = email;
-        if (customerEmailForInvoice && resend) {
-          try {
-            const isFr = locale === 'fr';
-            const subj = isFr
-              ? `Merci pour votre commande nocloud.ai #${upfrontInvoice.id.slice(-8)} (acompte leasing)`
-              : `Thank you for your nocloud.ai order #${upfrontInvoice.id.slice(-8)} (lease upfront)`;
-            await resend.emails.send({
-              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-              to: customerEmailForInvoice,
-              subject: subj,
-              html: `
-                <h1 style="color: #0ea5e9;">${isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!'}</h1>
-                <p>${isFr ? 'Votre acompte leasing a été enregistré (Net 30). Le contrat de location (paiements mensuels récurrents) sera activé au paiement de cette facture ; les paiements récurrents commenceront dans environ 1 mois après le paiement.' : 'Your lease upfront has been registered (Net 30). The lease subscription (recurring monthly payments) will be activated upon payment of this invoice; recurring payments will begin approximately 1 month after payment.'}</p>
-                <p><strong>Invoice:</strong> ${upfrontInvoice.id}</p>
-                <p><strong>Company:</strong> ${company || 'N/A'}</p>
-              `,
-            });
-          } catch (e) { console.error('Failed to send lease upfront registered email', e); }
-        }
-        if (process.env.ADMIN_EMAIL && resend) {
-          try {
-            await resend.emails.send({
-              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-              to: process.env.ADMIN_EMAIL,
-              subject: `New Lease Upfront (Net 30) - #${upfrontInvoice.id.slice(-8)}`,
-              html: `<p>New lease upfront invoice for ${company || email}. Invoice ${upfrontInvoice.id}. Recurring sub will be created on payment (monthly starts ~1 month after payment).</p>`,
-            });
-          } catch (e) { console.error('Failed to send admin lease upfront email', e); }
-        }
+        await sendRegisteredInvoiceCustomerEmail({
+          to: customerEmailForInvoice,
+          invoiceId: upfrontInvoice.id,
+          company: company || 'N/A',
+          locale,
+          isLeaseUpfront: true,
+        });
+        await sendAdminInvoiceRegisteredEmail({
+          to: '', // not used
+          invoiceId: upfrontInvoice.id,
+          company: company || 'N/A',
+          emailFallback: email,
+          isLeaseUpfront: true,
+        });
 
         if (setupSessionUrl) {
           console.log(`Lease upfront invoice created: ${upfrontInvoice.id} (pre-created recurring subs for hybrid, setup for ${recurringPaymentMethod})`);
@@ -673,22 +646,16 @@ export async function POST(request: NextRequest) {
       // was added.
       if (!stripeCustomerId && email) {
         try {
-          const customer = await stripe.customers.create({
+          stripeCustomerId = await createB2BStripeCustomer(stripe, {
             email,
-            name: company || undefined,
-            address: {
-              line1: address || undefined,
-              city: city || undefined,
-              postal_code: postal || undefined,
-              country: country || undefined,
-            },
-            metadata: {
-              company_name: company || 'N/A',
-              vat_number: vatNumber || 'N/A',
-              po_number: poNumber || 'N/A',
-            },
+            company,
+            vatNumber,
+            poNumber,
+            address,
+            city,
+            postal,
+            country,
           });
-          stripeCustomerId = customer.id;
         } catch (custErr) {
           console.error('Failed to create Stripe customer for invoice', custErr);
           return NextResponse.json({ error: 'Unable to prepare customer for invoice.' }, { status: 500 });
@@ -829,37 +796,25 @@ export async function POST(request: NextRequest) {
         // We still finalize/send the hardware invoice and the "you will receive the Net 30 invoice" emails.
         await stripe.invoices.finalizeInvoice(invoice.id);
 
-        const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
         const customerEmailForInvoice = email;
-        if (customerEmailForInvoice && resend) {
-          try {
-            const isFr = locale === 'fr';
-            const subj = isFr
-              ? `Merci pour votre commande nocloud.ai #${invoice.id.slice(-8)}`
-              : `Thank you for your nocloud.ai order #${invoice.id.slice(-8)}`;
-            await resend.emails.send({
-              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-              to: customerEmailForInvoice,
-              subject: subj,
-              html: `
-                <h1 style="color: #0ea5e9;">${isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!'}</h1>
-                <p>${isFr ? 'Votre commande a été enregistrée. Vous recevrez sous peu une facture avec les instructions de paiement (Net 30) pour le matériel. Veuillez également finaliser la méthode de paiement pour les services récurrents sur la page de configuration Stripe.' : 'Your order has been registered. You will receive an invoice with payment instructions shortly (Net 30) for the hardware. Please also complete the payment method setup for recurring services on the Stripe page.'} </p>
-                <p><strong>Order ID:</strong> ${invoice.id}</p>
-                <p><strong>Company:</strong> ${company || 'N/A'}</p>
-              `,
-            });
-          } catch (e) { console.error('Failed to send invoice registered email (hybrid recurring)', e); }
-        }
-        if (process.env.ADMIN_EMAIL && resend) {
-          try {
-            await resend.emails.send({
-              from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-              to: process.env.ADMIN_EMAIL,
-              subject: `New B2B Invoice (Net 30) + Recurring Setup - #${invoice.id.slice(-8)}`,
-              html: `<p>New hybrid Pay by Invoice order for ${company || email}. Invoice ${invoice.id} created and sent (Net 30 for hardware). Setup session ${setupSession.id} created for recurring services (${recurringPaymentMethod}).</p>`,
-            });
-          } catch (e) { console.error('Failed to send admin invoice email (hybrid)', e); }
-        }
+        await sendRegisteredInvoiceCustomerEmail({
+          to: customerEmailForInvoice,
+          invoiceId: invoice.id,
+          company: company || 'N/A',
+          locale,
+          isHybridRecurring: true,
+          recurringPaymentMethod,
+          setupSessionId: setupSession.id,
+        });
+        await sendAdminInvoiceRegisteredEmail({
+          to: '',
+          invoiceId: invoice.id,
+          company: company || 'N/A',
+          emailFallback: email,
+          isHybrid: true,
+          recurringPaymentMethod,
+          setupSessionId: setupSession.id,
+        });
 
         console.log(`Real B2B invoice created (hybrid): ${invoice.id}. Redirecting to setup session ${setupSession.id} for recurring services (${recurringPaymentMethod}).`);
         return NextResponse.json({ url: setupSession.url });
@@ -929,37 +884,19 @@ export async function POST(request: NextRequest) {
 
       // Send confirmation emails for the real B2B invoice (registered + "you will receive the invoice").
       // This replaces the previous client-only mock that sent no server emails.
-      const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
       const customerEmailForInvoice = email; // from top-level destructuring
-      if (customerEmailForInvoice && resend) {
-        try {
-          const isFr = locale === 'fr';
-          const subj = isFr
-            ? `Merci pour votre commande nocloud.ai #${invoice.id.slice(-8)}`
-            : `Thank you for your nocloud.ai order #${invoice.id.slice(-8)}`;
-          await resend.emails.send({
-            from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-            to: customerEmailForInvoice,
-            subject: subj,
-            html: `
-              <h1 style="color: #0ea5e9;">${isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!'}</h1>
-              <p>${isFr ? 'Votre commande a été enregistrée. Vous recevrez sous peu une facture avec les instructions de paiement (Net 30).' : 'Your order has been registered. You will receive an invoice with payment instructions shortly (Net 30).'} </p>
-              <p><strong>Order ID:</strong> ${invoice.id}</p>
-              <p><strong>Company:</strong> ${company || 'N/A'}</p>
-            `,
-          });
-        } catch (e) { console.error('Failed to send invoice registered email', e); }
-      }
-      if (process.env.ADMIN_EMAIL && resend) {
-        try {
-          await resend.emails.send({
-            from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
-            to: process.env.ADMIN_EMAIL,
-            subject: `New B2B Invoice (Net 30) - #${invoice.id.slice(-8)}`,
-            html: `<p>New Pay by Invoice order for ${company || email}. Invoice ${invoice.id} created and sent (Net 30).</p>`,
-          });
-        } catch (e) { console.error('Failed to send admin invoice email', e); }
-      }
+      await sendRegisteredInvoiceCustomerEmail({
+        to: customerEmailForInvoice,
+        invoiceId: invoice.id,
+        company: company || 'N/A',
+        locale,
+      });
+      await sendAdminInvoiceRegisteredEmail({
+        to: '',
+        invoiceId: invoice.id,
+        company: company || 'N/A',
+        emailFallback: email,
+      });
 
       // Return success (client will show friendly overlay; no hosted "pay now" URL because this is Net 30 send_invoice).
       // The real Stripe Invoice is now in the dashboard and will be delivered to the customer.
