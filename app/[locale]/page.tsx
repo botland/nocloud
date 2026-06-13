@@ -9,6 +9,7 @@ import CheckoutModal from '@/components/CheckoutModal';
 import Container from '@/components/Container';
 import { Product, CartItem, CheckoutFormDraft } from '@/lib/types';
 import { HARDWARE_PRICES, SERVICE_PRICES } from '@/lib/pricing';
+import { BRAND_NAME, BRAND_TLD, BRAND_SLUG, BRAND_DISPLAY, getBrandEmail } from '@/lib/brand';
 import LogoIcon from '@/icons/logo.svg';
 
 const baseProducts = [
@@ -41,9 +42,9 @@ export default function LocaleHome() {
     if (!draftLoadedRef.current) return;
     try {
       if (checkoutDraft) {
-        localStorage.setItem('nocloud_checkout_draft', JSON.stringify(checkoutDraft));
+        localStorage.setItem(`${BRAND_SLUG}_checkout_draft`, JSON.stringify(checkoutDraft));
       } else {
-        localStorage.removeItem('nocloud_checkout_draft');
+        localStorage.removeItem(`${BRAND_SLUG}_checkout_draft`);
       }
     } catch {}
   }, [checkoutDraft]);
@@ -52,7 +53,7 @@ export default function LocaleHome() {
   useEffect(() => {
     if (!cartLoadedRef.current) return;
     try {
-      localStorage.setItem('nocloud_cart', JSON.stringify(cart));
+      localStorage.setItem(`${BRAND_SLUG}_cart`, JSON.stringify(cart));
     } catch {
       // ignore storage errors (private mode, quota, etc.)
     }
@@ -66,7 +67,7 @@ export default function LocaleHome() {
   // the initial empty state from overwriting previously persisted data on reloads/cancels).
   useEffect(() => {
     try {
-      const savedCart = localStorage.getItem('nocloud_cart');
+      const savedCart = localStorage.getItem(`${BRAND_SLUG}_cart`);
       if (savedCart) {
         setCart(JSON.parse(savedCart));
       }
@@ -78,7 +79,7 @@ export default function LocaleHome() {
 
   useEffect(() => {
     try {
-      const savedDraft = localStorage.getItem('nocloud_checkout_draft');
+      const savedDraft = localStorage.getItem(`${BRAND_SLUG}_checkout_draft`);
       if (savedDraft) {
         setCheckoutDraft(JSON.parse(savedDraft));
       }
@@ -176,8 +177,8 @@ export default function LocaleHome() {
     setCart([]);
     setCheckoutDraft(null);
     try {
-      localStorage.removeItem('nocloud_cart');
-      localStorage.removeItem('nocloud_checkout_draft');
+      localStorage.removeItem(`${BRAND_SLUG}_cart`);
+      localStorage.removeItem(`${BRAND_SLUG}_checkout_draft`);
     } catch {}
     closeCheckout();
   };
@@ -195,8 +196,8 @@ export default function LocaleHome() {
   <LogoIcon className="w-full h-full text-cyan-400" />
 </div>
                 <div className="flex items-baseline">
-                  <span className="font-display text-[28px] font-semibold tracking-tighter">nocloud</span>
-                  <span className="text-cyan-400 font-display text-[28px] font-semibold">.ai</span>
+                  <span className="font-display text-[28px] font-semibold tracking-tighter">{BRAND_NAME}</span>
+                  <span className="text-cyan-400 font-display text-[28px] font-semibold">{BRAND_TLD}</span>
                 </div>
               </div>
               <div className="hidden md:block px-3 py-1 text-[10px] font-bold tracking-[1.5px] border border-slate-700 rounded-2xl text-slate-400">B2B</div>
@@ -205,7 +206,7 @@ export default function LocaleHome() {
             <div className="hidden md:flex items-center gap-x-9 text-sm font-medium">
               <a href="#products" className="hover:text-cyan-400 transition-colors">{t('nav.products')}</a>
               <a href="#services" className="hover:text-cyan-400 transition-colors">{t('nav.services')}</a>
-              <a href="#why" className="hover:text-cyan-400 transition-colors">{t('nav.why')}</a>
+              <a href="#why" className="hover:text-cyan-400 transition-colors">{t('nav.why', { brand: BRAND_NAME })}</a>
               <a href="#docs" className="hover:text-cyan-400 transition-colors">{t('nav.docs')}</a>
             </div>
 
@@ -391,7 +392,7 @@ export default function LocaleHome() {
         <Container className="text-center">
           <h3 className="text-3xl font-semibold tracking-tight mb-3">{t('custom.title')}</h3>
           <p className="text-slate-400 mb-6 max-w-md mx-auto">{t('custom.subtitle')}</p>
-          <a href="mailto:sales@nocloud.ai" className="px-9 py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-all inline-flex items-center gap-x-3">
+          <a href={`mailto:${getBrandEmail('sales')}`} className="px-9 py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-all inline-flex items-center gap-x-3">
             {t('custom.cta')}
           </a>
         </Container>
@@ -399,7 +400,7 @@ export default function LocaleHome() {
 
       <footer className="border-t border-slate-800 py-9 text-sm">
         <Container className="flex flex-col md:flex-row justify-between items-center gap-y-4 text-slate-400">
-          <div>{t('footer.copyright', { year: new Date().getFullYear() })}</div>
+          <div>{t('footer.copyright', { year: new Date().getFullYear(), brand: BRAND_DISPLAY })}</div>
           <div className="flex gap-x-6 text-xs">
             <a href="#" className="hover:text-slate-300">{t('footer.legal')}</a>
             <a href="#" className="hover:text-slate-300">{t('footer.privacy')}</a>

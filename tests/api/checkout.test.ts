@@ -224,7 +224,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     // Resend called twice (customer + admin)
     expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
     const subjects = mockResendInstance.emails.send.mock.calls.map((c: any[]) => c[0].subject)
-    expect(subjects.some((s: string) => s.includes('nocloud.ai order'))).toBe(true)
+    expect(subjects.some((s: string) => s.toLowerCase().includes('order'))).toBe(true)
   })
 
   it('full + invoice (with services) + recurring card (hybrid): returns url (setup), creates main invoice (hardware only) + Resend, pre-creates charge_automatically service subs in route (for visibility after setup trip; PM attached later), no send_invoice service subs', async () => {

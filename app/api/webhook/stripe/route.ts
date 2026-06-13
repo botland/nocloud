@@ -8,6 +8,7 @@ import {
   sendInvoicePaidCustomerEmail,
 } from '@/lib/emails';
 import { extractPaymentMethodFromSession, setDefaultPaymentMethodOnCustomerAndSubs } from '@/lib/stripe-pm';
+import { BRAND_NAME } from '@/lib/brand';
 
 export async function POST(request: NextRequest) {
   console.log('[PAYMENT DEBUG] /api/webhook/stripe route invoked, STRIPE_WEBHOOK_SECRET present:', !!process.env.STRIPE_WEBHOOK_SECRET, 'STRIPE_SECRET_KEY present:', !!process.env.STRIPE_SECRET_KEY);
@@ -229,7 +230,7 @@ export async function POST(request: NextRequest) {
               const customerId = typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer as any)?.id;
 
               const leaseProduct = await stripe.products.create({
-                name: 'NoCloud Appliance Lease (hardware)',
+                name: `${BRAND_NAME} Appliance Lease (hardware)`,
                 description: `Monthly lease payment for hardware amortization over ${months} months. Recurring starts ~1 month after payment of upfront invoice ${invoice.id}. (Services on separate perpetual subscriptions.)`,
               });
 

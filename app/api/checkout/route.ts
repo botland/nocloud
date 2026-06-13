@@ -7,6 +7,7 @@ import { buildPaymentContext, validatePaymentEligibility, resolvePricesAndServic
 import { cleanupZeroTrialInvoice } from '@/lib/stripe-invoices';
 import { buildOrderMetadata } from '@/lib/stripe-metadata';
 import { createMonthlyRecurringPriceDataItem } from '@/lib/stripe-subscriptions';
+import { BRAND_NAME } from '@/lib/brand';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -221,7 +222,7 @@ export async function POST(request: NextRequest) {
           invoice: upfrontInvoice.id,
           amount: lease.upfrontAmount * 100,
           currency: 'eur',
-          description: `Upfront payment (${UPFRONT_PERCENT}%) for leased NoCloud appliance`,
+          description: `Upfront payment (${UPFRONT_PERCENT}%) for leased ${BRAND_NAME} appliance`,
         });
 
         const hasRecurringAuto = resolvedServicesForMeta.length > 0 && recurringPaymentMethod && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
@@ -234,7 +235,7 @@ export async function POST(request: NextRequest) {
           // with trial from order time. PM will be attached after the setup completion (via the attach block).
           // This ensures subscriptions are visible "at the end" of the order + setup process for the recurring choice.
           const leaseProduct = await stripe.products.create({
-            name: 'NoCloud Appliance Lease (hardware)',
+            name: `${BRAND_NAME} Appliance Lease (hardware)`,
             description: `Monthly lease payments for hardware amortization over ${lease.months} months (upfront paid via Net 30 invoice; recurring starts ~1 month after order via the collected PM from recurring services choice inside invoice box). Optional services on separate perpetual subscriptions.`,
           });
           const subParams: any = {
@@ -521,7 +522,7 @@ export async function POST(request: NextRequest) {
             price_data: {
               currency: 'eur',
               product_data: {
-                name: `NoCloud Appliance Lease Upfront (${UPFRONT_PERCENT}%)`,
+                name: `${BRAND_NAME} Appliance Lease Upfront (${UPFRONT_PERCENT}%)`,
                 description: `Due today. Recurring monthly lease payments start in approximately 1 month.`,
               },
               unit_amount: lease.upfrontAmount * 100,
@@ -627,7 +628,7 @@ export async function POST(request: NextRequest) {
           invoice: invoice.id,
           amount: Math.round(unit * 100 * qty),
           currency: 'eur',
-          description: `NoCloud ${item.product?.name || 'Appliance'}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}`,
+          description: `${BRAND_NAME} ${item.product?.name || 'Appliance'}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}`,
         });
       }
 
@@ -836,7 +837,7 @@ export async function POST(request: NextRequest) {
         price_data: {
           currency: 'eur',
           product_data: {
-            name: `NoCloud ${item.product?.name || 'Appliance'}`,
+            name: `${BRAND_NAME} ${item.product?.name || 'Appliance'}`,
             description: svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}` : undefined,
           },
           unit_amount: unit * 100,

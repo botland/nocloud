@@ -39,6 +39,11 @@ Real B2B checkout for on-premise AI hardware appliances with optional managed se
    - `ADMIN_EMAIL` (where you want order alerts)
    - `NEXT_PUBLIC_SITE_URL` (http://localhost:8080 for dev; your production domain for live)
 
+   **Brand / white-label (optional but powerful for re-use):**
+   - `NEXT_PUBLIC_BRAND_NAME=nocloud` (can be stylized, e.g. `UncloudEngine`)
+   - `NEXT_PUBLIC_BRAND_TLD=.ai`
+   - (optional) `NEXT_PUBLIC_BRAND_DOMAIN=...` (if your DNS/emails differ from the obvious lowercased combination)
+
 3. Run dev (listens on 8080 per package.json):
    ```bash
    npm run dev
@@ -50,6 +55,34 @@ Real B2B checkout for on-premise AI hardware appliances with optional managed se
    stripe listen --forward-to http://localhost:8080/api/webhook/stripe
    ```
    Copy the signing secret into `STRIPE_WEBHOOK_SECRET` in `.env.local`.
+
+## Rebranding / White-labeling
+
+You can easily change the brand name, domain, and all associated emails by setting a few environment variables (no code changes required for most re-use cases).
+
+`BRAND_NAME` can be stylized (e.g. `UncloudEngine`), while the domain and email addresses will always be lowercased.
+
+```bash
+NEXT_PUBLIC_BRAND_NAME=UncloudEngine
+NEXT_PUBLIC_BRAND_TLD=.ai
+# Optional full override for the technical domain (if your DNS/emails use a different casing or subdomain)
+# NEXT_PUBLIC_BRAND_DOMAIN=uncloudengine.ai
+```
+
+What changes automatically:
+- Logo text in the navbar ("UncloudEngine.ai" — the name part keeps your casing, .tld is appended)
+- Page titles, meta descriptions, and "Why UncloudEngine" navigation (stylized name)
+- Cart item labels ("UncloudEngine Edge × 2"), footer copyright
+- All email From addresses, subjects, and signatures use the stylized display name where visible (`orders@uncloudengine.ai`, "your UncloudEngine.ai order", etc.)
+- Stripe product names/descriptions created during checkout
+- localStorage keys (fresh cart/draft for the new brand, using lowercased slug)
+
+What you will still do manually for a full visual rebrand:
+- Replace `icons/logo.svg` and `public/favicon.*`
+- Review/adjust marketing copy such as "No cloud." / "Pas de cloud." and the hero subtitle (these describe the product value, not the brand name)
+- Optionally rename `package.json`, `ecosystem.config.js`, and the PM2 process name if you want a completely different project identity
+
+See `.env.example` for the exact variable names and current defaults.
 
 ## Payment Flows (Summary)
 

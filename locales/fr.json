@@ -11,7 +11,7 @@
   "nav": {
     "products": "Produits",
     "services": "Services",
-    "why": "Pourquoi NoCloud",
+    "why": "Pourquoi {brand}",
     "docs": "Docs"
   },
   "products": {
@@ -77,7 +77,7 @@
     "cta": "Contacter les ventes"
   },
   "footer": {
-    "copyright": "© {year} nocloud.ai — Infrastructure IA générative privée pour l'Europe",
+    "copyright": "© {year} {brand} — Infrastructure IA générative privée pour l'Europe",
     "legal": "Mentions légales",
     "privacy": "Confidentialité (RGPD)",
     "support": "Support"
@@ -109,7 +109,7 @@
   "cart": {
     "yourOrder": "Votre commande",
     "empty": "Votre panier est vide",
-    "itemLabel": "NoCloud {name} × {qty}",
+    "itemLabel": "{brand} {name} × {qty}",
     "hardwareTotal": "Total matériel",
     "servicesMonthly": "Services (mensuels)",
     "seeConfigurator": "voir le configurateur",

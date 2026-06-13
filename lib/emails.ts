@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { BRAND_DISPLAY, getBrandEmail } from './brand';
 
 export function getResendClient(): Resend | null {
   if (!process.env.RESEND_API_KEY) return null;
@@ -76,22 +77,22 @@ export async function sendRegisteredInvoiceCustomerEmail(
 
   if (isLeaseUpfront) {
     subj = isFr
-      ? `Merci pour votre commande nocloud.ai #${shortId} (acompte leasing)`
-      : `Thank you for your nocloud.ai order #${shortId} (lease upfront)`;
+      ? `Merci pour votre commande ${BRAND_DISPLAY} #${shortId} (acompte leasing)`
+      : `Thank you for your ${BRAND_DISPLAY} order #${shortId} (lease upfront)`;
     body = isFr
       ? `Votre acompte leasing a été enregistré (Net 30). Le contrat de location (paiements mensuels récurrents) sera activé au paiement de cette facture ; les paiements récurrents commenceront dans environ 1 mois après le paiement.`
       : `Your lease upfront has been registered (Net 30). The lease subscription (recurring monthly payments) will be activated upon payment of this invoice; recurring payments will begin approximately 1 month after payment.`;
   } else if (isHybridRecurring) {
     subj = isFr
-      ? `Merci pour votre commande nocloud.ai #${shortId}`
-      : `Thank you for your nocloud.ai order #${shortId}`;
+      ? `Merci pour votre commande ${BRAND_DISPLAY} #${shortId}`
+      : `Thank you for your ${BRAND_DISPLAY} order #${shortId}`;
     body = isFr
       ? `Votre commande a été enregistrée. Vous recevrez sous peu une facture avec les instructions de paiement (Net 30) pour le matériel. Veuillez également finaliser la méthode de paiement pour les services récurrents sur la page de configuration Stripe.`
       : `Your order has been registered. You will receive an invoice with payment instructions shortly (Net 30) for the hardware. Please also complete the payment method setup for recurring services on the Stripe page.`;
   } else {
     subj = isFr
-      ? `Merci pour votre commande nocloud.ai #${shortId}`
-      : `Thank you for your nocloud.ai order #${shortId}`;
+      ? `Merci pour votre commande ${BRAND_DISPLAY} #${shortId}`
+      : `Thank you for your ${BRAND_DISPLAY} order #${shortId}`;
     body = isFr
       ? `Votre commande a été enregistrée. Vous recevrez sous peu une facture avec les instructions de paiement (Net 30).`
       : `Your order has been registered. You will receive an invoice with payment instructions shortly (Net 30).`;
@@ -99,7 +100,7 @@ export async function sendRegisteredInvoiceCustomerEmail(
 
   try {
     await resend.emails.send({
-      from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
       to: params.to,
       subject: subj,
       html: `
@@ -141,7 +142,7 @@ export async function sendAdminInvoiceRegisteredEmail(params: RegisteredInvoiceE
 
   try {
     await resend.emails.send({
-      from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
       to: adminEmail,
       subject,
       html,
@@ -190,7 +191,7 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
   const thanksPo = isFr ? 'N° de commande' : 'PO Number';
   const thanksPriceVer = isFr ? 'Version de tarification' : 'Pricing version';
   const thanksFooter = isFr ? 'Vous recevrez l\'appareil prochainement. Contactez-nous si vous avez des questions.' : 'You will receive the appliance soon. Contact us if you have any questions.';
-  const thanksClose = isFr ? 'Cordialement,<br>L\'équipe nocloud.ai' : 'Best regards,<br>The nocloud.ai Team';
+  const thanksClose = isFr ? `Cordialement,<br>L'équipe ${BRAND_DISPLAY}` : `Best regards,<br>The ${BRAND_DISPLAY} Team`;
 
   const leaseNote = financing === 'lease' ? `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>` : '';
   const upfront = upfrontAmount;
@@ -199,7 +200,7 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
 
   try {
     await resend.emails.send({
-      from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
       to: params.to,
       subject: thanksSubj,
       html: `
@@ -267,7 +268,7 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     const html = `<p>${isLeaseInvoicePaid ? 'Lease upfront' : 'Net 30'} invoice ${invoiceId || orderId} has been paid by ${customerEmail || 'customer'}. ${isLeaseInvoicePaid ? 'Recurring sub created with trial.' : ''}</p>`;
     try {
       await resend.emails.send({
-        from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+        from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
         to: adminEmail,
         subject: subj,
         html,
@@ -279,9 +280,9 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
   }
 
   const adminSubj = isFr
-    ? `Nouvelle commande B2B sur nocloud.ai - #${shortId}`
+    ? `Nouvelle commande B2B sur ${BRAND_DISPLAY} - #${shortId}`
     : `New Order Received - #${shortId}`;
-  const adminTitle = isFr ? 'Nouvelle commande B2B sur nocloud.ai' : 'New B2B Order on nocloud.ai';
+  const adminTitle = isFr ? `Nouvelle commande B2B sur ${BRAND_DISPLAY}` : `New B2B Order on ${BRAND_DISPLAY}`;
   const adminCheck = isFr ? 'Vérifiez le tableau de bord Stripe pour tous les détails et pour exécuter la commande.' : 'Check Stripe dashboard for full details and fulfill the order.';
 
   let extra = '';
@@ -309,7 +310,7 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
 
   try {
     await resend.emails.send({
-      from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
       to: adminEmail,
       subject: adminSubj,
       html,
@@ -338,8 +339,8 @@ export async function sendInvoicePaidCustomerEmail(params: {
   const shortId = invoiceId.slice(-8);
 
   const subj = isFr
-    ? `Paiement reçu — facture nocloud.ai #${shortId}`
-    : `Payment received — nocloud.ai invoice #${shortId}`;
+    ? `Paiement reçu — facture ${BRAND_DISPLAY} #${shortId}`
+    : `Payment received — ${BRAND_DISPLAY} invoice #${shortId}`;
 
   const body = isLeaseUpfront
     ? (isFr
@@ -351,7 +352,7 @@ export async function sendInvoicePaidCustomerEmail(params: {
 
   try {
     await resend.emails.send({
-      from: 'orders@nocloud.ai <no-reply@nocloud.ai>',
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
       to: params.to,
       subject: subj,
       html: `

@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { CartItem } from '@/lib/types';
+import { BRAND_NAME } from '@/lib/brand';
 
 interface Props {
   cart: CartItem[];
@@ -45,7 +46,7 @@ export default function CartSidebar({ cart, onClose, onCheckout, onRemoveItem, o
                   <div className="flex justify-between">
                     <div>
                       <div className="font-semibold">{item.product.name}</div>
-                      <div className="text-xs text-slate-400">{t('itemLabel', { name: item.product.name, qty })}</div>
+                      <div className="text-xs text-slate-400">{t('itemLabel', { brand: BRAND_NAME, name: item.product.name, qty })}</div>
                     </div>
                     <div className="text-right">
                       <div className="font-semibold">€{item.totalPrice}</div>
