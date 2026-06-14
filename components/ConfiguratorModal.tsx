@@ -1,56 +1,95 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Product, CartItem } from '@/lib/types';
-import { SERVICE_PRICES } from '@/lib/pricing';
+import {
+  SERVICE_PRICES,
+  calculateHardwarePrice,
+  getSpecOptions,
+  getDefaultOption,
+  type HardwareCustomization,
+} from '@/lib/pricing';
 
 interface Props {
   product: Product;
   onClose: () => void;
   onAddToCart: (item: CartItem) => void;
+  editingItem?: CartItem;
 }
 
-// Spec data: [translationKey, value]. Values are technical and stay the same across locales.
-const specDefs = [
-  ['inference', '60+ tokens/s (7B)'],
-  ['models', 'Up to 13B'],
-  ['memory', '24 GB'],
-  ['storage', '1 TB NVMe'],
-  ['formFactor', 'Compact desktop'],
-] as const;
-
-const specDefsStudio = [
-  ['inference', 'High performance'],
-  ['models', 'Up to 70B'],
-  ['memory', '96 GB'],
-  ['storage', '4 TB RAID'],
-  ['formFactor', 'Desktop tower'],
-] as const;
-
-const specDefsForge = [
-  ['inference', 'Enterprise scale'],
-  ['models', '100B+ & multi-node'],
-  ['memory', '256+ GB HBM'],
-  ['storage', '8 TB+ Enterprise'],
-  ['formFactor', 'Rackmount ready'],
-] as const;
-
-const specsById: Record<number, readonly (readonly [string, string])[]> = {
-  0: specDefs,
-  1: specDefsStudio,
-  2: specDefsForge,
+// Static (non-customizable) rows per tier for the KEY SPECIFICATIONS list.
+// The upgradable dimensions (ram/vram/disk) are rendered as live <select>s below instead.
+const staticRowsById: Record<number, Array<{ key: string; value: string }>> = {
+  0: [ // edge
+    { key: 'inference', value: '60+ tokens/s (7B)' },
+    { key: 'models', value: 'Up to 13B' },
+    { key: 'formFactor', value: 'Compact desktop' },
+  ],
+  1: [ // studio
+    { key: 'inference', value: 'High performance' },
+    { key: 'models', value: 'Up to 70B' },
+    { key: 'formFactor', value: 'Desktop tower' },
+  ],
+  2: [ // forge
+    { key: 'inference', value: 'Enterprise scale' },
+    { key: 'models', value: '100B+ & multi-node' },
+    { key: 'formFactor', value: 'Rackmount ready' },
+  ],
 };
 
-export default function ConfiguratorModal({ product, onClose, onAddToCart }: Props) {
+const upgradableKeys = ['ram', 'vram', 'disk'] as const;
+
+export default function ConfiguratorModal({ product, onClose, onAddToCart, editingItem }: Props) {
   const t = useTranslations('configurator');
   const tc = useTranslations();
 
-  const [managed, setManaged] = useState(false);
-  const [backup, setBackup] = useState(false);
-  const [quantity, setQuantity] = useState(1);
+  const slug = product.slug as 'edge' | 'studio' | 'forge';
 
-  const specs = specsById[product.id] || [];
+  // Initialize states from editingItem if present (for "edit existing cart item" flow),
+  // otherwise fall back to tier defaults + clean slate. Initializers run on mount.
+  const [customization, setCustomization] = useState<HardwareCustomization>(() => {
+    if (editingItem?.customization) {
+      return editingItem.customization;
+    }
+    const make = (k: 'ram' | 'vram' | 'disk') => {
+      const def = getDefaultOption(slug, k);
+      return def ? { value: def.value, label: def.label } : undefined;
+    };
+    return { ram: make('ram'), vram: make('vram'), disk: make('disk') };
+  });
+
+  const [managed, setManaged] = useState(() =>
+    !!(editingItem?.services || []).some((s) => s.key === 'managedCare')
+  );
+  const [backup, setBackup] = useState(() =>
+    !!(editingItem?.services || []).some((s) => s.key === 'secureVaultBackup')
+  );
+  const [quantity, setQuantity] = useState(() => editingItem?.quantity || 1);
+
+  const isEditing = !!editingItem;
+
+  // If the editing target changes while the modal is mounted (or product switches),
+  // sync the internal controls. This makes "edit from cart" robust.
+  useEffect(() => {
+    if (editingItem) {
+      setQuantity(editingItem.quantity || 1);
+      setManaged(!!(editingItem.services || []).some((s) => s.key === 'managedCare'));
+      setBackup(!!(editingItem.services || []).some((s) => s.key === 'secureVaultBackup'));
+      if (editingItem.customization) {
+        setCustomization(editingItem.customization);
+      }
+    }
+    // Intentionally not resetting to "new item defaults" here; non-edit opens
+    // usually cause a fresh mount of the modal via conditional render + product change.
+  }, [editingItem?.id, product.id]);
+
+  const staticRows = staticRowsById[product.id] || [];
+
+  // Live authoritative hardware unit price (base + chosen option prices).
+  // This is the single logical component call — same fn used by server.
+  const hardwareUnit = calculateHardwarePrice(slug, customization);
+  const hardwareExtra = Math.max(0, hardwareUnit - product.price);
 
   const managedUnit = SERVICE_PRICES.managedCare;
   const backupUnit = SERVICE_PRICES.secureVaultBackup;
@@ -61,16 +100,17 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
   if (managed) selectedServices.push({ name: t('managedCare'), price: managedUnit, key: 'managedCare' });
   if (backup) selectedServices.push({ name: t('secureVaultBackup'), price: backupUnit, key: 'secureVaultBackup' });
 
-  const totalPrice = product.price * quantity;
+  const totalPrice = hardwareUnit * quantity;
   const recurringPrice = selectedServices.reduce((sum, s) => sum + s.price * quantity, 0);
 
   const handleAddToCart = () => {
-    const item = {
+    const item: CartItem = {
       id: Date.now() + Math.floor(Math.random() * 1000),
       product,
       services: selectedServices,
       quantity,
       totalPrice,
+      customization,
     };
     onAddToCart(item);
   };
@@ -97,13 +137,59 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
           <div className="mb-7">
             <div className="uppercase text-xs tracking-widest text-slate-400 mb-3 font-medium">{t('keySpecs')}</div>
             <div className="text-sm">
-              {specs.map((spec, idx) => (
-                <div key={idx} className="flex justify-between py-[7px] border-b border-slate-800 last:border-none">
-                  <span className="text-slate-400">{t(`specs.${spec[0]}`)}</span>
-                  <span className="font-medium">{spec[1]}</span>
+              {/* Static rows (inference, models, formFactor) */}
+              {staticRows.map((row, idx) => (
+                <div key={`static-${idx}`} className="flex justify-between py-[7px] border-b border-slate-800">
+                  <span className="text-slate-400">{t(`specs.${row.key}`)}</span>
+                  <span className="font-medium">{row.value}</span>
                 </div>
               ))}
+
+              {/* In-place editable spec rows using <select> populated from the central TIER_SPEC_OPTIONS.
+                  This is "edit the spec inplace" — no separate upgrades section. The same data + calculate
+                  functions are the single logical component for options and pricing. */}
+              {upgradableKeys.map((key) => {
+                const opts = getSpecOptions(slug, key);
+                const chosen = customization[key];
+                const currentValue = chosen?.value ?? (opts.find(o => o.price === 0)?.value ?? opts[0]?.value);
+                const labelKey = key; // 'ram' | 'vram' | 'disk' — translated below
+                return (
+                  <div key={key} className="flex items-center justify-between py-[7px] border-b border-slate-800 last:border-none">
+                    <span className="text-slate-400">{t(`specs.${labelKey}`)}</span>
+                    <select
+                      value={currentValue}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        const match = opts.find((o) => o.value === val);
+                        if (match) {
+                          setCustomization((prev) => ({
+                            ...prev,
+                            [key]: { value: match.value, label: match.label },
+                          }));
+                        }
+                      }}
+                      className="bg-slate-950 border border-slate-700 rounded-2xl px-3 py-1 text-sm focus:outline-none focus:border-cyan-500 tabular-nums"
+                    >
+                      {opts.map((opt) => {
+                        const suffix = opt.price > 0
+                          ? ` (+€${opt.price})`
+                          : ` (${t('included')})`;
+                        return (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}{suffix}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                );
+              })}
             </div>
+            {hardwareExtra > 0 && (
+              <div className="mt-2 text-xs text-emerald-400 text-right">
+                + €{hardwareExtra} hardware upgrades
+              </div>
+            )}
           </div>
           
           {/* Quantity Selector */}
@@ -147,7 +233,7 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart }: Pro
             )}
           </div>
           <button onClick={handleAddToCart} className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-bold rounded-3xl text-sm">
-            {t('addToCart')}
+            {isEditing ? t('updateCart') : t('addToCart')}
           </button>
         </div>
       </div>

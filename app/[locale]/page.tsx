@@ -8,7 +8,7 @@ import CartSidebar from '@/components/CartSidebar';
 import CheckoutModal from '@/components/CheckoutModal';
 import Container from '@/components/Container';
 import { Product, CartItem, CheckoutFormDraft } from '@/lib/types';
-import { HARDWARE_PRICES, SERVICE_PRICES } from '@/lib/pricing';
+import { HARDWARE_PRICES, SERVICE_PRICES, calculateHardwarePrice } from '@/lib/pricing';
 import { BRAND_NAME, BRAND_TLD, BRAND_SLUG, BRAND_DISPLAY, getBrandEmail } from '@/lib/brand';
 import LogoIcon from '@/icons/logo.svg';
 
@@ -26,6 +26,11 @@ export default function LocaleHome() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  // For re-editing an existing cart item from the sidebar (prefill customization, services, qty)
+  const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
+  // When user opens edit from cart, we want to return to cart on cancel or after update
+  const [returnToCartAfterConfig, setReturnToCartAfterConfig] = useState(false);
 
   // Persisted checkout form draft so that if user fills B2B info, goes to Stripe, and cancels,
   // the company/email/address etc. are still there when they retry.
@@ -117,14 +122,31 @@ export default function LocaleHome() {
     description: t(`products.items.${base.slug}.description`),
   }));
 
-  const openConfigurator = (product: Product) => {
+  const openConfigurator = (product: Product, editItem?: CartItem) => {
     setSelectedProduct(product);
+    setEditingCartItem(editItem || null);
     setIsConfiguratorOpen(true);
   };
 
   const addToCart = (item: CartItem) => {
-    setCart((prev) => [...prev, item]);
+    // If we opened the configurator to edit an existing cart item, replace it in place
+    // (preserve the original cart item id, take the newly computed customization/quantity/services/totalPrice).
+    // Otherwise append as a new line.
+    setCart((prev) => {
+      if (editingCartItem) {
+        return prev.map((ci) =>
+          ci.id === editingCartItem.id
+            ? { ...item, id: editingCartItem.id }
+            : ci
+        );
+      }
+      return [...prev, item];
+    });
+
     setIsConfiguratorOpen(false);
+    setEditingCartItem(null);
+    setSelectedProduct(null);
+    setReturnToCartAfterConfig(false);
     setIsCartOpen(true);
   };
 
@@ -132,11 +154,21 @@ export default function LocaleHome() {
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const editCartItem = (item: CartItem) => {
+    setReturnToCartAfterConfig(true);
+    setIsCartOpen(false);
+    openConfigurator(item.product, item);
+  };
+
   const updateCartQuantity = (id: number, newQuantity: number) => {
     setCart((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          const newTotal = item.product.price * newQuantity;
+          // Use the shared calculator when customization is present (single logical component).
+          const unit = item.customization
+            ? calculateHardwarePrice(item.product.slug, item.customization)
+            : item.product.price;
+          const newTotal = unit * newQuantity;
           return { ...item, quantity: newQuantity, totalPrice: newTotal };
         }
         return item;
@@ -410,7 +442,19 @@ export default function LocaleHome() {
       </footer>
 
       {isConfiguratorOpen && selectedProduct && (
-        <ConfiguratorModal product={selectedProduct} onClose={() => setIsConfiguratorOpen(false)} onAddToCart={addToCart} />
+        <ConfiguratorModal 
+          product={selectedProduct} 
+          editingItem={editingCartItem}
+          onClose={() => {
+            setIsConfiguratorOpen(false);
+            setEditingCartItem(null);
+            if (returnToCartAfterConfig) {
+              setIsCartOpen(true);
+              setReturnToCartAfterConfig(false);
+            }
+          }} 
+          onAddToCart={addToCart} 
+        />
       )}
 
       {isCartOpen && (
@@ -420,6 +464,7 @@ export default function LocaleHome() {
           onCheckout={openCheckout} 
           onRemoveItem={removeFromCart}
           onUpdateQuantity={updateCartQuantity}
+          onEditItem={editCartItem}
         />
       )}
 

@@ -1,4 +1,16 @@
-import { isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, isOverSepaLimit, getHardwarePrice, getServicePrice, ServiceKey, PRICING_VERSION } from './pricing';
+import {
+  isLeaseAllowed,
+  isPbiAllowed,
+  isInvoiceAllowed,
+  isOverSepaLimit,
+  getHardwarePrice,
+  getServicePrice,
+  ServiceKey,
+  PRICING_VERSION,
+  calculateHardwarePrice,
+  formatHardwareCustomization,
+  type HardwareCustomization,
+} from './pricing';
 
 export type Financing = 'full' | 'lease';
 export type PaymentMethod = 'stripe' | 'sepa' | 'invoice';
@@ -104,18 +116,42 @@ export interface ResolvedOrderAmounts {
   hardwareTotal: number;
   servicesMonthly: number;
   resolvedServicesForMeta: Array<{ name: string; price: number }>;
+  // Hardware customizations (when present in items). Includes chosen labels (e.g. "2 TB HDD")
+  // and the extra cost so that metadata, line item descriptions, and emails can surface them.
+  resolvedHardwareForMeta: Array<{ name: string; config: string; extraCost: number }>;
 }
 
 export function resolvePricesAndServices(items: any[] = []): ResolvedOrderAmounts {
   let hardwareTotal = 0;
   let servicesMonthly = 0;
   const resolvedServicesForMeta: Array<{ name: string; price: number }> = [];
+  const resolvedHardwareForMeta: Array<{ name: string; config: string; extraCost: number }> = [];
 
   for (const item of items) {
     const qty = item.quantity || 1;
     const slug = item.product?.slug as string | undefined;
-    const hwPrice = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
-    hardwareTotal += hwPrice * qty;
+
+    // Use the single logical component (calculateHardwarePrice) when customization is supplied.
+    // Falls back to base price for items without customization (preserves all existing behavior).
+    const unitHw = slug && item.customization
+      ? calculateHardwarePrice(slug, item.customization as HardwareCustomization)
+      : (slug ? getHardwarePrice(slug) : (item.product?.price || 0));
+
+    const baseForSlug = slug ? getHardwarePrice(slug) : 0;
+    const extraForItem = Math.max(0, unitHw - baseForSlug);
+
+    hardwareTotal += unitHw * qty;
+
+    // Record chosen config (with tech labels) + the extra that was charged for this line.
+    const configStr = formatHardwareCustomization(item.customization as HardwareCustomization | undefined) ||
+      (slug ? 'Standard' : '');
+    if (slug) {
+      resolvedHardwareForMeta.push({
+        name: item.product?.name || slug,
+        config: configStr,
+        extraCost: extraForItem * qty,
+      });
+    }
 
     const svcs = item.services || [];
     for (const s of svcs) {
@@ -129,6 +165,6 @@ export function resolvePricesAndServices(items: any[] = []): ResolvedOrderAmount
     }
   }
 
-  return { hardwareTotal, servicesMonthly, resolvedServicesForMeta };
+  return { hardwareTotal, servicesMonthly, resolvedServicesForMeta, resolvedHardwareForMeta };
 }
 

@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { calculateLease, isOverSepaLimit, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, PRICING_VERSION, getHardwarePrice, getServicePrice, ServiceKey, UPFRONT_PERCENT, DEBUG_PAYMENTS } from '@/lib/pricing';
+import {
+  calculateLease,
+  isOverSepaLimit,
+  isPbiAllowed,
+  isInvoiceAllowed,
+  LEASE_MIN,
+  LEASE_MAX,
+  PBI_MIN,
+  PBI_MAX,
+  PRICING_VERSION,
+  getHardwarePrice,
+  getServicePrice,
+  ServiceKey,
+  UPFRONT_PERCENT,
+  DEBUG_PAYMENTS,
+  calculateHardwarePrice,
+  formatHardwareCustomization,
+} from '@/lib/pricing';
 import { createB2BStripeCustomer } from '@/lib/stripe-customer';
 import { sendRegisteredInvoiceCustomerEmail, sendAdminInvoiceRegisteredEmail } from '@/lib/emails';
 import { buildPaymentContext, validatePaymentEligibility, resolvePricesAndServices } from '@/lib/payment-flow';
@@ -39,7 +56,9 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Authoritative prices + totals (pure, now extracted). Client prices ignored.
-    const { hardwareTotal, servicesMonthly, resolvedServicesForMeta } = resolvePricesAndServices(items || []);
+    // resolve now also returns resolved hardware customizations (with labels + extras) via the
+    // single logical component (calculateHardwarePrice) when items carry customization.
+    const { hardwareTotal, servicesMonthly, resolvedServicesForMeta, resolvedHardwareForMeta = [] } = resolvePricesAndServices(items || []);
 
     if (DEBUG_PAYMENTS) {
       console.log('[PAYMENT DEBUG] checkout received payload', {
@@ -50,6 +69,8 @@ export async function POST(request: NextRequest) {
         servicesInItems: (items || []).reduce((n: number, it: any) => n + ((it.services || []).length || 0), 0),
         resolvedServicesForMetaLen: resolvedServicesForMeta.length,
         resolvedServicesForMeta,
+        resolvedHardwareForMetaLen: resolvedHardwareForMeta.length,
+        resolvedHardwareForMeta,
         hardwareTotal,
         servicesMonthly,
       });
@@ -198,6 +219,7 @@ export async function POST(request: NextRequest) {
             country,
             financing: 'lease',
             services: resolvedServicesForMeta,
+            hardware: resolvedHardwareForMeta,
             pricingVersion: PRICING_VERSION,
             locale,
             orderPlacedAt,
@@ -262,6 +284,7 @@ export async function POST(request: NextRequest) {
               country,
               financing: 'lease',
               services: resolvedServicesForMeta,
+            hardware: resolvedHardwareForMeta,
               pricingVersion: PRICING_VERSION,
               locale,
               orderPlacedAt,
@@ -342,6 +365,7 @@ export async function POST(request: NextRequest) {
               address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
               financing: 'lease',
               services: JSON.stringify(resolvedServicesForMeta),
+          hardware: JSON.stringify(resolvedHardwareForMeta),
               customer_email: email || 'N/A',
               pricing_version: PRICING_VERSION,
               locale,
@@ -440,6 +464,7 @@ export async function POST(request: NextRequest) {
             country,
             financing: 'lease',
             services: resolvedServicesForMeta,
+            hardware: resolvedHardwareForMeta,
             pricingVersion: PRICING_VERSION,
             locale,
             orderPlacedAt,
@@ -546,6 +571,7 @@ export async function POST(request: NextRequest) {
             lease_upfront_amount: lease.upfrontAmount.toString(),
             lease_financed_amount: lease.financedAmount.toString(),
             services: JSON.stringify(resolvedServicesForMeta),
+          hardware: JSON.stringify(resolvedHardwareForMeta),
             customer_email: email || 'N/A',
             pricing_version: PRICING_VERSION,
             locale,
@@ -609,6 +635,7 @@ export async function POST(request: NextRequest) {
           address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
           financing,
           services: JSON.stringify(resolvedServicesForMeta),
+          hardware: JSON.stringify(resolvedHardwareForMeta),
           customer_email: email || 'N/A',
           pricing_version: PRICING_VERSION,
           locale,
@@ -621,14 +648,19 @@ export async function POST(request: NextRequest) {
       for (const item of (items || [])) {
         const qty = item.quantity || 1;
         const slug = item.product?.slug as string | undefined;
-        const unit = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
+        // Authoritative unit price via the single logical component (respects customization + per-tier option prices).
+        const unit = slug && item.customization
+          ? calculateHardwarePrice(slug, item.customization)
+          : (slug ? getHardwarePrice(slug) : (item.product?.price || 0));
         const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
+        const cfg = formatHardwareCustomization(item.customization);
+        const descExtra = cfg ? ` • ${cfg}` : '';
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
           invoice: invoice.id,
           amount: Math.round(unit * 100 * qty),
           currency: 'eur',
-          description: `${BRAND_NAME} ${item.product?.name || 'Appliance'}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}`,
+          description: `${BRAND_NAME} ${item.product?.name || 'Appliance'}${descExtra}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}`,
         });
       }
 
@@ -831,14 +863,20 @@ export async function POST(request: NextRequest) {
     const lineItems: any[] = (items || []).map((item: any) => {
       const qty = item.quantity || 1;
       const slug = item.product?.slug as string | undefined;
-      const unit = slug ? getHardwarePrice(slug) : (item.product?.price || 0);
+      // Use the single logical component for hardware unit price (base + chosen option prices from customization).
+      const unit = slug && item.customization
+        ? calculateHardwarePrice(slug, item.customization)
+        : (slug ? getHardwarePrice(slug) : (item.product?.price || 0));
       const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
+      const cfg = formatHardwareCustomization(item.customization);
       return {
         price_data: {
           currency: 'eur',
           product_data: {
             name: `${BRAND_NAME} ${item.product?.name || 'Appliance'}`,
-            description: svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}` : undefined,
+            description: cfg
+              ? (svcNames.length > 0 ? `${cfg} • Includes: ${svcNames.join(', ')}` : cfg)
+              : (svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}` : undefined),
           },
           unit_amount: unit * 100,
         },
@@ -892,6 +930,7 @@ export async function POST(request: NextRequest) {
     };
     if (DEBUG_PAYMENTS) {
       console.log('[PAYMENT DEBUG] full session metadata.services =', JSON.stringify(resolvedServicesForMeta));
+      console.log('[PAYMENT DEBUG] full session metadata.hardware =', JSON.stringify(resolvedHardwareForMeta));
     }
     if (stripeCustomerId) {
       sessionParams.customer = stripeCustomerId;

@@ -84,6 +84,19 @@ export async function POST(request: NextRequest) {
         servicesStr = servicesArray.map(s => `${s.name} (€${s.price}/mo)`).join(', ') || 'None';
       }
     } catch {}
+    let hardwareStr = 'Standard';
+    try {
+      if (metadata.hardware) {
+        const hw = typeof metadata.hardware === 'string' ? JSON.parse(metadata.hardware) : metadata.hardware;
+        if (Array.isArray(hw) && hw.length > 0) {
+          hardwareStr = hw.map((h: any) => {
+            const base = h.name || '';
+            const cfg = h.config && h.config !== 'Standard' ? ` (${h.config})` : '';
+            return `${base}${cfg}`;
+          }).join(', ');
+        }
+      }
+    } catch {}
     if (DEBUG_PAYMENTS || servicesArray.length > 0) {
       console.log(`[PAYMENT DEBUG] checkout.session.completed: order=${orderId} financing=${financing} customer=${session.customer} servicesLen=${servicesArray.length} rawServicesMeta=${metadata.services}`);
     } else {
@@ -108,6 +121,7 @@ export async function POST(request: NextRequest) {
         leaseMonths,
         upfrontAmount: upfrontAmountForEmail,
         servicesStr,
+        hardwareStr,
         companyName,
         vatNumber,
         poNumber,
@@ -126,6 +140,7 @@ export async function POST(request: NextRequest) {
         leaseMonths,
         upfrontAmount: upfrontAmountForEmail,
         servicesStr,
+        hardwareStr,
         companyName,
         vatNumber,
         poNumber,
@@ -374,6 +389,7 @@ export async function POST(request: NextRequest) {
           currency: curr,
           financing: invFinancing,
           servicesStr: 'None',
+          hardwareStr: 'Standard',
           companyName: invMeta.company_name || invMeta.companyName || 'N/A',
           vatNumber: invMeta.vat_number || invMeta.vatNumber || 'N/A',
           poNumber: invMeta.po_number || invMeta.poNumber || 'N/A',
@@ -476,6 +492,19 @@ export async function POST(request: NextRequest) {
         servicesStr = servicesArray.map(s => `${s.name} (€${s.price}/mo)`).join(', ') || 'None';
       }
     } catch {}
+    let hardwareStr = 'Standard';
+    try {
+      if (metadata.hardware) {
+        const hw = typeof metadata.hardware === 'string' ? JSON.parse(metadata.hardware) : metadata.hardware;
+        if (Array.isArray(hw) && hw.length > 0) {
+          hardwareStr = hw.map((h: any) => {
+            const base = h.name || '';
+            const cfg = h.config && h.config !== 'Standard' ? ` (${h.config})` : '';
+            return `${base}${cfg}`;
+          }).join(', ');
+        }
+      }
+    } catch {}
 
     // Customer email (rich thanks for lease paid)
     await sendOrderConfirmationCustomerEmail({
@@ -487,6 +516,7 @@ export async function POST(request: NextRequest) {
       leaseMonths,
       upfrontAmount: (metadata as any).lease_upfront_amount,
       servicesStr,
+      hardwareStr,
       companyName,
       vatNumber,
       poNumber,
@@ -504,6 +534,7 @@ export async function POST(request: NextRequest) {
       leaseMonths,
       upfrontAmount: (metadata as any).lease_upfront_amount,
       servicesStr,
+      hardwareStr,
       companyName,
       vatNumber,
       poNumber,

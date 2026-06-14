@@ -475,4 +475,46 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(servicesMeta.length).toBe(1)
     expect(servicesMeta[0].price).toBe(SERVICE_PRICES.managedCare * 2)
   })
+
+  // ---------- Hardware customization round-trip (uses the shared pricing component) ----------
+  it('customization with non-default options resolves correct hardwareTotal and includes hardware meta', async () => {
+    // edge base 4990. Pick 32 GB ram (+280) + 24 GB vram (+420) + 2 TB HDD (+350) = extra 1050
+    // qty 1 => hardwareTotal = 4990 + 1050 = 6040
+    const payload: CheckoutPayload = {
+      ...basePayload(),
+      items: [
+        {
+          id: 99,
+          product: { id: 0, slug: 'edge', name: 'Edge', tier: '', price: HARDWARE_PRICES.edge, description: '' },
+          services: [],
+          quantity: 1,
+          totalPrice: 6040, // client hint (ignored by server)
+          customization: {
+            ram: { value: 32, label: '32 GB' },
+            vram: { value: 24, label: '24 GB' },
+            disk: { value: 2, label: '2 TB HDD' },
+          },
+        },
+      ],
+      paymentMethod: 'stripe',
+      financing: 'full',
+    }
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+
+    const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]
+    // line item unit must reflect the full computed price (base + options)
+    expect(sessionCall.line_items[0].price_data.unit_amount).toBe(6040 * 100)
+    expect(sessionCall.line_items[0].quantity).toBe(1)
+
+    // hardware meta must be present and carry the chosen labels + extra
+    const hwMeta = JSON.parse(sessionCall.metadata.hardware || '[]')
+    expect(Array.isArray(hwMeta)).toBe(true)
+    expect(hwMeta.length).toBe(1)
+    expect(hwMeta[0].name).toBe('Edge')
+    expect(hwMeta[0].config).toContain('32 GB')
+    expect(hwMeta[0].config).toContain('2 TB HDD')
+    // extra for 1 unit
+    expect(hwMeta[0].extraCost).toBe(1050)
+  })
 })

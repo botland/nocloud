@@ -1,3 +1,5 @@
+import type { HardwareCustomization } from './pricing';
+
 export interface Product {
   id: number;
   slug: string;
@@ -19,6 +21,10 @@ export interface CartItem {
   services: CartService[];
   quantity: number;
   totalPrice: number;
+  // Optional hardware customization (RAM/VRAM/Disk). When present the values come from
+  // the tier's pre-select options in lib/pricing.ts. Server always re-prices using the
+  // central calculateHardwarePrice + chosen values (client totalPrice is never trusted).
+  customization?: HardwareCustomization;
 }
 
 // Payload sent from CheckoutModal to /api/checkout (and used for invoice mock path too).

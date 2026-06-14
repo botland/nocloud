@@ -94,13 +94,18 @@
     "totalToday": "Total aujourd'hui",
     "recurringNote": "+ services récurrents",
     "addToCart": "Ajouter au panier",
+    "updateCart": "Mettre à jour le panier",
     "specs": {
       "inference": "Inférence",
       "models": "Modèles",
       "memory": "Mémoire",
       "storage": "Stockage",
-      "formFactor": "Format"
+      "formFactor": "Format",
+      "ram": "RAM système",
+      "vram": "VRAM (GPU)",
+      "disk": "Stockage"
     },
+    "included": "inclus",
     "managedCare": "Maintenance Gérée",
     "managedCareNote": "Gestion à distance, mises à jour & support prioritaire",
     "secureVaultBackup": "Sauvegarde SecureVault",
@@ -115,7 +120,8 @@
     "seeConfigurator": "voir le configurateur",
     "proceedCheckout": "Passer à la caisse sécurisée",
     "secureNote": "Sécurisé • TVA gérée • Facturation européenne",
-    "remove": "Supprimer"
+    "remove": "Supprimer",
+    "edit": "Modifier"
   },
   "checkout": {
     "completeOrder": "Finalisez votre commande",

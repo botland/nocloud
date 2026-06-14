@@ -5,6 +5,9 @@
  *
  * - Hardware appliance one-time prices (EUR).
  * - Optional recurring service monthly prices (EUR).
+ * - Tiered hardware customization: TIER_SPEC_OPTIONS + pure helpers for RAM/VRAM/Disk pre-select options
+ *   (each option has numeric value + tech-aware label + additive per-appliance price). Single source
+ *   used by Configurator (live), cart, server resolve, line items, and order metadata/emails.
  * - Lease rules:
  *     - LEASE_MAX / LEASE_MIN: hardware value range eligible for leasing
  *     - UPFRONT_PERCENT: % of hardware charged upfront when leasing (reduces financed principal)
@@ -26,7 +29,7 @@
  * (ensures consistency and eliminates duplication).
  */
 
-export const PRICING_VERSION = '2026-06-11-invoice-policy';
+export const PRICING_VERSION = '2026-06-13-tier-spec-options';
 // Bump this (and document the change) whenever any price, threshold, lease rule, or invoice policy changes.
 // It is passed through to Stripe session metadata and surfaced in order emails.
 
@@ -156,3 +159,155 @@ export function isInvoiceAllowed(financing: 'full' | 'lease', servicesMonthly: n
 // Convenience re-export of service display names keys (used for translated names in UI/cart).
 // The numeric prices always come from here; names stay in i18n for localization.
 export const SERVICE_KEYS = Object.keys(SERVICE_PRICES) as ServiceKey[];
+
+/**
+ * Hardware customization (RAM / VRAM / Disk) — per-tier pre-select options.
+ *
+ * This + the four pure helpers below are the SINGLE LOGICAL COMPONENT for spec configuration
+ * and pricing. Every consumer (ConfiguratorModal for interactive selects + live preview,
+ * page.tsx for cart qty updates, payment-flow.ts resolve, checkout route for authoritative
+ * line items, webhook/emails for order descriptions) must derive from here.
+ *
+ * Design notes:
+ * - Each SpecOption carries a numeric `value` (for pricing math), a human `label` (shown to
+ *   the customer and persisted for order accuracy — enables different technologies such as
+ *   "1 TB NVMe" vs "2 TB HDD" even if numeric TB overlaps), and the additive `price` (EUR).
+ * - The tier's default for a key is conventionally the option with price === 0.
+ * - calculateHardwarePrice(slug, customization) = base hardware + sum(option prices for chosen values).
+ *   If a dimension is absent from customization we fall back to the tier default (price 0).
+ * - All functions are pure and must stay identical on client and server.
+ */
+
+export interface SpecOption {
+  value: number;
+  label: string;
+  price: number; // additive per-appliance cost for selecting exactly this option
+}
+
+export interface TierSpecOptions {
+  ram: SpecOption[];
+  vram: SpecOption[];
+  disk: SpecOption[];
+}
+
+export interface ChosenSpec {
+  value: number;
+  label: string;
+}
+
+export interface HardwareCustomization {
+  ram?: ChosenSpec;
+  vram?: ChosenSpec;
+  disk?: ChosenSpec;
+}
+
+// Concrete per-tier curated options. The price-0 entry in each list is the documented default.
+// Technology labels (e.g. NVMe vs HDD) are carried so future evolution is free (no numeric-only assumption).
+export const TIER_SPEC_OPTIONS: Record<HardwareSlug, TierSpecOptions> = {
+  edge: {
+    ram: [
+      { value: 16, label: '16 GB', price: -200 },
+      { value: 24, label: '24 GB', price: 0 },     // default (matches legacy "24 GB")
+      { value: 32, label: '32 GB', price: 280 },
+      { value: 48, label: '48 GB', price: 650 },
+    ],
+    vram: [
+      { value: 16, label: '16 GB', price: 0 },     // default
+      { value: 24, label: '24 GB', price: 420 },
+    ],
+    disk: [
+      { value: 1, label: '1 TB NVMe', price: 0 },  // default
+      { value: 2, label: '2 TB HDD', price: 350 },
+    ],
+  },
+  studio: {
+    ram: [
+      { value: 64, label: '64 GB', price: -150 },
+      { value: 96, label: '96 GB', price: 0 },     // default
+      { value: 128, label: '128 GB', price: 320 },
+      { value: 192, label: '192 GB', price: 780 },
+    ],
+    vram: [
+      { value: 48, label: '48 GB', price: -80 },
+      { value: 96, label: '96 GB', price: 0 },     // default
+      { value: 128, label: '128 GB', price: 450 },
+    ],
+    disk: [
+      { value: 2, label: '2 TB RAID', price: -120 },
+      { value: 4, label: '4 TB RAID', price: 0 },  // default
+      { value: 8, label: '8 TB Enterprise', price: 680 },
+    ],
+  },
+  forge: {
+    ram: [
+      { value: 96, label: '96 GB', price: -200 },
+      { value: 128, label: '128 GB', price: 0 },   // default
+      { value: 192, label: '192 GB', price: 380 },
+      { value: 256, label: '256 GB', price: 820 },
+    ],
+    vram: [
+      { value: 192, label: '192 GB HBM', price: -300 },
+      { value: 256, label: '256 GB HBM', price: 0 }, // default (matches legacy "256+ GB HBM")
+      { value: 384, label: '384 GB HBM', price: 920 },
+    ],
+    disk: [
+      { value: 4, label: '4 TB Enterprise', price: -150 },
+      { value: 8, label: '8 TB Enterprise', price: 0 }, // default
+      { value: 16, label: '16 TB Enterprise', price: 1250 },
+    ],
+  },
+} as const;
+
+export function getSpecOptions(slug: string, key: 'ram' | 'vram' | 'disk'): SpecOption[] {
+  const tier = TIER_SPEC_OPTIONS[slug as HardwareSlug];
+  if (!tier) return [];
+  return tier[key] ?? [];
+}
+
+export function getDefaultOption(slug: string, key: 'ram' | 'vram' | 'disk'): SpecOption | null {
+  const opts = getSpecOptions(slug, key);
+  // Convention: the option with price 0 is the tier default. Fall back to first.
+  return opts.find((o) => o.price === 0) ?? opts[0] ?? null;
+}
+
+export function getOptionPrice(slug: string, key: 'ram' | 'vram' | 'disk', value: number): number {
+  const opts = getSpecOptions(slug, key);
+  const match = opts.find((o) => o.value === value);
+  return match ? match.price : 0;
+}
+
+/**
+ * Authoritative hardware price for a tier + chosen customization.
+ * Base price (from HARDWARE_PRICES) + additive prices of the selected options.
+ * Missing dimensions in customization fall back to the tier's default option (price 0).
+ * Used by client (live preview, cart qty) and server (resolvePricesAndServices) — must stay identical.
+ */
+export function calculateHardwarePrice(slug: string, customization?: HardwareCustomization): number {
+  const base = getHardwarePrice(slug);
+  if (!customization) return base;
+
+  let extra = 0;
+  (['ram', 'vram', 'disk'] as const).forEach((k) => {
+    const chosen = customization[k];
+    if (chosen && typeof chosen.value === 'number') {
+      extra += getOptionPrice(slug, k, chosen.value);
+    } else {
+      // fall back to default (normally 0)
+      const def = getDefaultOption(slug, k);
+      if (def) extra += def.price;
+    }
+  });
+
+  return base + extra;
+}
+
+// Helper to produce a compact human string from a customization (for cart summaries,
+// invoice descriptions, emails, metadata). Falls back gracefully.
+export function formatHardwareCustomization(customization?: HardwareCustomization): string {
+  if (!customization) return '';
+  const parts: string[] = [];
+  if (customization.ram) parts.push(`RAM ${customization.ram.label}`);
+  if (customization.vram) parts.push(`VRAM ${customization.vram.label}`);
+  if (customization.disk) parts.push(`Disk ${customization.disk.label}`);
+  return parts.join(' • ');
+}

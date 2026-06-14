@@ -22,6 +22,12 @@ import {
   isPbiAllowed,
   isInvoiceAllowed,
   SERVICE_KEYS,
+  TIER_SPEC_OPTIONS,
+  getSpecOptions,
+  getDefaultOption,
+  getOptionPrice,
+  calculateHardwarePrice,
+  formatHardwareCustomization,
   type LeaseDetails,
 } from '@/lib/pricing'
 
@@ -224,6 +230,98 @@ describe('lib/pricing (functional business rules - implementation independent)',
   describe('SERVICE_KEYS (for i18n name lookup while prices come from here)', () => {
     it('exports exactly the service keys as array', () => {
       expect(SERVICE_KEYS).toEqual(['managedCare', 'secureVaultBackup'])
+    })
+  })
+
+  describe('tier hardware customization (single logical component: TIER_SPEC_OPTIONS + pure fns)', () => {
+    it('exports TIER_SPEC_OPTIONS with three slugs and ram/vram/disk lists containing labels + prices', () => {
+      expect(TIER_SPEC_OPTIONS.edge).toBeDefined()
+      expect(TIER_SPEC_OPTIONS.studio).toBeDefined()
+      expect(TIER_SPEC_OPTIONS.forge).toBeDefined()
+      ;(['edge','studio','forge'] as const).forEach(slug => {
+        const t = TIER_SPEC_OPTIONS[slug]
+        expect(Array.isArray(t.ram)).toBe(true)
+        expect(Array.isArray(t.vram)).toBe(true)
+        expect(Array.isArray(t.disk)).toBe(true)
+        // each option has value, label (string, supports tech variants), price
+        ;[...t.ram, ...t.vram, ...t.disk].forEach((o: any) => {
+          expect(typeof o.value).toBe('number')
+          expect(typeof o.label).toBe('string')
+          expect(typeof o.price).toBe('number')
+        })
+      })
+    })
+
+    it('getSpecOptions returns the list for known slugs/keys and [] for unknown', () => {
+      const ramEdge = getSpecOptions('edge', 'ram')
+      expect(ramEdge.length).toBeGreaterThan(0)
+      expect(ramEdge[0]).toHaveProperty('label')
+      expect(getSpecOptions('edge', 'vram').length).toBeGreaterThan(0)
+      expect(getSpecOptions('unknown' as any, 'ram')).toEqual([])
+    })
+
+    it('getDefaultOption returns the price===0 entry (or first) for each dimension', () => {
+      const defRam = getDefaultOption('studio', 'ram')
+      expect(defRam).not.toBeNull()
+      // In our data the default for studio ram has price 0 and value 96
+      expect(defRam!.price).toBe(0)
+      expect(defRam!.value).toBe(96)
+    })
+
+    it('getOptionPrice returns the listed price for an exact value match, 0 otherwise or for unknown slug', () => {
+      expect(getOptionPrice('edge', 'vram', 24)).toBe(420) // non-default
+      expect(getOptionPrice('edge', 'vram', 16)).toBe(0)   // default
+      expect(getOptionPrice('edge', 'vram', 999)).toBe(0)
+      expect(getOptionPrice('unknown' as any, 'disk', 1)).toBe(0)
+    })
+
+    it('calculateHardwarePrice returns base when no customization or all defaults', () => {
+      const baseEdge = HARDWARE_PRICES.edge
+      expect(calculateHardwarePrice('edge')).toBe(baseEdge)
+      // explicit defaults (price 0 options)
+      const defaults = {
+        ram: getDefaultOption('edge', 'ram')!,
+        vram: getDefaultOption('edge', 'vram')!,
+        disk: getDefaultOption('edge', 'disk')!,
+      }
+      expect(calculateHardwarePrice('edge', defaults)).toBe(baseEdge)
+    })
+
+    it('calculateHardwarePrice adds the option prices for chosen values (per-appliance)', () => {
+      // edge: pick 32 GB ram (+280) + 24 GB vram (+420) + 2 TB HDD (+350)
+      const up = {
+        ram: { value: 32, label: '32 GB' },
+        vram: { value: 24, label: '24 GB' },
+        disk: { value: 2, label: '2 TB HDD' },
+      }
+      const expectedExtra = 280 + 420 + 350
+      expect(calculateHardwarePrice('edge', up)).toBe(HARDWARE_PRICES.edge + expectedExtra)
+    })
+
+    it('calculateHardwarePrice handles mixed (some dimensions customized, others default)', () => {
+      const partial = { vram: { value: 24, label: '24 GB' } } // +420 on edge
+      expect(calculateHardwarePrice('edge', partial)).toBe(HARDWARE_PRICES.edge + 420)
+    })
+
+    it('formatHardwareCustomization produces a compact label string using the stored labels (tech variants preserved)', () => {
+      const c = {
+        ram: { value: 24, label: '24 GB' },
+        disk: { value: 2, label: '2 TB HDD' },
+      }
+      const s = formatHardwareCustomization(c)
+      expect(s).toContain('24 GB')
+      expect(s).toContain('2 TB HDD')
+      expect(formatHardwareCustomization(undefined)).toBe('')
+    })
+
+    it('different tech labels for same numeric value are supported and distinguishable', () => {
+      // In our sample data edge disk has two options with different labels.
+      const diskOpts = getSpecOptions('edge', 'disk')
+      const labels = diskOpts.map(o => o.label)
+      expect(labels).toContain('1 TB NVMe')
+      expect(labels).toContain('2 TB HDD')
+      // prices can differ
+      expect(getOptionPrice('edge', 'disk', 1)).not.toBe(getOptionPrice('edge', 'disk', 2))
     })
   })
 })

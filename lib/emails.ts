@@ -27,6 +27,7 @@ export interface OrderConfirmationParams {
   leaseMonths?: string;
   upfrontAmount?: string;
   servicesStr: string;
+  hardwareStr?: string;
   companyName: string;
   vatNumber: string;
   poNumber: string;
@@ -43,6 +44,7 @@ export interface AdminNotificationParams {
   leaseMonths?: string;
   upfrontAmount?: string;
   servicesStr: string;
+  hardwareStr?: string;
   companyName: string;
   vatNumber: string;
   poNumber: string;
@@ -168,6 +170,7 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
     leaseMonths,
     upfrontAmount,
     servicesStr,
+    hardwareStr,
     companyName,
     vatNumber,
     poNumber,
@@ -186,12 +189,14 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
   const thanksBody = isFr ? 'Votre commande a été reçue et le paiement confirmé.' : 'Your order has been received and payment confirmed.';
   const thanksSummary = isFr ? 'Récapitulatif de commande' : 'Order Summary';
   const thanksServices = isFr ? 'Services optionnels' : 'Optional Services';
+  const thanksHardware = isFr ? 'Configuration matériel' : 'Hardware configuration';
   const thanksCompany = isFr ? 'Société' : 'Company';
   const thanksVat = isFr ? 'Numéro de TVA' : 'VAT Number';
   const thanksPo = isFr ? 'N° de commande' : 'PO Number';
   const thanksPriceVer = isFr ? 'Version de tarification' : 'Pricing version';
   const thanksFooter = isFr ? 'Vous recevrez l\'appareil prochainement. Contactez-nous si vous avez des questions.' : 'You will receive the appliance soon. Contact us if you have any questions.';
   const thanksClose = isFr ? `Cordialement,<br>L'équipe ${BRAND_DISPLAY}` : `Best regards,<br>The ${BRAND_DISPLAY} Team`;
+  const adminHardwareLine = hardwareStr ? `<p><strong>Hardware:</strong> ${hardwareStr}</p>` : '';
 
   const leaseNote = financing === 'lease' ? `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>` : '';
   const upfront = upfrontAmount;
@@ -211,6 +216,7 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
         <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
         ${upfrontNote}
         <p><strong>${thanksServices}:</strong> ${servicesStr}</p>
+        ${hardwareStr ? `<p><strong>${thanksHardware}:</strong> ${hardwareStr}</p>` : ''}
         <p><strong>${thanksCompany}:</strong> ${companyName}</p>
         <p><strong>${thanksVat}:</strong> ${vatNumber}</p>
         <p><strong>${thanksPo}:</strong> ${poNumber}</p>
@@ -242,6 +248,7 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     leaseMonths,
     upfrontAmount,
     servicesStr,
+    hardwareStr,
     companyName,
     vatNumber,
     poNumber,
@@ -290,6 +297,8 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     extra = `<p>Hybrid recurring setup: ${setupSessionId} (${recurringPaymentMethod})</p>`;
   }
 
+  const adminHardwareLine = hardwareStr ? `<p><strong>Hardware:</strong> ${hardwareStr}</p>` : '';
+
   const html = `
     <h2>${adminTitle}</h2>
     <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
@@ -297,6 +306,7 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
     ${(financing === 'lease' && upfrontAmount) || (isLeaseInvoicePaid && upfrontAmount) ? `<p><strong>Upfront payment:</strong> €${upfrontAmount}</p>` : ''}
     <p><strong>Services:</strong> ${servicesStr}</p>
+    ${adminHardwareLine}
     <p><strong>Company:</strong> ${companyName}</p>
     <p><strong>VAT:</strong> ${vatNumber}</p>
     <p><strong>PO #:</strong> ${poNumber}</p>
