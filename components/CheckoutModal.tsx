@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { calculateLease, isOverSepaLimit, isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX } from '@/lib/pricing';
 import { CartItem, CheckoutFormDraft } from '@/lib/types';
+import { determineVatTreatment, computeVatAmounts } from '@/lib/vat';
 
 interface Props {
   cart: CartItem[];
@@ -35,6 +36,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   // still uses the Net-30 invoice; this only affects creation of automatic service subs (via a mode:'setup' session).
   const [recurringPaymentMethod, setRecurringPaymentMethod] = useState<'stripe' | 'sepa'>(initialData?.recurringPaymentMethod || 'stripe');
 
+  // VAT-inclusive election (professional customer choice). Only offered by UI when
+  // determineVatTreatment says it is legally permitted (never for mandatory reverse charge).
+  // Server is authoritative and will reject illegal choices.
+  const [vatInclusive, setVatInclusive] = useState<boolean>(initialData?.vatInclusive || false);
+
   // Email collected here (part of checkout), kept in payload, transmitted to Stripe (pre-created Customer preferred; falls back to customer_email).
   const [email, setEmail] = useState(initialData?.email || '');
 
@@ -52,6 +58,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const setPaymentMethodWithDraft = (v: 'stripe' | 'sepa' | 'invoice') => { setPaymentMethod(v); updateDraft({ paymentMethod: v }); };
   const setFinancingWithDraft = (v: 'full' | 'lease') => { setFinancing(v); updateDraft({ financing: v }); };
   const setRecurringPaymentMethodWithDraft = (v: 'stripe' | 'sepa') => { setRecurringPaymentMethod(v); updateDraft({ recurringPaymentMethod: v }); };
+  const setVatInclusiveWithDraft = (v: boolean) => { setVatInclusive(v); updateDraft({ vatInclusive: v }); };
   const setEmailWithDraft = (v: string) => { setEmail(v); updateDraft({ email: v }); };
 
 
@@ -65,8 +72,6 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   // Uses centralized calculateLease so client/server stay in sync.
   const leaseDetails = calculateLease(hardwareTotal, servicesMonthly);
   const leaseMonths = leaseDetails.months;
-  const leaseMonthly = leaseDetails.monthlyTotal;
-  const leaseUpfront = leaseDetails.upfrontAmount;
 
   const canLease = leaseDetails.isAllowed;
   const canPbi = isPbiAllowed(hardwareTotal);
@@ -75,6 +80,52 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
   // Current selection
   const isLease = financing === 'lease';
+
+  // VAT treatment (pure, client+server identical). Drives whether we can legally show the
+  // "I wish to be billed VAT-inclusive" checkbox and what the live gross preview should be.
+  const vatTreatment = determineVatTreatment({ customerCountry: country, vatNumber: vat });
+  const canOfferVatInclusive = vatTreatment.canOfferVatInclusive;
+
+  const showVatBreakdown = !!vatInclusive && vatTreatment.vatRate > 0;
+  const vatRateForDisplay = vatTreatment.vatRate;
+
+  // Live recompute of billed amounts for preview.
+  // Lease math + pricing always stays on the net/ex-VAT base (server does the same).
+  // When user elects VAT-inclusive (and it is allowed), we gross the *displayed* numbers
+  // and use the translated "vatBreakdown" key (source of truth in locales/*.json) for the standardized per-language text.
+  const vatPreview = computeVatAmounts(hardwareTotal, vatRateForDisplay, vatInclusive);
+
+  const hwNet = hardwareTotal;
+  const hwGross = showVatBreakdown ? vatPreview.gross : hwNet;
+  const hwVat = showVatBreakdown ? vatPreview.vatAmount : 0;
+
+  // Recurring services (grossed when VAT chosen)
+  const svcNet = servicesMonthly;
+  const svcGross = showVatBreakdown ? computeVatAmounts(svcNet, vatRateForDisplay, true).gross : svcNet;
+  const svcVat = showVatBreakdown ? computeVatAmounts(svcNet, vatRateForDisplay, true).vatAmount : 0;
+
+  // Lease figures: keep the net details for math/limits, use *Display for all UI text when VAT
+  const leaseNetDetails = leaseDetails;
+  const leaseUpfrontDisplay = showVatBreakdown
+    ? computeVatAmounts(leaseNetDetails.upfrontAmount, vatRateForDisplay, true).gross
+    : leaseNetDetails.upfrontAmount;
+  const leaseMonthlyDisplay = showVatBreakdown
+    ? computeVatAmounts(leaseNetDetails.monthlyTotal, vatRateForDisplay, true).gross
+    : leaseNetDetails.monthlyTotal;
+  const leaseMonthlyVatDisplay = showVatBreakdown
+    ? computeVatAmounts(leaseNetDetails.monthlyTotal, vatRateForDisplay, true).vatAmount
+    : 0;
+  const leaseUpfrontVatDisplay = showVatBreakdown
+    ? computeVatAmounts(leaseNetDetails.upfrontAmount, vatRateForDisplay, true).vatAmount
+    : 0;
+
+  // Auto-uncheck (and persist) if the customer changes country or VAT such that the choice
+  // is no longer legally offerable. Prevents sending an illegal choice on submit.
+  useEffect(() => {
+    if (!canOfferVatInclusive && vatInclusive) {
+      setVatInclusiveWithDraft(false);
+    }
+  }, [canOfferVatInclusive, vatInclusive]);
 
   const locale = useLocale();
 
@@ -118,6 +169,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
         paymentMethod,
         financing,
         locale,
+        // Always include (optional in type). Server will ignore or reject based on current determination.
+        vatInclusive,
       };
       if (paymentMethod === 'invoice' && servicesMonthly > 0) {
         payload.recurringPaymentMethod = recurringPaymentMethod;
@@ -201,7 +254,10 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
         const row4 = document.createElement('div'); row4.className = 'flex justify-between py-1';
         const s4 = document.createElement('span'); s4.className = 'text-slate-400'; s4.textContent = totalLabel;
-        const v4 = document.createElement('span'); v4.className = 'font-semibold'; v4.textContent = `€${hardwareTotal}`;
+        // For the success overlay (invoice path), show the gross headline amount consistent with the modal total.
+        // Lease uses upfront for the "today" invoice in some flows, but this overlay is primarily for full invoice.
+        const overlayHeadline = isLease ? leaseUpfrontDisplay : (showVatBreakdown ? hwGross : hardwareTotal);
+        const v4 = document.createElement('span'); v4.className = 'font-semibold'; v4.textContent = tc('common.price', { amount: overlayHeadline });
         row4.append(s4, v4);
 
         meta.append(row1, row2, row3, row4);
@@ -277,6 +333,31 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
             </div>
           </div>
 
+          {/* VAT-inclusive choice for professional customers (spec: only when legally permitted,
+              never when reverse charge is mandatory). Server validates authoritatively. */}
+          {canOfferVatInclusive && (
+            <div>
+              <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('vatTreatment')}</div>
+              <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                <input
+                  type="checkbox"
+                  checked={vatInclusive}
+                  onChange={(e) => setVatInclusiveWithDraft(e.target.checked)}
+                  className="accent-cyan-400 mt-1"
+                />
+                <div className="flex-1">
+                  <div className="font-medium">{t('vatInclusiveLabel')}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{t('vatInclusiveExplanation')}</div>
+                  {vatInclusive && vatTreatment.vatRate > 0 && (
+                    <div className="text-[10px] text-amber-400 mt-1">
+                      {t('vatInclusiveWarning', { rate: Math.round(vatTreatment.vatRate * 100) })}
+                    </div>
+                  )}
+                </div>
+              </label>
+            </div>
+          )}
+
           {/* Financing / Payment Terms (new for direct / recurring / leasing) */}
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
@@ -291,7 +372,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   checked={financing === 'full'} 
                   onChange={() => {
                     setFinancingWithDraft('full');
-                    if (paymentMethod === 'sepa' && isOverSepaLimit(hardwareTotal)) setPaymentMethodWithDraft('stripe');
+                    if (paymentMethod === 'sepa' && isOverSepaLimit(hwGross)) setPaymentMethodWithDraft('stripe');
                     if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
                     // Note: full + invoice + services is now supported (send_invoice service subs + first periods on the net30 invoice).
                   }} 
@@ -299,7 +380,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 />
                 <div className="flex-1">
                   <div className="font-medium">{t('payFull')}</div>
-                  <div className="text-xs text-slate-400">{t('payFullDesc')} — €{hardwareTotal}{servicesMonthly > 0 ? ` + €${servicesMonthly}${tc('common.recurringSuffixShort')}` : ''}</div>
+                  <div className="text-xs text-slate-400">
+                    {t('payFullDesc')} — {tc('common.price', { amount: hwGross })}
+                    {/*svcNet > 0 ? ` + €${svcGross}${tc('common.recurringSuffixShort')}` : ''*/}
+                    {showVatBreakdown ? ` (${t('vatBreakdown', { net: hwNet, vat: hwVat })})` : ''}
+                  </div>
                 </div>
               </label>
 
@@ -315,7 +400,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   onChange={() => {
                     if (canLease) {
                       setFinancingWithDraft('lease');
-                      if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthly)) setPaymentMethodWithDraft('stripe');
+                      if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthlyDisplay)) setPaymentMethodWithDraft('stripe');
                       if (paymentMethod === 'invoice') setPaymentMethodWithDraft('stripe'); // lease never allows invoice under policy
                     } else {
                       setFinancingWithDraft('full');
@@ -331,9 +416,37 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                     {t('leaseDesc', { months: leaseMonths })}
                   </div>
                   {canLease && (
-                    <div className="text-xs text-emerald-400 mt-0.5">
-                      {t('upfrontDueToday', { amount: leaseUpfront })} + {t('monthlyPayment', { amount: leaseMonthly, months: leaseMonths })}
-                    </div>
+                    <>
+                      <div className="text-xs text-emerald-400 mt-0.5">
+                        {showVatBreakdown ? (
+                          t('monthlyPaymentWithVat', {
+                            amount: leaseMonthlyDisplay,
+                            months: leaseMonths,
+                            breakdown: t('vatBreakdown', {
+                              net: leaseNetDetails.monthlyTotal,
+                              vat: leaseMonthlyVatDisplay
+                            })
+                          })
+                        ) : (
+                          t('monthlyPayment', { amount: leaseMonthlyDisplay, months: leaseMonths })
+                        )}
+                      </div>
+
+                      {/* Upfront inside the lease box (grand total area): shown after monthly, in a distinctive way (border + amber tone + "one-time" label), mirroring the bottom summary */}
+                      <div className="text-[10px] mt-1 pt-1 border-t border-slate-700/70 text-amber-400">
+                        {showVatBreakdown ? (
+                          t('oneTimeUpfrontDueTodayWithVat', {
+                            amount: leaseUpfrontDisplay,
+                            breakdown: t('vatBreakdown', {
+                              net: leaseNetDetails.upfrontAmount,
+                              vat: leaseUpfrontVatDisplay
+                            })
+                          })
+                        ) : (
+                          t('upfrontDueToday', { amount: leaseUpfrontDisplay })
+                        )}
+                      </div>
+                    </>
                   )}
                   <div className="text-[10px] text-slate-500 mt-0.5">{t('firstMonthNote')}</div>
                   {!canLease && (
@@ -364,14 +477,14 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   checked={paymentMethod === 'sepa'} 
                   onChange={() => setPaymentMethodWithDraft('sepa')} 
                   className="accent-cyan-400"
-                  disabled={ (financing === 'lease' && isOverSepaLimit(leaseMonthly)) || (financing === 'full' && isOverSepaLimit(hardwareTotal)) }
+                  disabled={ (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) }
                 />
                 <div className="flex-1">
                   <div className="font-medium">{t('sepa')}</div>
                   <div className="text-xs text-slate-400">
                     {t('sepaDesc')}
-                    { ( (financing === 'lease' && isOverSepaLimit(leaseMonthly)) || (financing === 'full' && isOverSepaLimit(hardwareTotal)) ) && (
-                      <span className="text-amber-400 ml-1">(max €10,000 — choose card or reduce order)</span>
+                    { ( (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) ) && (
+                      <span className="text-amber-400 ml-1">(max {tc('common.price', { amount: 10000 })} — choose card or reduce order)</span>
                     )}
                   </div>
                 </div>
@@ -431,14 +544,14 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                             value="sepa"
                             checked={recurringPaymentMethod === 'sepa'}
                             onChange={() => setRecurringPaymentMethodWithDraft('sepa')}
-                            disabled={isOverSepaLimit(servicesMonthly)}
+                            disabled={isOverSepaLimit(svcGross)}
                             className="accent-cyan-400 mt-0.5"
                           />
                           <div className="text-sm leading-tight">
                             <div className="font-medium">{t('recurringSepa')}</div>
                             <div className="text-xs text-slate-400 mt-0.5">{t('recurringSepaDesc')}</div>
-                            {isOverSepaLimit(servicesMonthly) && (
-                              <div className="text-amber-400 text-[10px] mt-0.5">(max €10,000 — choose card)</div>
+                            {isOverSepaLimit(svcGross) && (
+                              <div className="text-amber-400 text-[10px] mt-0.5">(max {tc('common.price', { amount: 10000 })} — choose card)</div>
                             )}
                           </div>
                         </label>
@@ -458,14 +571,51 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 ? t('monthlyTotalLabel', { months: leaseMonths }) 
                 : t('totalToPay')}
             </div>
-            <div className="text-2xl font-semibold tabular-nums">€{isLease ? leaseMonthly : hardwareTotal}</div>
-            {isLease && (
-              <div className="text-[10px] text-emerald-400">{t('upfrontDueToday', { amount: leaseUpfront })}</div>
+            {/* When VAT-inclusive is chosen, headline shows the gross. We use the centralized
+                "vatBreakdown" translation key (source of truth: locales/en.json + fr.json) for the per-language
+                "Net €X + VAT €Y (incl.)" / "HT €X + TVA €Y (TTC)" format so the exact wording can be changed in one place. */}
+            <div className="text-2xl font-semibold tabular-nums">
+              {tc('common.price', { amount: isLease ? leaseMonthlyDisplay : hwGross })}
+            </div>
+
+            {/* VAT breakdown for the headline amount (works for both full and lease) */}
+            {showVatBreakdown && (
+              <div className="text-[10px] text-emerald-400">
+                {t('vatBreakdown', {
+                  net: isLease ? leaseNetDetails.monthlyTotal : hwNet,
+                  vat: isLease ? leaseMonthlyVatDisplay : hwVat
+                })}
+              </div>
             )}
-            {!isLease && servicesMonthly > 0 && (
-              <div className="text-[10px] text-emerald-400">+ €{servicesMonthly}{tc('common.recurringSuffix')}</div>
+
+            {/* Recurring services line — use gross + net/VAT breakdown when VAT chosen (applies to full + lease) */}
+            {svcNet > 0 && (
+              <div className="text-[10px] text-emerald-400">
+                + {tc('common.price', { amount: svcGross })}{tc('common.recurringSuffix')}
+                {showVatBreakdown && (
+                  <> ({t('vatBreakdown', { net: svcNet, vat: svcVat })})</>
+                )}
+              </div>
             )}
+
             {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}
+
+            {/* Upfront payment: shown AFTER monthly + recurring services, in a distinctive way (subtle separation + one-time label + amber tone) */}
+            {isLease && (
+              <div className="mt-1.5 pt-1.5 border-t border-slate-700/70 text-[10px] text-amber-400">
+                {showVatBreakdown ? (
+                  t('oneTimeUpfrontDueTodayWithVat', {
+                    amount: leaseUpfrontDisplay,
+                    breakdown: t('vatBreakdown', {
+                      net: leaseNetDetails.upfrontAmount,
+                      vat: leaseUpfrontVatDisplay
+                    })
+                  })
+                ) : (
+                  t('upfrontDueToday', { amount: leaseUpfrontDisplay })
+                )}
+              </div>
+            )}
           </div>
           <button onClick={handleCompleteOrder} className="px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 flex items-center gap-x-2">
             {t('completeBtn')}

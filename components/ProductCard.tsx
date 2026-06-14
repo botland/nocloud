@@ -10,6 +10,7 @@ interface Props {
 
 export default function ProductCard({ product, onConfigure }: Props) {
   const t = useTranslations('products');
+  const tc = useTranslations();
 
   const bestFor = t(`bestFor.${product.id}`);
 
@@ -24,7 +25,7 @@ export default function ProductCard({ product, onConfigure }: Props) {
         </div>
         <div className="text-right">
           <div className="text-xs text-slate-400">{t('from')}</div>
-          <div className="text-3xl font-semibold tabular-nums">€{product.price}</div>
+          <div className="text-3xl font-semibold tabular-nums">{tc('common.price', { amount: product.price })}</div>
         </div>
       </div>
       

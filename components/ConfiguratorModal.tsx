@@ -131,7 +131,7 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
         <div className="p-7 overflow-y-auto flex-1">
           <div className="flex justify-between items-baseline mb-6">
             <div className="text-sm text-slate-400">{t('baseAppliance')}</div>
-            <div className="text-3xl font-semibold tabular-nums">€{product.price}</div>
+            <div className="text-3xl font-semibold tabular-nums">{tc('common.price', { amount: product.price })}</div>
           </div>
           
           <div className="mb-7">
@@ -172,7 +172,7 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
                     >
                       {opts.map((opt) => {
                         const suffix = opt.price > 0
-                          ? ` (+€${opt.price})`
+                          ? ` (+${tc('common.price', { amount: opt.price })})`
                           : ` (${t('included')})`;
                         return (
                           <option key={opt.value} value={opt.value}>
@@ -187,7 +187,7 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
             </div>
             {hardwareExtra > 0 && (
               <div className="mt-2 text-xs text-emerald-400 text-right">
-                + €{hardwareExtra} hardware upgrades
+                + {tc('common.price', { amount: hardwareExtra })} hardware upgrades
               </div>
             )}
           </div>
@@ -209,14 +209,14 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
               <label className="flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors">
                 <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} className="accent-cyan-400 mt-1" />
                 <div className="flex-1">
-                  <div className="flex justify-between"><span className="font-medium">{t('managedCare')}</span> <span className="text-emerald-400 font-mono text-sm">€{managedPrice}{tc('common.perMonth')}</span></div>
+                  <div className="flex justify-between"><span className="font-medium">{t('managedCare')}</span> <span className="text-emerald-400 font-mono text-sm">{tc('common.price', { amount: managedPrice })}{tc('common.perMonth')}</span></div>
                   <div className="text-xs text-slate-400">{t('managedCareNote')}</div>
                 </div>
               </label>
               <label className="flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors">
                 <input type="checkbox" checked={backup} onChange={e => setBackup(e.target.checked)} className="accent-cyan-400 mt-1" />
                 <div className="flex-1">
-                  <div className="flex justify-between"><span className="font-medium">{t('secureVaultBackup')}</span> <span className="text-sky-400 font-mono text-sm">€{backupPrice}{tc('common.perMonth')}</span></div>
+                  <div className="flex justify-between"><span className="font-medium">{t('secureVaultBackup')}</span> <span className="text-sky-400 font-mono text-sm">{tc('common.price', { amount: backupPrice })}{tc('common.perMonth')}</span></div>
                   <div className="text-xs text-slate-400">{t('secureVaultBackupNote')}</div>
                 </div>
               </label>
@@ -227,9 +227,9 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
         <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex items-center justify-between flex-shrink-0">
           <div>
             <div className="text-xs text-slate-400">{t('totalToday')}</div>
-            <div className="text-3xl font-semibold tabular-nums tracking-tighter">€{totalPrice}</div>
+            <div className="text-3xl font-semibold tabular-nums tracking-tighter">{tc('common.price', { amount: totalPrice })}</div>
             {recurringPrice > 0 && (
-              <div className="text-xs text-emerald-400 mt-0.5">+ €{recurringPrice}{tc('common.recurringSuffixShort')}</div>
+              <div className="text-xs text-emerald-400 mt-0.5">+ {tc('common.price', { amount: recurringPrice })}{tc('common.recurringSuffixShort')}</div>
             )}
           </div>
           <button onClick={handleAddToCart} className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-bold rounded-3xl text-sm">

@@ -50,6 +50,12 @@ export interface CheckoutPayload {
   // "recurring payments start exactly 1 month after order time" rule (non-trial,
   // via billing_cycle_anchor). Captured at successful /api/checkout response.
   order_placed_at?: number;
+  /**
+   * Customer's explicit choice (only relevant/sent when the UI offered the checkbox
+   * and the determination allowed it). Server is authoritative: illegal choices are rejected.
+   * When true + allowed: VAT is charged (gross amounts sent to Stripe); net + legal treatment otherwise.
+   */
+  vatInclusive?: boolean;
 }
 
 // Draft of checkout form data persisted across Stripe cancel so user doesn't have to re-type everything.
@@ -71,4 +77,9 @@ export interface CheckoutFormDraft {
   // order_placed_at captured for the uniform "recurring (services + lease hardware)
   // start exactly 1 month after order time" rule (non-trial via billing_cycle_anchor).
   order_placed_at?: number;
+  /**
+   * Persisted customer choice for VAT-inclusive (see CheckoutPayload).
+   * Only sent when offered; server validates.
+   */
+  vatInclusive?: boolean;
 }

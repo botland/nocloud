@@ -25,6 +25,7 @@ import { cleanupZeroTrialInvoice } from '@/lib/stripe-invoices';
 import { buildOrderMetadata } from '@/lib/stripe-metadata';
 import { createMonthlyRecurringPriceDataItem } from '@/lib/stripe-subscriptions';
 import { BRAND_NAME } from '@/lib/brand';
+import { determineVatTreatment, computeVatAmounts, DEBUG_VAT as DEBUG_VAT_TREATMENT } from '@/lib/vat';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       financing = 'full',
       locale = 'en',
       recurringPaymentMethod,   // only present+relevant for paymentMethod==='invoice' + services; 'stripe'|'sepa' means use automatic subs for recurring (collected via mode:'setup')
+      vatInclusive,             // professional customer explicit choice (only when offered + legally allowed). Server validates.
     } = body;
 
     // Authoritative prices + totals (pure, now extracted). Client prices ignored.
@@ -150,6 +152,68 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // === VAT Treatment Determination (core per spec §2) — happens BEFORE any customer choice is honored ===
+    // This is the single source of truth. Client may have shown a checkbox, but we re-evaluate here
+    // with authoritative inputs and reject any illegal election.
+    const vatTreatment = determineVatTreatment({
+      customerCountry: country,
+      vatNumber: vatNumber || undefined,
+      // supplyType defaults to goods for appliances (services follow the same treatment for the order)
+    });
+    const customerChoiceInclusive = vatInclusive === true;
+    if (DEBUG_VAT_TREATMENT || DEBUG_PAYMENTS) {
+      console.log('[VAT DEBUG] route determination', {
+        customerCountry: country,
+        hasVatNumber: !!vatNumber,
+        customerChoiceInclusive,
+        treatment: vatTreatment,
+      });
+    }
+
+    if (customerChoiceInclusive && !vatTreatment.canOfferVatInclusive) {
+      return NextResponse.json({
+        error: 'VAT-inclusive billing is not permitted for this transaction. Reverse charge (or another mandatory legal treatment) applies and customer choice is not allowed. Please submit without the VAT-inclusive election (or remove/adjust your VAT number and country).',
+      }, { status: 400 });
+    }
+
+    // Resolve whether to gross: ONLY on explicit customer choice (vatInclusive=true) + allowed.
+    // (Domestic mandatory charge_vat is noted in treatment but we do not auto-gross to preserve
+    // existing net billing behavior for orders that do not elect the option.)
+    const chargesVat = customerChoiceInclusive;
+    const effectiveRate = chargesVat ? vatTreatment.vatRate : 0;
+    const netBaseForVat = hardwareTotal; // primary taxable base for one-time; recurring services + lease amort use same rate
+    const vatAmounts = computeVatAmounts(netBaseForVat, effectiveRate, chargesVat);
+    // For display / metadata we also compute a services gross preview (rate is same for the order)
+    const servicesVatPreview = computeVatAmounts(servicesMonthly, effectiveRate, chargesVat);
+
+    if (DEBUG_VAT_TREATMENT || DEBUG_PAYMENTS) {
+      console.log('[VAT DEBUG] resolved final', {
+        chargesVat,
+        effectiveRate,
+        netBase: netBaseForVat,
+        gross: vatAmounts.gross,
+        vatAmount: vatAmounts.vatAmount,
+        customerChoiceInclusive,
+      });
+    }
+
+    // Common VAT metadata fragment (immutable audit trail — stored on every Stripe object)
+    const vatMeta = {
+      vat_inclusive_choice: customerChoiceInclusive ? 'true' : 'false',
+      vat_treatment: vatTreatment.mandatoryTreatment,
+      vat_rate: String(effectiveRate),
+      net_total: String(netBaseForVat),
+      vat_amount: String(vatAmounts.vatAmount),
+      gross_total: String(vatAmounts.gross),
+      vat_determination_reason: vatTreatment.reason,
+      vat_number_validated: vatTreatment.isValidVatNumber ? 'true' : 'false',
+      ...(chargesVat ? { vat_charged: 'true' } : {}),
+    };
+
+    // Grossing helpers (applied only to amounts sent to Stripe for charging/invoicing).
+    // Pricing/resolver always returns net base. Gross = overlay using the resolved rate.
+    const grossUnit = (net: number) => (chargesVat && effectiveRate > 0 ? computeVatAmounts(net, effectiveRate, true).gross : net);
+
     // Canonical order time for the uniform rule:
     // "recurring payments (services + lease hardware monthly) start exactly one month
     // after order time" using billing_cycle_anchor (non-trial). Captured here so that
@@ -234,6 +298,8 @@ export async function POST(request: NextRequest) {
             total_value: String(hardwareTotal),
             customer_email: email || 'N/A',
             ...(recurringPaymentMethod && { recurring_payment_method: recurringPaymentMethod }),
+            // VAT treatment + customer choice (audit + compliance)
+            ...vatMeta,
             // If recurring_payment_method is card/sepa, the recurring subs (lease + services)
             // will be created as charge_automatically on payment of this invoice...
           }),
@@ -242,9 +308,9 @@ export async function POST(request: NextRequest) {
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
           invoice: upfrontInvoice.id,
-          amount: lease.upfrontAmount * 100,
+          amount: Math.round(grossUnit(lease.upfrontAmount) * 100),
           currency: 'eur',
-          description: `Upfront payment (${UPFRONT_PERCENT}%) for leased ${BRAND_NAME} appliance`,
+          description: `Upfront payment (${UPFRONT_PERCENT}%) for leased ${BRAND_NAME} appliance${chargesVat ? ` (VAT ${Math.round(effectiveRate*100)}% incl.)` : ''}`,
         });
 
         const hasRecurringAuto = resolvedServicesForMeta.length > 0 && recurringPaymentMethod && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
@@ -267,7 +333,7 @@ export async function POST(request: NextRequest) {
               price_data: {
                 currency: 'eur',
                 product: leaseProduct.id,
-                unit_amount: lease.hardwarePerMonth * 100,
+                unit_amount: Math.round(grossUnit(lease.hardwarePerMonth) * 100),
                 recurring: { interval: 'month' },
               },
             }],
@@ -298,6 +364,8 @@ export async function POST(request: NextRequest) {
               is_lease_recurring_setup: 'true',
               upfront_percent: String(UPFRONT_PERCENT),
               total_value: String(hardwareTotal),
+              // VAT treatment + customer choice (audit + compliance)
+              ...vatMeta,
             }),
             expand: ['latest_invoice'],
           };
@@ -375,6 +443,8 @@ export async function POST(request: NextRequest) {
               lease_subscription_id: leaseSubId,
               lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
               is_lease_recurring_setup: 'true',
+              // VAT treatment + customer choice (audit + compliance)
+              ...vatMeta,
             },
           });
           setupSessionUrl = setupSession.url;
@@ -446,7 +516,7 @@ export async function POST(request: NextRequest) {
               price_data: {
                 currency: 'eur',
                 product: leaseProduct.id,
-                unit_amount: lease.hardwarePerMonth * 100,
+                unit_amount: Math.round(grossUnit(lease.hardwarePerMonth) * 100),
                 recurring: { interval: 'month' },
               },
             },
@@ -476,6 +546,8 @@ export async function POST(request: NextRequest) {
             upfront_percent: String(UPFRONT_PERCENT),
             total_value: String(hardwareTotal),
             billing_starts_one_month_after_order: 'true',
+            // VAT treatment + customer choice (audit + compliance)
+            ...vatMeta,
           }),
           expand: ['latest_invoice'],
         };
@@ -507,7 +579,7 @@ export async function POST(request: NextRequest) {
                 price_data: {
                   currency: 'eur',
                   product: serviceProduct.id,
-                  unit_amount: Math.round(s.price * 100),
+                  unit_amount: Math.round(grossUnit(s.price) * 100),
                   recurring: { interval: 'month' },
                 },
               }],
@@ -548,9 +620,9 @@ export async function POST(request: NextRequest) {
               currency: 'eur',
               product_data: {
                 name: `${BRAND_NAME} Appliance Lease Upfront (${UPFRONT_PERCENT}%)`,
-                description: `Due today. Recurring monthly lease payments start in approximately 1 month.`,
+                description: `Due today. Recurring monthly lease payments start in approximately 1 month.${chargesVat ? ` VAT ${Math.round(effectiveRate*100)}% incl.` : ''}`,
               },
-              unit_amount: lease.upfrontAmount * 100,
+              unit_amount: Math.round(grossUnit(lease.upfrontAmount) * 100),
             },
             quantity: 1,
           }],
@@ -640,6 +712,8 @@ export async function POST(request: NextRequest) {
           pricing_version: PRICING_VERSION,
           locale,
           order_placed_at: orderPlacedAt.toString(),
+          // VAT treatment + customer choice (audit + compliance)
+          ...vatMeta,
         },
       });
 
@@ -649,18 +723,20 @@ export async function POST(request: NextRequest) {
         const qty = item.quantity || 1;
         const slug = item.product?.slug as string | undefined;
         // Authoritative unit price via the single logical component (respects customization + per-tier option prices).
-        const unit = slug && item.customization
+        const unitNet = slug && item.customization
           ? calculateHardwarePrice(slug, item.customization)
           : (slug ? getHardwarePrice(slug) : (item.product?.price || 0));
+        const unit = grossUnit(unitNet);
         const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
         const cfg = formatHardwareCustomization(item.customization);
         const descExtra = cfg ? ` • ${cfg}` : '';
+        const vatNote = chargesVat ? ` (VAT ${Math.round(effectiveRate * 100)}% incl.)` : '';
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
           invoice: invoice.id,
           amount: Math.round(unit * 100 * qty),
           currency: 'eur',
-          description: `${BRAND_NAME} ${item.product?.name || 'Appliance'}${descExtra}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}`,
+          description: `${BRAND_NAME} ${item.product?.name || 'Appliance'}${descExtra}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}${vatNote}`,
         });
       }
 
@@ -688,7 +764,7 @@ export async function POST(request: NextRequest) {
                 price_data: {
                   currency: 'eur',
                   product: serviceProduct.id,
-                  unit_amount: Math.round(s.price * 100),
+                  unit_amount: Math.round(grossUnit(s.price) * 100),
                   recurring: { interval: 'month' },
                 },
               }],
@@ -742,6 +818,8 @@ export async function POST(request: NextRequest) {
           main_invoice_id: invoice.id,
           recurring_payment_method: recurringPaymentMethod,
           service_subscription_ids: JSON.stringify(serviceSubscriptionIds),
+          // VAT treatment + customer choice (audit + compliance)
+          ...vatMeta,
         }),
         });
 
@@ -789,7 +867,7 @@ export async function POST(request: NextRequest) {
               price_data: {
                 currency: 'eur',
                 product: serviceProduct.id,
-                unit_amount: Math.round(s.price * 100),
+                unit_amount: Math.round(grossUnit(s.price) * 100),
                 recurring: { interval: 'month' },
               } as any,
             }],
@@ -864,21 +942,23 @@ export async function POST(request: NextRequest) {
       const qty = item.quantity || 1;
       const slug = item.product?.slug as string | undefined;
       // Use the single logical component for hardware unit price (base + chosen option prices from customization).
-      const unit = slug && item.customization
+      const unitNet = slug && item.customization
         ? calculateHardwarePrice(slug, item.customization)
         : (slug ? getHardwarePrice(slug) : (item.product?.price || 0));
+      const unit = grossUnit(unitNet);
       const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
       const cfg = formatHardwareCustomization(item.customization);
+      const vatNote = chargesVat ? ` (VAT ${Math.round(effectiveRate * 100)}% incl.)` : '';
       return {
         price_data: {
           currency: 'eur',
           product_data: {
             name: `${BRAND_NAME} ${item.product?.name || 'Appliance'}`,
             description: cfg
-              ? (svcNames.length > 0 ? `${cfg} • Includes: ${svcNames.join(', ')}` : cfg)
-              : (svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}` : undefined),
+              ? (svcNames.length > 0 ? `${cfg} • Includes: ${svcNames.join(', ')}${vatNote}` : `${cfg}${vatNote}`)
+              : (svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}${vatNote}` : (vatNote || undefined)),
           },
-          unit_amount: unit * 100,
+          unit_amount: Math.round(unit * 100),
         },
         quantity: qty,
       };
@@ -917,6 +997,7 @@ export async function POST(request: NextRequest) {
         country,
         financing,
         services: resolvedServicesForMeta,
+        hardware: resolvedHardwareForMeta,
         pricingVersion: PRICING_VERSION,
         locale,
         orderPlacedAt,
@@ -926,6 +1007,8 @@ export async function POST(request: NextRequest) {
         leaseFinancedAmount: leaseFinancedStr,
         // Services (and in future lease hardware) will use this to compute billing_cycle_anchor
         // so recurring starts exactly 1 month after order time (non-trial, uniform rule).
+        // VAT treatment + customer choice (audit + compliance)
+        ...vatMeta,
       }),
     };
     if (DEBUG_PAYMENTS) {

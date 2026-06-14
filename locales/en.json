@@ -180,7 +180,14 @@
     "recurringCard": "Credit / Debit card",
     "recurringCardTag": "Stripe",
     "recurringSepa": "SEPA Direct Debit",
-    "recurringSepaDesc": "For the monthly service charges (collected automatically)"
+    "recurringSepaDesc": "For the monthly service charges (collected automatically)",
+    "vatInclusiveLabel": "I wish to be billed VAT-inclusive",
+    "vatInclusiveExplanation": "VAT will be charged by the supplier and added to the total. This election is only available when not prohibited by mandatory reverse charge or other legal rules.",
+    "vatInclusiveWarning": "Selecting this will result in VAT at {rate}% being applied to the order (gross total charged).",
+    "vatBreakdown": "Net €{net} + VAT €{vat} (incl.)",
+    "monthlyPaymentWithVat": "€{amount}/month for {months} months ({breakdown})",
+    "oneTimeUpfrontDueTodayWithVat": "One-time upfront due today: €{amount} ({breakdown})",
+    "vatTreatment": "VAT TREATMENT"
   },
   "success": {
     "title": "Thank you for your order!",
@@ -194,6 +201,7 @@
     "perMonth": "/mo",
     "perMonthLong": " / month",
     "recurringSuffixShort": "/mo recurring",
-    "recurringSuffix": "/mo recurring services"
+    "recurringSuffix": "/mo recurring services",
+    "price": "€{amount}"
   }
 }

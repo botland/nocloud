@@ -32,6 +32,19 @@ export interface OrderMetadataInput {
 
   // Any additional fields (is_*, main_invoice_id, recurring_payment_method, etc.)
   [key: string]: unknown;
+
+  // VAT treatment / choice (added for professional customer VAT-inclusive election feature).
+  // These are passed through to metadata for full auditability + tax compliance records.
+  // See lib/vat.ts for determination rules. Never mutate pricing base values.
+  vat_inclusive_choice?: string;
+  vat_treatment?: string;
+  vat_rate?: string | number;
+  net_total?: string | number;
+  vat_amount?: string | number;
+  gross_total?: string | number;
+  vat_determination_reason?: string;
+  vat_number_validated?: string;
+  vat_charged?: string;
 }
 
 export function buildB2BMetadata(input: Pick<OrderMetadataInput, 'company' | 'vatNumber' | 'poNumber'>) {

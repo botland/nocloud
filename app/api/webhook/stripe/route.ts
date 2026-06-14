@@ -76,6 +76,14 @@ export async function POST(request: NextRequest) {
     const orderLocale = (metadata.locale as string) || 'en';
     const isFr = orderLocale === 'fr';
 
+    // VAT treatment / choice fields (for emails + audit)
+    const vatInclusive = (metadata.vat_inclusive_choice === 'true') || (metadata.vatInclusive === 'true');
+    const vatTreatment = (metadata.vat_treatment as string) || undefined;
+    const vatRate = metadata.vat_rate ? parseFloat(String(metadata.vat_rate)) : undefined;
+    const netTotal = metadata.net_total ? parseFloat(String(metadata.net_total)) : undefined;
+    const vatAmountMeta = metadata.vat_amount ? parseFloat(String(metadata.vat_amount)) : undefined;
+    const grossTotal = metadata.gross_total ? parseFloat(String(metadata.gross_total)) : undefined;
+
     let servicesStr = 'None';
     let servicesArray: Array<{ name: string; price: number }> = [];
     try {
@@ -127,6 +135,12 @@ export async function POST(request: NextRequest) {
         poNumber,
         pricingVersion,
         locale: orderLocale,
+        vatInclusive,
+        vatTreatment,
+        vatRate,
+        netTotal,
+        vatAmount: vatAmountMeta,
+        grossTotal,
       });
     }
 
@@ -147,6 +161,12 @@ export async function POST(request: NextRequest) {
         pricingVersion,
         locale: orderLocale,
         customerEmail,
+        vatInclusive,
+        vatTreatment,
+        vatRate,
+        netTotal,
+        vatAmount: vatAmountMeta,
+        grossTotal,
       });
     }
 
@@ -374,9 +394,24 @@ export async function POST(request: NextRequest) {
         const amountPaid = invoice.amount_paid ? (invoice.amount_paid / 100).toFixed(2) : '0.00';
         const curr = (invoice.currency || 'eur').toUpperCase();
 
+        // VAT extraction for paid path (use invMeta which was built above)
+        const vatInclusivePaid = (invMeta.vat_inclusive_choice === 'true') || (invMeta.vatInclusive === 'true');
+        const vatTreatmentPaid = (invMeta.vat_treatment as string) || undefined;
+        const vatRatePaid = invMeta.vat_rate ? parseFloat(String(invMeta.vat_rate)) : undefined;
+        const netTotalPaid = invMeta.net_total ? parseFloat(String(invMeta.net_total)) : undefined;
+        const vatAmountPaid = invMeta.vat_amount ? parseFloat(String(invMeta.vat_amount)) : undefined;
+        const grossTotalPaid = invMeta.gross_total ? parseFloat(String(invMeta.gross_total)) : undefined;
+
         await sendInvoicePaidCustomerEmail({
           to: customerEmail,
           invoiceId: invoice.id,
+          // VAT fields passed through (may be undefined for old orders)
+          vatInclusive: vatInclusivePaid,
+          vatTreatment: vatTreatmentPaid,
+          vatRate: vatRatePaid,
+          netTotal: netTotalPaid,
+          vatAmount: vatAmountPaid,
+          grossTotal: grossTotalPaid,
           amountPaid,
           currency: curr,
           locale: orderLocale,

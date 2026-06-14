@@ -169,18 +169,25 @@
     "payFullDesc": "Paiement unique pour les appareils",
     "lease": "Location / financement",
     "leaseDesc": "Matériel amorti sur {months} mois + services inclus",
-    "monthlyPayment": "€{amount}/mois pendant {months} mois",
+    "monthlyPayment": "{amount}€/mois pendant {months} mois",
     "firstMonthNote": "Premier paiement prélevé aujourd'hui via Stripe",
-    "upfrontDueToday": "€{amount} dus aujourd'hui",
-    "leaseRangeNote": "(éligible pour un matériel de €{min} à €{max})",
-    "invoiceRangeNote": "(min €{min} – max €{max} — choisissez carte ou réduisez la commande)",
+    "upfrontDueToday": "{amount}€ dus aujourd'hui",
+    "leaseRangeNote": "(éligible pour un matériel de {min}€ à {max}€)",
+    "invoiceRangeNote": "(min {min}€ – max {max}€ — choisissez carte ou réduisez la commande)",
     "invoicePolicyNote": "(Net 30 pour le matériel/acompte ; choisissez carte ou SEPA ci-dessous pour les services récurrents)",
     "monthlyTotalLabel": "Paiement mensuel ({months} mois)",
     "recurringPaymentForServices": "Méthode de paiement pour les services récurrents",
     "recurringCard": "Carte de crédit / débit",
     "recurringCardTag": "Stripe",
     "recurringSepa": "Prélèvement SEPA",
-    "recurringSepaDesc": "Pour les charges mensuelles des services (prélèvement automatique)"
+    "recurringSepaDesc": "Pour les charges mensuelles des services (prélèvement automatique)",
+    "vatInclusiveLabel": "Je souhaite être facturé TTC (TVA incluse)",
+    "vatInclusiveExplanation": "La TVA sera facturée par le fournisseur et ajoutée au total. Ce choix n'est proposé que lorsqu'il n'est pas interdit par les règles de reverse charge obligatoire ou autres dispositions légales.",
+    "vatInclusiveWarning": "Ce choix entraînera l'application de la TVA à {rate}% sur la commande (total TTC facturé).",
+    "vatBreakdown": "{net}€ HT + {vat}€ TVA",
+    "monthlyPaymentWithVat": "{amount}€/mois pendant {months} mois ({breakdown})",
+    "oneTimeUpfrontDueTodayWithVat": "Acompte unique dû aujourd'hui : {amount}€ ({breakdown})",
+    "vatTreatment": "TRAITEMENT TVA"
   },
   "success": {
     "title": "Merci pour votre commande !",
@@ -194,6 +201,7 @@
     "perMonth": "/mois",
     "perMonthLong": " / mois",
     "recurringSuffixShort": "/mois récurrent",
-    "recurringSuffix": "/mois services récurrents"
+    "recurringSuffix": "/mois services récurrents",
+    "price": "{amount}€"
   }
 }

@@ -1,6 +1,12 @@
 import { Resend } from 'resend';
 import { BRAND_DISPLAY, getBrandEmail } from './brand';
 
+function formatPrice(amount: number | string, locale?: string): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (locale === 'fr') return `${num}€`;
+  return `€${num}`;
+}
+
 export function getResendClient(): Resend | null {
   if (!process.env.RESEND_API_KEY) return null;
   return new Resend(process.env.RESEND_API_KEY);
@@ -16,6 +22,13 @@ export interface RegisteredInvoiceEmailParams {
   recurringPaymentMethod?: string;
   setupSessionId?: string;
   isLeaseUpfront?: boolean;
+  // VAT choice / treatment (for breakdown + legal text in emails)
+  vatInclusive?: boolean;
+  vatTreatment?: string;
+  vatRate?: number;
+  netTotal?: number;
+  vatAmount?: number;
+  grossTotal?: number;
 }
 
 export interface OrderConfirmationParams {
@@ -34,6 +47,13 @@ export interface OrderConfirmationParams {
   pricingVersion: string;
   locale?: string;
   isLeaseInvoicePaid?: boolean; // affects some labels
+  // VAT choice / treatment (for breakdown + legal text in emails)
+  vatInclusive?: boolean;
+  vatTreatment?: string;
+  vatRate?: number;
+  netTotal?: number;
+  vatAmount?: number;
+  grossTotal?: number;
 }
 
 export interface AdminNotificationParams {
@@ -58,6 +78,13 @@ export interface AdminNotificationParams {
   isHybrid?: boolean;
   recurringPaymentMethod?: string;
   isPaidNotification?: boolean; // for paid vs registered
+  // VAT choice / treatment (for breakdown + legal text in emails)
+  vatInclusive?: boolean;
+  vatTreatment?: string;
+  vatRate?: number;
+  netTotal?: number;
+  vatAmount?: number;
+  grossTotal?: number;
 }
 
 /**
@@ -70,7 +97,7 @@ export async function sendRegisteredInvoiceCustomerEmail(
   const resend = getResendClient();
   if (!resend || !params.to) return;
 
-  const { invoiceId, company, locale = 'en', isHybridRecurring, recurringPaymentMethod, setupSessionId, isLeaseUpfront } = params;
+  const { invoiceId, company, locale = 'en', isHybridRecurring, recurringPaymentMethod, setupSessionId, isLeaseUpfront, vatInclusive, vatTreatment, vatRate, netTotal, vatAmount, grossTotal } = params;
   const shortId = invoiceId.slice(-8);
   const isFr = locale === 'fr';
 
@@ -110,6 +137,10 @@ export async function sendRegisteredInvoiceCustomerEmail(
         <p>${body}</p>
         <p><strong>Order ID:</strong> ${invoiceId}</p>
         <p><strong>Company:</strong> ${company || 'N/A'}</p>
+        ${netTotal != null ? `
+          <p><strong>VAT treatment:</strong> ${vatTreatment || (vatInclusive ? 'VAT-inclusive (customer choice)' : 'Standard / reverse charge')}</p>
+          <p><strong>Net:</strong> ${formatPrice(netTotal, locale)} ${vatAmount != null && vatAmount > 0 ? `+ VAT ${formatPrice(vatAmount, locale)} (${Math.round((vatRate||0)*100)}%)` : ''} = <strong>${formatPrice(grossTotal != null ? grossTotal : netTotal, locale)}</strong></p>
+        ` : ''}
       `,
     });
   } catch (e) {
@@ -125,7 +156,7 @@ export async function sendAdminInvoiceRegisteredEmail(params: RegisteredInvoiceE
   const adminEmail = process.env.ADMIN_EMAIL;
   if (!resend || !adminEmail) return;
 
-  const { invoiceId, company, emailFallback, isHybrid, recurringPaymentMethod, setupSessionId, isLeaseUpfront } = params;
+  const { invoiceId, company, emailFallback, isHybrid, recurringPaymentMethod, setupSessionId, isLeaseUpfront, vatTreatment, netTotal, vatAmount, grossTotal, vatInclusive } = params;
   const shortId = invoiceId.slice(-8);
 
   let subject: string;
@@ -133,13 +164,13 @@ export async function sendAdminInvoiceRegisteredEmail(params: RegisteredInvoiceE
 
   if (isLeaseUpfront) {
     subject = `New Lease Upfront (Net 30) - #${shortId}`;
-    html = `<p>New lease upfront invoice for ${company || emailFallback}. Invoice ${invoiceId}. Recurring sub will be created on payment (monthly starts ~1 month after payment).</p>`;
+    html = `<p>New lease upfront invoice for ${company || emailFallback}. Invoice ${invoiceId}. Recurring sub will be created on payment (monthly starts ~1 month after payment).${netTotal != null ? ` VAT: ${vatTreatment || ''} net=${netTotal} vat=${vatAmount||0} gross=${grossTotal||netTotal}` : ''}</p>`;
   } else if (isHybrid) {
     subject = `New B2B Invoice (Net 30) + Recurring Setup - #${shortId}`;
-    html = `<p>New hybrid Pay by Invoice order for ${company || emailFallback}. Invoice ${invoiceId} created and sent (Net 30 for hardware). Setup session ${setupSessionId} created for recurring services (${recurringPaymentMethod}).</p>`;
+    html = `<p>New hybrid Pay by Invoice order for ${company || emailFallback}. Invoice ${invoiceId} created and sent (Net 30 for hardware). Setup session ${setupSessionId} created for recurring services (${recurringPaymentMethod}).${netTotal != null ? ` VAT info: net=${netTotal} vat=${vatAmount||0} gross=${grossTotal||netTotal} choice=${vatInclusive}` : ''}</p>`;
   } else {
     subject = `New B2B Invoice (Net 30) - #${shortId}`;
-    html = `<p>New Pay by Invoice order for ${company || emailFallback}. Invoice ${invoiceId} created and sent (Net 30).</p>`;
+    html = `<p>New Pay by Invoice order for ${company || emailFallback}. Invoice ${invoiceId} created and sent (Net 30).${netTotal != null ? ` VAT: ${vatTreatment || ''} net=${netTotal} vat=${vatAmount||0} gross=${grossTotal||netTotal}` : ''}</p>`;
   }
 
   try {
@@ -177,6 +208,12 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
     pricingVersion,
     locale = 'en',
     isLeaseInvoicePaid,
+    vatInclusive,
+    vatTreatment,
+    vatRate,
+    netTotal,
+    vatAmount,
+    grossTotal,
   } = params;
 
   const isFr = locale === 'fr';
@@ -201,7 +238,7 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
   const leaseNote = financing === 'lease' ? `<p><strong>Lease term:</strong> ${leaseMonths || '?'} months</p>` : '';
   const upfront = upfrontAmount;
   const upfrontNote = (financing === 'lease' && upfront) || (isLeaseInvoicePaid && upfront)
-    ? `<p><strong>Upfront payment:</strong> €${upfront}</p>` : '';
+    ? `<p><strong>Upfront payment:</strong> ${formatPrice(upfront, locale)}</p>` : '';
 
   try {
     await resend.emails.send({
@@ -223,6 +260,7 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
         <p>Order ID: ${orderId}</p>
         <p><strong>${thanksPriceVer}:</strong> ${pricingVersion}</p>
         ${leaseNote}
+        ${netTotal != null ? `<p><strong>VAT:</strong> ${vatTreatment || (vatInclusive ? 'inclusive (elected)' : 'standard / RC')} — net ${formatPrice(netTotal, locale)}${vatAmount != null && vatAmount > 0 ? ` + ${formatPrice(vatAmount, locale)} @ ${Math.round((vatRate||0)*100)}%` : ''} = ${formatPrice(grossTotal != null ? grossTotal : netTotal, locale)}</p>` : ''}
         <p>${thanksFooter}</p>
         <p>${thanksClose}</p>
       `,
@@ -257,6 +295,12 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     customerEmail,
     isLeaseInvoicePaid,
     subscriptionId,
+    vatInclusive,
+    vatTreatment,
+    vatRate,
+    netTotal,
+    vatAmount,
+    grossTotal,
     invoiceId,
     setupSessionId,
     isHybrid,
@@ -272,7 +316,8 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     const subj = isLeaseInvoicePaid
       ? `Lease Upfront Invoice Paid (Net 30) - #${shortId}`
       : `B2B Invoice Paid (Net 30) - #${shortId}`;
-    const html = `<p>${isLeaseInvoicePaid ? 'Lease upfront' : 'Net 30'} invoice ${invoiceId || orderId} has been paid by ${customerEmail || 'customer'}. ${isLeaseInvoicePaid ? 'Recurring sub created with trial.' : ''}</p>`;
+    const vatNote = netTotal != null ? ` VAT net=${netTotal} vat=${vatAmount||0} gross=${grossTotal||netTotal}.` : '';
+    const html = `<p>${isLeaseInvoicePaid ? 'Lease upfront' : 'Net 30'} invoice ${invoiceId || orderId} has been paid by ${customerEmail || 'customer'}. ${isLeaseInvoicePaid ? 'Recurring sub created with trial.' : ''}${vatNote}</p>`;
     try {
       await resend.emails.send({
         from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
@@ -304,7 +349,7 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
     <p><strong>Total Paid:</strong> ${amount} ${currency}</p>
     <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
-    ${(financing === 'lease' && upfrontAmount) || (isLeaseInvoicePaid && upfrontAmount) ? `<p><strong>Upfront payment:</strong> €${upfrontAmount}</p>` : ''}
+    ${(financing === 'lease' && upfrontAmount) || (isLeaseInvoicePaid && upfrontAmount) ? `<p><strong>Upfront payment:</strong> ${formatPrice(upfrontAmount, locale)}</p>` : ''}
     <p><strong>Services:</strong> ${servicesStr}</p>
     ${adminHardwareLine}
     <p><strong>Company:</strong> ${companyName}</p>
@@ -315,6 +360,7 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     ${invoiceId ? `<p><strong>Invoice ID:</strong> ${invoiceId}</p>` : ''}
     <p><strong>Pricing version:</strong> ${pricingVersion}</p>
     ${extra}
+    ${netTotal != null ? `<p><strong>VAT treatment:</strong> ${vatTreatment || (vatInclusive ? 'inclusive' : 'standard/RC')} net ${formatPrice(netTotal, locale)} vat ${formatPrice(vatAmount||0, locale)} gross ${formatPrice(grossTotal||netTotal, locale)}</p>` : ''}
     <p>${adminCheck}</p>
   `;
 
@@ -340,11 +386,18 @@ export async function sendInvoicePaidCustomerEmail(params: {
   currency: string;
   locale?: string;
   isLeaseUpfront?: boolean;
+  // VAT fields (optional for backward compat with older orders)
+  vatInclusive?: boolean;
+  vatTreatment?: string;
+  vatRate?: number;
+  netTotal?: number;
+  vatAmount?: number;
+  grossTotal?: number;
 }) {
   const resend = getResendClient();
   if (!resend || !params.to) return;
 
-  const { invoiceId, amountPaid, currency, locale = 'en', isLeaseUpfront } = params;
+  const { invoiceId, amountPaid, currency, locale = 'en', isLeaseUpfront, vatInclusive, vatTreatment, vatRate, netTotal, vatAmount, grossTotal } = params;
   const isFr = locale === 'fr';
   const shortId = invoiceId.slice(-8);
 
@@ -369,6 +422,7 @@ export async function sendInvoicePaidCustomerEmail(params: {
         <p>${body}</p>
         <p><strong>Invoice:</strong> ${invoiceId}</p>
         <p><strong>Amount:</strong> ${amountPaid} ${currency}</p>
+        ${netTotal != null ? `<p><strong>VAT:</strong> ${vatTreatment || (vatInclusive ? 'incl' : 'std')} net ${formatPrice(netTotal, locale)} vat ${formatPrice(vatAmount||0, locale)} gross ${formatPrice(grossTotal||netTotal, locale)}</p>` : ''}
       `,
     });
   } catch (e) {

@@ -199,6 +199,7 @@ export default function LocaleHome() {
         country: 'FR',
         paymentMethod: 'stripe',
         financing: 'full',
+        vatInclusive: false,
       };
       return { ...base, ...partial };
     });
@@ -354,7 +355,7 @@ export default function LocaleHome() {
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-xl">{t('services.managedCare')}</div>
-                  <div className="text-emerald-400 font-medium">€{SERVICE_PRICES.managedCare}{t('common.perMonthLong')}</div>
+                  <div className="text-emerald-400 font-medium">{t('common.price', { amount: SERVICE_PRICES.managedCare })}{t('common.perMonthLong')}</div>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc1')}</li>
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc2')}</li>
@@ -371,7 +372,7 @@ export default function LocaleHome() {
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-xl">{t('services.secureVaultBackup')}</div>
-                  <div className="text-sky-400 font-medium">€{SERVICE_PRICES.secureVaultBackup}{t('common.perMonthLong')}</div>
+                  <div className="text-sky-400 font-medium">{t('common.price', { amount: SERVICE_PRICES.secureVaultBackup })}{t('common.perMonthLong')}</div>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc1')}</li>
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc2')}</li>

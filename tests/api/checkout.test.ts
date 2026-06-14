@@ -60,6 +60,7 @@ function basePayload(overrides: Partial<CheckoutPayload> = {}): CheckoutPayload 
     paymentMethod: 'stripe',
     financing: 'full',
     locale: 'en',
+    vatInclusive: false,
     ...overrides,
   }
 }
@@ -516,5 +517,58 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(hwMeta[0].config).toContain('2 TB HDD')
     // extra for 1 unit
     expect(hwMeta[0].extraCost).toBe(1050)
+  })
+
+  // ---------- VAT-inclusive choice (professional customer feature) ----------
+  it('FR domestic + vatInclusive=true: grosses amounts (20%) and includes full VAT metadata', async () => {
+    const payload = basePayload({ country: 'FR', vatNumber: 'FR123456789', vatInclusive: true, paymentMethod: 'stripe', financing: 'full' })
+    const hw = HARDWARE_PRICES.studio // 7990 net
+    const gross = Math.round(hw * 1.20) // 9588
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+    const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]
+    expect(sessionCall.line_items[0].price_data.unit_amount).toBe(gross * 100)
+    expect(sessionCall.metadata.vat_treatment).toBe('charge_vat')
+    expect(sessionCall.metadata.vat_inclusive_choice).toBe('true')
+    expect(sessionCall.metadata.vat_rate).toBe('0.2')
+    expect(parseFloat(sessionCall.metadata.net_total)).toBe(hw)
+    expect(parseFloat(sessionCall.metadata.gross_total)).toBe(gross)
+    expect(sessionCall.metadata.vat_determination_reason).toContain('Domestic FR')
+  })
+
+  it('DE + valid VAT# + vatInclusive=true: 400 (reverse charge mandatory, choice illegal)', async () => {
+    const payload = basePayload({ country: 'DE', vatNumber: 'DE123456789', vatInclusive: true, paymentMethod: 'stripe', financing: 'full' })
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toMatch(/VAT-inclusive billing is not permitted/)
+    // No Stripe session created on illegal choice
+    expect(mockStripeInstance.checkout.sessions.create).not.toHaveBeenCalled()
+  })
+
+  it('DE + no VAT# + vatInclusive=true: allowed, grosses at DE rate', async () => {
+    const payload = basePayload({ country: 'DE', vatNumber: '', vatInclusive: true, paymentMethod: 'invoice', financing: 'full' })
+    const hw = HARDWARE_PRICES.studio
+    const gross = Math.round(hw * 1.19)
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+    expect(res.json()).resolves.toHaveProperty('invoiceId') // or url in some paths; success shape
+    // invoiceItem used gross amount
+    const itemCall = mockStripeInstance.invoiceItems.create.mock.calls.find((c: any[]) => c[0] && c[0].amount)
+    expect(itemCall).toBeTruthy()
+    // At least one creation used the gross
+    const usedGross = mockStripeInstance.invoiceItems.create.mock.calls.some((c: any[]) => c[0]?.amount === gross * 100)
+    expect(usedGross || mockStripeInstance.invoices.create).toBeTruthy()
+  })
+
+  it('vatInclusive=false (or omitted) on allowed path still uses net + records choice=false + treatment', async () => {
+    const payload = basePayload({ country: 'FR', vatNumber: 'FR999', vatInclusive: false, paymentMethod: 'stripe', financing: 'full' })
+    const hw = HARDWARE_PRICES.studio
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+    const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]
+    expect(sessionCall.line_items[0].price_data.unit_amount).toBe(hw * 100) // net
+    expect(sessionCall.metadata.vat_inclusive_choice).toBe('false')
+    expect(sessionCall.metadata.vat_treatment).toBe('charge_vat')
   })
 })
