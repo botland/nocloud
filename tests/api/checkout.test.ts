@@ -16,6 +16,7 @@ import {
   PRICING_VERSION,
 } from '@/lib/pricing'
 import type { CheckoutPayload } from '@/lib/types'
+import { validateVatWithVies } from '@/lib/vies'
 
 // --- Mocks (hoist-safe pattern: vi.mock returns a stable constructor fn; we .mockImplementation per test) ---
 let mockStripeInstance: any
@@ -28,6 +29,10 @@ vi.mock('stripe', () => {
 vi.mock('resend', () => {
   return { Resend: vi.fn() }
 })
+
+vi.mock('@/lib/vies', () => ({
+  validateVatWithVies: vi.fn(),
+}))
 
 // --- Test helpers ---
 function makeRequest(payload: unknown): NextRequest {
@@ -134,6 +139,11 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     mockStripeInstance.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.test/pay' })
 
     mockResendInstance.emails.send.mockResolvedValue({ id: 'email_123' })
+
+    vi.mocked(validateVatWithVies).mockResolvedValue({
+      isValid: true,
+      reason: 'VAT number verified via VIES',
+    })
   })
 
   // ---------- Happy paths (response shape + key Stripe call contracts) ----------
@@ -162,6 +172,12 @@ describe('api/checkout (functional contract tests - black box over payload + Str
       services: '[]',
     })
     expect(sessionCall.payment_method_types).toEqual(['card'])
+    expect(sessionCall.customer).toBe('cus_test')
+    expect(sessionCall.invoice_creation?.enabled).toBe(true)
+    expect(sessionCall.invoice_creation?.invoice_data?.metadata).toMatchObject({
+      financing: 'full',
+      pricing_version: PRICING_VERSION,
+    })
 
     // No Resend calls for card full path (emails happen in webhook)
     expect(mockResendInstance.emails.send).not.toHaveBeenCalled()
@@ -559,6 +575,19 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     // At least one creation used the gross
     const usedGross = mockStripeInstance.invoiceItems.create.mock.calls.some((c: any[]) => c[0]?.amount === gross * 100)
     expect(usedGross || mockStripeInstance.invoices.create).toBeTruthy()
+  })
+
+  it('provided VAT number failing VIES: returns 400 and does not create session', async () => {
+    ;(validateVatWithVies as any).mockResolvedValueOnce({
+      isValid: false,
+      reason: 'VAT number is not registered or not valid according to VIES',
+    })
+    const payload = basePayload({ country: 'DE', vatNumber: 'DE123456789', paymentMethod: 'stripe', financing: 'full' })
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toMatch(/VIES|verified/i)
+    expect(mockStripeInstance.checkout.sessions.create).not.toHaveBeenCalled()
   })
 
   it('vatInclusive=false (or omitted) on allowed path still uses net + records choice=false + treatment', async () => {

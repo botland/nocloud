@@ -8,6 +8,7 @@ import {
   sendInvoicePaidCustomerEmail,
 } from '@/lib/emails';
 import { extractPaymentMethodFromSession, setDefaultPaymentMethodOnCustomerAndSubs } from '@/lib/stripe-pm';
+import { handleSubscriptionTrialInvoice } from '@/lib/stripe-invoices';
 import { BRAND_NAME } from '@/lib/brand';
 
 export async function POST(request: NextRequest) {
@@ -353,28 +354,13 @@ export async function POST(request: NextRequest) {
                   }
                   const svcSub = await stripe.subscriptions.create(svcSubParams);
 
-                  // For send_invoice (non-auto) case, update the €0 trial draft.
                   const latestInv = (svcSub as any).latest_invoice;
-                  if (latestInv) {
-                    const invId = typeof latestInv === 'string' ? latestInv : latestInv.id;
-                    if (invId) {
-                      try {
-                        const inv = typeof latestInv === 'string' || !latestInv.status ? await stripe.invoices.retrieve(invId) : latestInv;
-                        if (inv.status === 'draft' || inv.status === 'open') {
-                          const updateParams: any = {
-                            description: `Trial period for ${s.name} (lease service subscription ${svcSub.id}). Recurring payments for this service start after trial (~1 month after upfront payment ${invoice.id}). Services continue independently after the lease term ends.`,
-                            footer: 'This service subscription continues after the lease hardware payments end.',
-                          };
-                          if (!isAuto) {
-                            updateParams.auto_advance = false;
-                          }
-                          await stripe.invoices.update(invId, updateParams);
-                          console.log(`Updated trial invoice for lease service sub ${svcSub.id}`);
-                        }
-                      } catch (updErr) {
-                        console.warn('Could not update trial for lease service sub', updErr);
-                      }
-                    }
+                  const invId = latestInv ? (typeof latestInv === 'string' ? latestInv : latestInv.id) : undefined;
+                  if (invId) {
+                    await handleSubscriptionTrialInvoice(stripe, invId, `lease service sub ${svcSub.id}`, {
+                      description: `Trial period for ${s.name} (lease service subscription ${svcSub.id}). Recurring payments for this service start after trial (~1 month after upfront payment ${invoice.id}). Services continue independently after the lease term ends.`,
+                      footer: 'This service subscription continues after the lease hardware payments end.',
+                    });
                   }
                   console.log(`Created lease service sub ${svcSub.id} for "${s.name}" on payment of ${invoice.id}`);
                 } catch (svcErr) {

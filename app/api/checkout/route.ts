@@ -18,14 +18,15 @@ import {
   calculateHardwarePrice,
   formatHardwareCustomization,
 } from '@/lib/pricing';
-import { createB2BStripeCustomer } from '@/lib/stripe-customer';
+import { createB2BStripeCustomer, buildInvoiceShippingDetails } from '@/lib/stripe-customer';
 import { sendRegisteredInvoiceCustomerEmail, sendAdminInvoiceRegisteredEmail } from '@/lib/emails';
 import { buildPaymentContext, validatePaymentEligibility, resolvePricesAndServices } from '@/lib/payment-flow';
-import { cleanupZeroTrialInvoice } from '@/lib/stripe-invoices';
+import { cleanupZeroTrialInvoice, handleSubscriptionTrialInvoice, buildCheckoutInvoiceCreation } from '@/lib/stripe-invoices';
 import { buildOrderMetadata } from '@/lib/stripe-metadata';
 import { createMonthlyRecurringPriceDataItem } from '@/lib/stripe-subscriptions';
 import { BRAND_NAME } from '@/lib/brand';
-import { determineVatTreatment, computeVatAmounts, DEBUG_VAT as DEBUG_VAT_TREATMENT } from '@/lib/vat';
+import { determineVatTreatment, computeVatAmounts, validateVatNumber, DEBUG_VAT as DEBUG_VAT_TREATMENT } from '@/lib/vat';
+import { validateVatWithVies } from '@/lib/vies';
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -50,6 +51,11 @@ export async function POST(request: NextRequest) {
       city,
       postal,
       country,
+      deliveryDifferent,
+      deliveryAddress,
+      deliveryCity,
+      deliveryPostal,
+      deliveryCountry,
       paymentMethod,
       financing = 'full',
       locale = 'en',
@@ -78,6 +84,52 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const deliveryIsDifferent = deliveryDifferent === true;
+    if (deliveryIsDifferent && (!deliveryAddress?.trim() || !deliveryCity?.trim())) {
+      return NextResponse.json({
+        error: 'Please provide a complete delivery address when it differs from billing.',
+      }, { status: 400 });
+    }
+
+    const customerParams = {
+      email,
+      company,
+      vatNumber,
+      poNumber,
+      address,
+      city,
+      postal,
+      country,
+      deliveryAddress: deliveryIsDifferent ? deliveryAddress : undefined,
+      deliveryCity: deliveryIsDifferent ? deliveryCity : undefined,
+      deliveryPostal: deliveryIsDifferent ? deliveryPostal : undefined,
+      deliveryCountry: deliveryIsDifferent ? (deliveryCountry || country) : undefined,
+    };
+
+    const addressMetaFields = {
+      address,
+      city,
+      postal,
+      country,
+      deliveryDifferent: deliveryIsDifferent,
+      deliveryAddress,
+      deliveryCity,
+      deliveryPostal,
+      deliveryCountry: deliveryCountry || country,
+    };
+
+    const invoiceShippingDetails = buildInvoiceShippingDetails({
+      company,
+      address,
+      city,
+      postal,
+      country,
+      deliveryAddress: deliveryIsDifferent ? deliveryAddress : undefined,
+      deliveryCity: deliveryIsDifferent ? deliveryCity : undefined,
+      deliveryPostal: deliveryIsDifferent ? deliveryPostal : undefined,
+      deliveryCountry: deliveryIsDifferent ? (deliveryCountry || country) : undefined,
+    });
+
     const paymentContext = buildPaymentContext({
       financing: financing as any,
       paymentMethod: paymentMethod as any,
@@ -98,16 +150,7 @@ export async function POST(request: NextRequest) {
     let stripeCustomerId: string | undefined;
     if (email) {
       try {
-        stripeCustomerId = await createB2BStripeCustomer(stripe, {
-          email,
-          company,
-          vatNumber,
-          poNumber,
-          address,
-          city,
-          postal,
-          country,
-        });
+        stripeCustomerId = await createB2BStripeCustomer(stripe, customerParams);
       } catch (custErr) {
         console.warn('Failed to pre-create Stripe customer (Checkout will create one); proceeding anyway', custErr);
       }
@@ -153,11 +196,35 @@ export async function POST(request: NextRequest) {
     }
 
     // === VAT Treatment Determination (core per spec §2) — happens BEFORE any customer choice is honored ===
+    // Authoritative VIES check when a VAT number is supplied (reverse charge requires VIES confirmation).
+    let viesValidated: boolean | undefined;
+    if (vatNumber?.trim()) {
+      const formatCheck = validateVatNumber(vatNumber, country);
+      if (!formatCheck.isValid) {
+        return NextResponse.json({
+          error: formatCheck.reason || 'Invalid VAT number format. Please check the number and country.',
+        }, { status: 400 });
+      }
+      const viesResult = await validateVatWithVies(vatNumber, country);
+      if (viesResult.unavailable) {
+        return NextResponse.json({
+          error: viesResult.reason || 'VAT verification service (VIES) is temporarily unavailable. Please try again shortly.',
+        }, { status: 503 });
+      }
+      if (!viesResult.isValid) {
+        return NextResponse.json({
+          error: viesResult.reason || 'VAT number could not be verified via VIES. Please check the number or leave it empty if you are not VAT-registered.',
+        }, { status: 400 });
+      }
+      viesValidated = true;
+    }
+
     // This is the single source of truth. Client may have shown a checkbox, but we re-evaluate here
     // with authoritative inputs and reject any illegal election.
     const vatTreatment = determineVatTreatment({
       customerCountry: country,
       vatNumber: vatNumber || undefined,
+      viesValidated,
       // supplyType defaults to goods for appliances (services follow the same treatment for the order)
     });
     const customerChoiceInclusive = vatInclusive === true;
@@ -207,8 +274,25 @@ export async function POST(request: NextRequest) {
       gross_total: String(vatAmounts.gross),
       vat_determination_reason: vatTreatment.reason,
       vat_number_validated: vatTreatment.isValidVatNumber ? 'true' : 'false',
+      vat_vies_checked: viesValidated ? 'true' : 'false',
       ...(chargesVat ? { vat_charged: 'true' } : {}),
     };
+
+    // Card / SEPA Checkout (payment mode) requires a Stripe Customer for post-payment invoice_creation.
+    const isCardOrSepa = paymentMethod === 'stripe' || paymentMethod === 'sepa';
+    if (isCardOrSepa) {
+      if (!email) {
+        return NextResponse.json({ error: 'Email is required for card and SEPA payments.' }, { status: 400 });
+      }
+      if (!stripeCustomerId) {
+        try {
+          stripeCustomerId = await createB2BStripeCustomer(stripe, customerParams);
+        } catch (custErr) {
+          console.error('Failed to create Stripe customer for card/sepa checkout', custErr);
+          return NextResponse.json({ error: 'Unable to prepare customer for payment.' }, { status: 500 });
+        }
+      }
+    }
 
     // Grossing helpers (applied only to amounts sent to Stripe for charging/invoicing).
     // Pricing/resolver always returns net base. Gross = overlay using the resolved rate.
@@ -239,16 +323,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Email is required to create a lease subscription.' }, { status: 400 });
         }
         try {
-          stripeCustomerId = await createB2BStripeCustomer(stripe, {
-            email,
-            company,
-            vatNumber,
-            poNumber,
-            address,
-            city,
-            postal,
-            country,
-          });
+          stripeCustomerId = await createB2BStripeCustomer(stripe, customerParams);
         } catch (custErr) {
           console.error('Failed to create Stripe customer for lease', custErr);
           return NextResponse.json({ error: 'Unable to prepare customer for lease payment.' }, { status: 500 });
@@ -273,14 +348,12 @@ export async function POST(request: NextRequest) {
           collection_method: 'send_invoice',
           days_until_due: 30,
           auto_advance: true,
+          ...(invoiceShippingDetails ? { shipping_details: invoiceShippingDetails } : {}),
           metadata: buildOrderMetadata({
             company,
             vatNumber,
             poNumber,
-            address,
-            city,
-            postal,
-            country,
+            ...addressMetaFields,
             financing: 'lease',
             services: resolvedServicesForMeta,
             hardware: resolvedHardwareForMeta,
@@ -344,10 +417,7 @@ export async function POST(request: NextRequest) {
               company,
               vatNumber,
               poNumber,
-              address,
-              city,
-              postal,
-              country,
+              ...addressMetaFields,
               financing: 'lease',
               services: resolvedServicesForMeta,
             hardware: resolvedHardwareForMeta,
@@ -426,26 +496,25 @@ export async function POST(request: NextRequest) {
             success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
             locale,
-            metadata: {
-              company_name: company || 'N/A',
-              vat_number: vatNumber || 'N/A',
-              po_number: poNumber || 'N/A',
-              address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
+            metadata: buildOrderMetadata({
+              company,
+              vatNumber,
+              poNumber,
+              ...addressMetaFields,
               financing: 'lease',
-              services: JSON.stringify(resolvedServicesForMeta),
-          hardware: JSON.stringify(resolvedHardwareForMeta),
+              services: resolvedServicesForMeta,
+              hardware: resolvedHardwareForMeta,
               customer_email: email || 'N/A',
-              pricing_version: PRICING_VERSION,
+              pricingVersion: PRICING_VERSION,
               locale,
+              orderPlacedAt,
               main_invoice_id: upfrontInvoice.id,
               recurring_payment_method: recurringPaymentMethod,
-              order_placed_at: orderPlacedAt.toString(),
               lease_subscription_id: leaseSubId,
               lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
               is_lease_recurring_setup: 'true',
-              // VAT treatment + customer choice (audit + compliance)
               ...vatMeta,
-            },
+            }),
           });
           setupSessionUrl = setupSession.url;
         }
@@ -528,10 +597,7 @@ export async function POST(request: NextRequest) {
             company,
             vatNumber,
             poNumber,
-            address,
-            city,
-            postal,
-            country,
+            ...addressMetaFields,
             financing: 'lease',
             services: resolvedServicesForMeta,
             hardware: resolvedHardwareForMeta,
@@ -612,6 +678,30 @@ export async function POST(request: NextRequest) {
         const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
           paymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
 
+        const leaseUpfrontMetadata = buildOrderMetadata({
+          company,
+          vatNumber,
+          poNumber,
+          ...addressMetaFields,
+          financing: 'lease',
+          services: resolvedServicesForMeta,
+          hardware: resolvedHardwareForMeta,
+          customer_email: email || 'N/A',
+          pricingVersion: PRICING_VERSION,
+          locale,
+          orderPlacedAt,
+          contractType: 'leasing',
+          leaseMonths: lease.months,
+          leaseUpfrontAmount: lease.upfrontAmount,
+          leaseFinancedAmount: lease.financedAmount,
+          is_lease_upfront: 'true',
+          lease_subscription_id: leaseSubId,
+          lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
+          upfront_percent: String(UPFRONT_PERCENT),
+          total_value: String(hardwareTotal),
+          ...vatMeta,
+        });
+
         const upfrontSession = await stripe.checkout.sessions.create({
           payment_method_types: pmTypes,
           mode: 'payment',
@@ -630,28 +720,15 @@ export async function POST(request: NextRequest) {
           success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
           locale,
-          metadata: {
-            company_name: company || 'N/A',
-            vat_number: vatNumber || 'N/A',
-            po_number: poNumber || 'N/A',
-            address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
-            financing: 'lease',
-            is_lease_upfront: 'true',
-            lease_subscription_id: leaseSubId,
-            lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
-            lease_months: lease.months.toString(),
-            lease_upfront_amount: lease.upfrontAmount.toString(),
-            lease_financed_amount: lease.financedAmount.toString(),
-            services: JSON.stringify(resolvedServicesForMeta),
-          hardware: JSON.stringify(resolvedHardwareForMeta),
-            customer_email: email || 'N/A',
-            pricing_version: PRICING_VERSION,
-            locale,
-            contract_type: 'leasing',
-            upfront_percent: String(UPFRONT_PERCENT),
-            total_value: String(hardwareTotal),
-            order_placed_at: orderPlacedAt.toString(),
-          },
+          metadata: leaseUpfrontMetadata,
+          invoice_creation: buildCheckoutInvoiceCreation({
+            metadata: leaseUpfrontMetadata,
+            company,
+            vatNumber,
+            poNumber,
+            vatTreatment: vatTreatment.mandatoryTreatment,
+            description: `${BRAND_NAME} lease upfront payment (${UPFRONT_PERCENT}%)`,
+          }),
           payment_intent_data: {
             setup_future_usage: 'off_session',
           },
@@ -678,16 +755,7 @@ export async function POST(request: NextRequest) {
       // was added.
       if (!stripeCustomerId && email) {
         try {
-          stripeCustomerId = await createB2BStripeCustomer(stripe, {
-            email,
-            company,
-            vatNumber,
-            poNumber,
-            address,
-            city,
-            postal,
-            country,
-          });
+          stripeCustomerId = await createB2BStripeCustomer(stripe, customerParams);
         } catch (custErr) {
           console.error('Failed to create Stripe customer for invoice', custErr);
           return NextResponse.json({ error: 'Unable to prepare customer for invoice.' }, { status: 500 });
@@ -700,21 +768,21 @@ export async function POST(request: NextRequest) {
         collection_method: 'send_invoice',
         days_until_due: 30,
         auto_advance: true,
-        metadata: {
-          company_name: company || 'N/A',
-          vat_number: vatNumber || 'N/A',
-          po_number: poNumber || 'N/A',
-          address: JSON.stringify({ address: address || '', city: city || '', postal: postal || '', country: country || '' }),
+        ...(invoiceShippingDetails ? { shipping_details: invoiceShippingDetails } : {}),
+        metadata: buildOrderMetadata({
+          company,
+          vatNumber,
+          poNumber,
+          ...addressMetaFields,
           financing,
-          services: JSON.stringify(resolvedServicesForMeta),
-          hardware: JSON.stringify(resolvedHardwareForMeta),
+          services: resolvedServicesForMeta,
+          hardware: resolvedHardwareForMeta,
           customer_email: email || 'N/A',
-          pricing_version: PRICING_VERSION,
+          pricingVersion: PRICING_VERSION,
           locale,
-          order_placed_at: orderPlacedAt.toString(),
-          // VAT treatment + customer choice (audit + compliance)
+          orderPlacedAt,
           ...vatMeta,
-        },
+        }),
       });
 
       // Add hardware line items (one-time). (Services are never on the initial Net-30 invoice when the user
@@ -806,10 +874,7 @@ export async function POST(request: NextRequest) {
           company,
           vatNumber,
           poNumber,
-          address,
-          city,
-          postal,
-          country,
+          ...addressMetaFields,
           financing,
           services: resolvedServicesForMeta,
           pricingVersion: PRICING_VERSION,
@@ -880,28 +945,13 @@ export async function POST(request: NextRequest) {
             expand: ['latest_invoice'],
           });
 
-          // Stripe creates a €0 draft "trial period" invoice for the trial. Update it with an explanation
-          // so it is not confusing. No service amount is on the main hardware net30; the first paid
-          // recurring will come from the sub after the trial.
           const latestInv = (sub as any).latest_invoice;
-          if (latestInv) {
-            const invId = typeof latestInv === 'string' ? latestInv : latestInv.id;
-            if (invId) {
-              try {
-                const inv = typeof latestInv === 'string' || !latestInv.status
-                  ? await stripe.invoices.retrieve(invId)
-                  : latestInv;
-                if (inv.status === 'draft' || inv.status === 'open') {
-                  await stripe.invoices.update(invId, {
-                    description: `Trial period for ${s.name}. Recurring monthly service payments will start after this trial (approximately 1 month after the order). See main order invoice ${invoice.id}.`,
-                    footer: 'Recurring services begin ~1 month after initial hardware payment.',
-                  });
-                  console.log(`Updated trial invoice ${invId} for service sub "${s.name}"`);
-                }
-              } catch (updErr) {
-                console.warn('Could not update trial invoice for service sub', updErr);
-              }
-            }
+          const invId = latestInv ? (typeof latestInv === 'string' ? latestInv : latestInv.id) : undefined;
+          if (invId) {
+            await handleSubscriptionTrialInvoice(stripe, invId, `send_invoice service sub "${s.name}"`, {
+              description: `Trial period for ${s.name}. Recurring monthly service payments will start after this trial (approximately 1 month after the order). See main order invoice ${invoice.id}.`,
+              footer: 'Recurring services begin ~1 month after initial hardware payment.',
+            });
           }
 
           console.log(`Created send_invoice service sub (trial) for "${s.name}" on invoice ${invoice.id}`);
@@ -975,6 +1025,27 @@ export async function POST(request: NextRequest) {
     const leaseCancelAt = '';
     const leaseFinancedStr = '';
 
+    const fullPaymentMetadata = buildOrderMetadata({
+      company,
+      vatNumber,
+      poNumber,
+      ...addressMetaFields,
+      financing,
+      services: resolvedServicesForMeta,
+      hardware: resolvedHardwareForMeta,
+      pricingVersion: PRICING_VERSION,
+      locale,
+      orderPlacedAt,
+      leaseMonths: leaseMonthsStr,
+      leaseCancelAt: leaseCancelAt,
+      leaseUpfrontAmount: leaseUpfrontStr,
+      leaseFinancedAmount: leaseFinancedStr,
+      // Services (and in future lease hardware) will use this to compute billing_cycle_anchor
+      // so recurring starts exactly 1 month after order time (non-trial, uniform rule).
+      // VAT treatment + customer choice (audit + compliance)
+      ...vatMeta,
+    });
+
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: pmTypes,
       mode,
@@ -987,40 +1058,21 @@ export async function POST(request: NextRequest) {
       payment_intent_data: {
         setup_future_usage: 'off_session',
       },
-      metadata: buildOrderMetadata({
+      metadata: fullPaymentMetadata,
+      customer: stripeCustomerId,
+      invoice_creation: buildCheckoutInvoiceCreation({
+        metadata: fullPaymentMetadata,
         company,
         vatNumber,
         poNumber,
-        address,
-        city,
-        postal,
-        country,
-        financing,
-        services: resolvedServicesForMeta,
-        hardware: resolvedHardwareForMeta,
-        pricingVersion: PRICING_VERSION,
-        locale,
-        orderPlacedAt,
-        leaseMonths: leaseMonthsStr,
-        leaseCancelAt: leaseCancelAt,
-        leaseUpfrontAmount: leaseUpfrontStr,
-        leaseFinancedAmount: leaseFinancedStr,
-        // Services (and in future lease hardware) will use this to compute billing_cycle_anchor
-        // so recurring starts exactly 1 month after order time (non-trial, uniform rule).
-        // VAT treatment + customer choice (audit + compliance)
-        ...vatMeta,
+        vatTreatment: vatTreatment.mandatoryTreatment,
+        description: `${BRAND_NAME} hardware order`,
       }),
     };
     if (DEBUG_PAYMENTS) {
       console.log('[PAYMENT DEBUG] full session metadata.services =', JSON.stringify(resolvedServicesForMeta));
       console.log('[PAYMENT DEBUG] full session metadata.hardware =', JSON.stringify(resolvedHardwareForMeta));
     }
-    if (stripeCustomerId) {
-      sessionParams.customer = stripeCustomerId;
-    } else if (email) {
-      sessionParams.customer_email = email;
-    }
-
     const session = await stripe.checkout.sessions.create(sessionParams);
 
     return NextResponse.json({ url: session.url });

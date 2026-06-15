@@ -58,14 +58,14 @@ export function getVatRate(country: string | undefined): number {
 }
 
 /**
- * Basic VAT number format validation (no external VIES call — pure + offline).
+ * Basic VAT number format validation (pure + offline).
  * Requires:
  * - Non-empty after trim
  * - For known EU countries: prefix roughly matches the country (e.g. starts with "FR" for FR customer)
  * - Minimum plausible length
  *
- * "Valid" here means "sufficiently well-formed to consider for reverse-charge eligibility".
- * Full VIES / real-time validation can be added later (server-side proxy) without changing this API.
+ * "Valid" here means "sufficiently well-formed". Authoritative reverse-charge eligibility
+ * on the server additionally requires VIES confirmation (see lib/vies.ts + /api/checkout).
  */
 export function validateVatNumber(
   vatNumber: string | undefined,
@@ -105,8 +105,10 @@ export interface VatTreatment {
   canOfferVatInclusive: boolean;
   /** Human-readable (and machine-loggable) explanation of how the treatment was reached. Stored in metadata for audit. */
   reason: string;
-  /** Whether a VAT number was supplied and passed basic format/prefix validation. */
+  /** Whether a VAT number was supplied and is considered valid (format + optional VIES on server). */
   isValidVatNumber: boolean;
+  /** True when server confirmed the number via VIES (undefined on client preview). */
+  viesChecked?: boolean;
   /** The raw customer country used for the decision (normalized). */
   customerCountry: string;
 }
@@ -129,11 +131,17 @@ export function determineVatTreatment(params: {
   customerCountry: string;
   vatNumber?: string;
   supplyType?: 'goods' | 'services'; // currently unused (uniform treatment for whole order)
+  /** Server-only: true when VIES confirmed valid; false when format ok but VIES rejected. Omit on client (format-only preview). */
+  viesValidated?: boolean;
 }): VatTreatment {
   const rawCountry = (params.customerCountry || 'other').toUpperCase();
   const customerCountry = (EU_COUNTRIES as readonly string[]).includes(rawCountry) ? rawCountry : 'other';
   const vatInput = params.vatNumber;
-  const { isValid: isValidVatNumber } = validateVatNumber(vatInput, customerCountry);
+  const { isValid: formatValid } = validateVatNumber(vatInput, customerCountry);
+  const viesChecked = params.viesValidated !== undefined;
+  const isValidVatNumber = viesChecked
+    ? formatValid && params.viesValidated === true
+    : formatValid;
 
   let mandatoryTreatment: MandatoryVatTreatment = 'zero_rated';
   let vatRate = 0;
@@ -153,7 +161,9 @@ export function determineVatTreatment(params: {
       mandatoryTreatment = 'reverse_charge';
       vatRate = 0;
       canOfferVatInclusive = false;
-      reason = `Intra-EU B2B with valid VAT number (prefix-matched). Mandatory reverse_charge (0%). Customer must account for VAT. Choice not offered.`;
+      reason = viesChecked
+        ? `Intra-EU B2B with VIES-verified VAT number. Mandatory reverse_charge (0%). Customer must account for VAT. Choice not offered.`
+        : `Intra-EU B2B with valid VAT number (format-matched; VIES pending on server). Mandatory reverse_charge (0%). Customer must account for VAT. Choice not offered.`;
     } else {
       mandatoryTreatment = 'charge_vat';
       vatRate = getVatRate(customerCountry) || VAT_RATES.FR || 0.20;
@@ -180,6 +190,7 @@ export function determineVatTreatment(params: {
     reason,
     isValidVatNumber,
     customerCountry,
+    ...(viesChecked ? { viesChecked: true } : {}),
   };
 
   if (DEBUG_VAT) {

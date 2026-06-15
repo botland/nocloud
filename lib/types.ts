@@ -42,6 +42,12 @@ export interface CheckoutPayload {
   city: string;
   postal?: string;
   country: string;
+  /** When true, delivery fields are required and sent to Stripe as shipping (separate from billing). */
+  deliveryDifferent?: boolean;
+  deliveryAddress?: string;
+  deliveryCity?: string;
+  deliveryPostal?: string;
+  deliveryCountry?: string;
   paymentMethod: 'stripe' | 'sepa' | 'invoice';
   financing: 'full' | 'lease';
   locale?: string;
@@ -68,6 +74,11 @@ export interface CheckoutFormDraft {
   city: string;
   postal: string;
   country: string;
+  deliveryDifferent?: boolean;
+  deliveryAddress?: string;
+  deliveryCity?: string;
+  deliveryPostal?: string;
+  deliveryCountry?: string;
   paymentMethod: 'stripe' | 'sepa' | 'invoice';
   financing: 'full' | 'lease';
   // Only relevant when paymentMethod==='invoice' and cart has recurring services.

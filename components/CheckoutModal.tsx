@@ -18,6 +18,7 @@ interface Props {
 
 export default function CheckoutModal({ cart, onClose, onOrderComplete, initialData, onDraftChange }: Props) {
   const t = useTranslations('checkout');
+  const tcart = useTranslations('cart');
   const tc = useTranslations();
 
   // Initialize from persisted draft if present (e.g. user filled form, went to Stripe, canceled).
@@ -28,6 +29,13 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const [city, setCity] = useState(initialData?.city || '');
   const [postal, setPostal] = useState(initialData?.postal || '');
   const [country, setCountry] = useState(initialData?.country || 'FR');
+  const [deliveryDifferent, setDeliveryDifferent] = useState(initialData?.deliveryDifferent || false);
+  const [deliveryAddress, setDeliveryAddress] = useState(initialData?.deliveryAddress || '');
+  const [deliveryCity, setDeliveryCity] = useState(initialData?.deliveryCity || '');
+  const [deliveryPostal, setDeliveryPostal] = useState(initialData?.deliveryPostal || '');
+  const [deliveryCountry, setDeliveryCountry] = useState(initialData?.deliveryCountry || initialData?.country || 'FR');
+  const [step, setStep] = useState<1 | 2>(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>(initialData?.paymentMethod || 'stripe');
   const [financing, setFinancing] = useState<'full' | 'lease'>(initialData?.financing || 'full');
 
@@ -40,6 +48,10 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   // determineVatTreatment says it is legally permitted (never for mandatory reverse charge).
   // Server is authoritative and will reject illegal choices.
   const [vatInclusive, setVatInclusive] = useState<boolean>(initialData?.vatInclusive || false);
+
+  // Live VIES validation (server authoritative; preview only here).
+  const [viesStatus, setViesStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid' | 'unavailable'>('idle');
+  const [viesMessage, setViesMessage] = useState('');
 
   // Email collected here (part of checkout), kept in payload, transmitted to Stripe (pre-created Customer preferred; falls back to customer_email).
   const [email, setEmail] = useState(initialData?.email || '');
@@ -55,6 +67,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const setCityWithDraft = (v: string) => { setCity(v); updateDraft({ city: v }); };
   const setPostalWithDraft = (v: string) => { setPostal(v); updateDraft({ postal: v }); };
   const setCountryWithDraft = (v: string) => { setCountry(v); updateDraft({ country: v }); };
+  const setDeliveryDifferentWithDraft = (v: boolean) => { setDeliveryDifferent(v); updateDraft({ deliveryDifferent: v }); };
+  const setDeliveryAddressWithDraft = (v: string) => { setDeliveryAddress(v); updateDraft({ deliveryAddress: v }); };
+  const setDeliveryCityWithDraft = (v: string) => { setDeliveryCity(v); updateDraft({ deliveryCity: v }); };
+  const setDeliveryPostalWithDraft = (v: string) => { setDeliveryPostal(v); updateDraft({ deliveryPostal: v }); };
+  const setDeliveryCountryWithDraft = (v: string) => { setDeliveryCountry(v); updateDraft({ deliveryCountry: v }); };
   const setPaymentMethodWithDraft = (v: 'stripe' | 'sepa' | 'invoice') => { setPaymentMethod(v); updateDraft({ paymentMethod: v }); };
   const setFinancingWithDraft = (v: 'full' | 'lease') => { setFinancing(v); updateDraft({ financing: v }); };
   const setRecurringPaymentMethodWithDraft = (v: 'stripe' | 'sepa') => { setRecurringPaymentMethod(v); updateDraft({ recurringPaymentMethod: v }); };
@@ -81,10 +98,55 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   // Current selection
   const isLease = financing === 'lease';
 
+  // Debounced VIES check when a VAT number is entered (format must pass first).
+  useEffect(() => {
+    const trimmed = vat.trim();
+    if (!trimmed) {
+      setViesStatus('idle');
+      setViesMessage('');
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setViesStatus('checking');
+      setViesMessage('');
+      try {
+        const res = await fetch('/api/vat/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vatNumber: trimmed, country }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.valid) {
+          setViesStatus('valid');
+          setViesMessage(data.name ? t('viesValidWithName', { name: data.name }) : t('viesValid'));
+        } else if (res.status === 503 || data.unavailable) {
+          setViesStatus('unavailable');
+          setViesMessage(data.reason || t('viesUnavailable'));
+        } else {
+          setViesStatus('invalid');
+          setViesMessage(data.reason || t('viesInvalid'));
+        }
+      } catch {
+        setViesStatus('unavailable');
+        setViesMessage(t('viesUnavailable'));
+      }
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [vat, country, t]);
+
   // VAT treatment (pure, client+server identical). Drives whether we can legally show the
   // "I wish to be billed VAT-inclusive" checkbox and what the live gross preview should be.
-  const vatTreatment = determineVatTreatment({ customerCountry: country, vatNumber: vat });
+  const viesValidatedPreview =
+    viesStatus === 'valid' ? true : viesStatus === 'invalid' ? false : undefined;
+  const vatTreatment = determineVatTreatment({
+    customerCountry: country,
+    vatNumber: vat,
+    viesValidated: viesValidatedPreview,
+  });
   const canOfferVatInclusive = vatTreatment.canOfferVatInclusive;
+  const vatBlocksCheckout = !!vat.trim() && (viesStatus === 'invalid' || viesStatus === 'checking' || viesStatus === 'unavailable');
 
   const showVatBreakdown = !!vatInclusive && vatTreatment.vatRate > 0;
   const vatRateForDisplay = vatTreatment.vatRate;
@@ -139,9 +201,49 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
     { value: 'other', label: t('countries.other') },
   ];
 
-  const handleCompleteOrder = async () => {
+  const validateStep1 = () => {
     if (!company || !email || !address || !city) {
       alert(t('validation'));
+      return false;
+    }
+    if (deliveryDifferent && (!deliveryAddress || !deliveryCity)) {
+      alert(t('validationDelivery'));
+      return false;
+    }
+    return true;
+  };
+
+  const handleNextStep = () => {
+    if (isSubmitting) return;
+    if (validateStep1()) setStep(2);
+  };
+
+  const handlePreviousStep = () => {
+    if (isSubmitting) return;
+    setStep(1);
+  };
+
+  const goToStep = (target: 1 | 2) => {
+    if (isSubmitting) return;
+    if (target === 1) {
+      setStep(1);
+      return;
+    }
+    if (validateStep1()) setStep(2);
+  };
+
+  const handleCompleteOrder = async () => {
+    if (isSubmitting) return;
+    if (!validateStep1()) return;
+
+    if (vat.trim() && viesStatus !== 'valid') {
+      if (viesStatus === 'checking') {
+        alert(t('viesStillChecking'));
+      } else if (viesStatus === 'unavailable') {
+        alert(viesMessage || t('viesUnavailable'));
+      } else {
+        alert(viesMessage || t('viesInvalid'));
+      }
       return;
     }
 
@@ -149,6 +251,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
       alert(t('validation'));
       return;
     }
+
+    setIsSubmitting(true);
 
     // Real flow for 'stripe' / 'sepa' / 'invoice' (invoice is now real Stripe send_invoice backend path;
     // the friendly localized overlay is still shown client-side for consistency after the backend
@@ -166,6 +270,15 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
         city,
         postal,
         country,
+        deliveryDifferent,
+        ...(deliveryDifferent
+          ? {
+              deliveryAddress,
+              deliveryCity,
+              deliveryPostal,
+              deliveryCountry,
+            }
+          : {}),
         paymentMethod,
         financing,
         locale,
@@ -278,19 +391,54 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
       console.error('Checkout error', e);
       const msg = e?.message || 'Please try again or contact support.';
       alert(`Unable to start payment: ${msg}`);
+      setIsSubmitting(false);
     }
   };
 
+  const handleClose = () => {
+    if (isSubmitting) return;
+    onClose();
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4" onClick={handleClose}>
+      <div className="relative bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        {isSubmitting && (
+          <div className="absolute inset-0 z-20 bg-slate-950/85 flex flex-col items-center justify-center px-6">
+            <div className="w-9 h-9 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+            <p className="mt-4 text-sm text-slate-300 text-center">{t('processingPayment')}</p>
+          </div>
+        )}
         
-        <div className="px-7 py-5 border-b border-slate-800 flex justify-between">
-          <div className="font-semibold text-xl">{t('completeOrder')}</div>
-          <button onClick={onClose} className="text-2xl text-slate-400">×</button>
+        <div className="px-7 py-5 border-b border-slate-800 flex justify-between items-start">
+          <div>
+            <div className="font-semibold text-xl">{t('completeOrder')}</div>
+            <div className="flex items-center gap-2 mt-2 text-xs">
+              <button
+                type="button"
+                onClick={() => goToStep(1)}
+                disabled={isSubmitting}
+                className={`transition-colors hover:text-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed ${step === 1 ? 'text-cyan-400 font-medium' : 'text-slate-500'}`}
+              >
+                1. {t('stepInfo')}
+              </button>
+              <span className="text-slate-600">→</span>
+              <button
+                type="button"
+                onClick={() => goToStep(2)}
+                disabled={isSubmitting}
+                className={`transition-colors hover:text-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed ${step === 2 ? 'text-cyan-400 font-medium' : 'text-slate-500'}`}
+              >
+                2. {t('stepPayment')}
+              </button>
+            </div>
+          </div>
+          <button onClick={handleClose} disabled={isSubmitting} className="text-2xl text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed">×</button>
         </div>
 
-        <div className="p-7 space-y-6 max-h-[68vh] overflow-y-auto">
+        <div className={`p-7 space-y-6 max-h-[68vh] overflow-y-auto ${isSubmitting ? 'pointer-events-none opacity-50' : ''}`}>
+          {step === 1 && (
+          <>
           {/* Company Info */}
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('companyInfo')}</div>
@@ -305,7 +453,22 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500"
               />
               <div className="grid grid-cols-2 gap-3">
-                <input value={vat} onChange={e => setVatWithDraft(e.target.value)} type="text" placeholder={t('vatPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                <div>
+                  <input value={vat} onChange={e => setVatWithDraft(e.target.value)} type="text" placeholder={t('vatPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                  {vat.trim() && (
+                    <div className={`text-[10px] mt-1 ${
+                      viesStatus === 'valid' ? 'text-emerald-400'
+                        : viesStatus === 'checking' ? 'text-slate-400'
+                          : viesStatus === 'idle' ? 'text-slate-500'
+                            : 'text-amber-400'
+                    }`}>
+                      {viesStatus === 'checking' && t('viesChecking')}
+                      {viesStatus === 'valid' && (viesMessage || t('viesValid'))}
+                      {viesStatus === 'invalid' && (viesMessage || t('viesInvalid'))}
+                      {viesStatus === 'unavailable' && (viesMessage || t('viesUnavailable'))}
+                    </div>
+                  )}
+                </div>
                 <input value={po} onChange={e => setPoWithDraft(e.target.value)} type="text" placeholder={t('poPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
               </div>
             </div>
@@ -333,6 +496,40 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
             </div>
           </div>
 
+          <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+            <input
+              type="checkbox"
+              checked={deliveryDifferent}
+              onChange={(e) => setDeliveryDifferentWithDraft(e.target.checked)}
+              className="accent-cyan-400 mt-1"
+            />
+            <div className="font-medium text-sm">{t('deliveryDifferentLabel')}</div>
+          </label>
+
+          {deliveryDifferent && (
+            <div>
+              <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('deliveryAddress')}</div>
+              <div className="space-y-3">
+                <input
+                  value={deliveryAddress}
+                  onChange={e => setDeliveryAddressWithDraft(e.target.value)}
+                  type="text"
+                  placeholder={t('streetPlaceholder')}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input value={deliveryCity} onChange={e => setDeliveryCityWithDraft(e.target.value)} type="text" placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                  <input value={deliveryPostal} onChange={e => setDeliveryPostalWithDraft(e.target.value)} type="text" placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                </div>
+                <select value={deliveryCountry} onChange={e => setDeliveryCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
+                  {countryOptions.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
           {/* VAT-inclusive choice for professional customers (spec: only when legally permitted,
               never when reverse charge is mandatory). Server validates authoritatively. */}
           {canOfferVatInclusive && (
@@ -357,7 +554,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               </label>
             </div>
           )}
+          </>
+          )}
 
+          {step === 2 && (
+          <>
           {/* Financing / Payment Terms (new for direct / recurring / leasing) */}
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
@@ -562,64 +763,98 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               </label>
             </div>
           </div>
+          </>
+          )}
         </div>
 
-        <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex justify-between items-center">
-          <div>
-            <div className="text-xs text-slate-400">
-              {isLease 
-                ? t('monthlyTotalLabel', { months: leaseMonths }) 
-                : t('totalToPay')}
-            </div>
-            {/* When VAT-inclusive is chosen, headline shows the gross. We use the centralized
-                "vatBreakdown" translation key (source of truth: locales/en.json + fr.json) for the per-language
-                "Net €X + VAT €Y (incl.)" / "HT €X + TVA €Y (TTC)" format so the exact wording can be changed in one place. */}
-            <div className="text-2xl font-semibold tabular-nums">
-              {tc('common.price', { amount: isLease ? leaseMonthlyDisplay : hwGross })}
-            </div>
+        <div className={`bg-slate-950 px-7 py-5 border-t border-slate-800 flex justify-between items-center ${isSubmitting ? 'pointer-events-none' : ''}`}>
+          <div className="min-w-0 flex-1 pr-4">
+            {step === 1 ? (
+              <>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-slate-400">{tcart('hardwareTotal')}</span>
+                  <span className="font-semibold tabular-nums">{tc('common.price', { amount: hardwareTotal })}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>{tcart('servicesMonthly')}</span>
+                  <span className="tabular-nums">{tc('common.price', { amount: servicesMonthly })}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs text-slate-400">
+                  {isLease
+                    ? t('monthlyTotalLabel', { months: leaseMonths })
+                    : t('totalToPay')}
+                </div>
+                <div className="text-2xl font-semibold tabular-nums">
+                  {tc('common.price', { amount: isLease ? leaseMonthlyDisplay : hwGross })}
+                </div>
 
-            {/* VAT breakdown for the headline amount (works for both full and lease) */}
-            {showVatBreakdown && (
-              <div className="text-[10px] text-emerald-400">
-                {t('vatBreakdown', {
-                  net: isLease ? leaseNetDetails.monthlyTotal : hwNet,
-                  vat: isLease ? leaseMonthlyVatDisplay : hwVat
-                })}
-              </div>
-            )}
-
-            {/* Recurring services line — use gross + net/VAT breakdown when VAT chosen (applies to full + lease) */}
-            {svcNet > 0 && (
-              <div className="text-[10px] text-emerald-400">
-                + {tc('common.price', { amount: svcGross })}{tc('common.recurringSuffix')}
                 {showVatBreakdown && (
-                  <> ({t('vatBreakdown', { net: svcNet, vat: svcVat })})</>
+                  <div className="text-[10px] text-emerald-400">
+                    {t('vatBreakdown', {
+                      net: isLease ? leaseNetDetails.monthlyTotal : hwNet,
+                      vat: isLease ? leaseMonthlyVatDisplay : hwVat
+                    })}
+                  </div>
                 )}
-              </div>
-            )}
 
-            {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}
-
-            {/* Upfront payment: shown AFTER monthly + recurring services, in a distinctive way (subtle separation + one-time label + amber tone) */}
-            {isLease && (
-              <div className="mt-1.5 pt-1.5 border-t border-slate-700/70 text-[10px] text-amber-400">
-                {showVatBreakdown ? (
-                  t('oneTimeUpfrontDueTodayWithVat', {
-                    amount: leaseUpfrontDisplay,
-                    breakdown: t('vatBreakdown', {
-                      net: leaseNetDetails.upfrontAmount,
-                      vat: leaseUpfrontVatDisplay
-                    })
-                  })
-                ) : (
-                  t('upfrontDueToday', { amount: leaseUpfrontDisplay })
+                {svcNet > 0 && (
+                  <div className="text-[10px] text-emerald-400">
+                    + {tc('common.price', { amount: svcGross })}{tc('common.recurringSuffix')}
+                    {showVatBreakdown && (
+                      <> ({t('vatBreakdown', { net: svcNet, vat: svcVat })})</>
+                    )}
+                  </div>
                 )}
-              </div>
+
+                {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}
+
+                {isLease && (
+                  <div className="mt-1.5 pt-1.5 border-t border-slate-700/70 text-[10px] text-amber-400">
+                    {showVatBreakdown ? (
+                      t('oneTimeUpfrontDueTodayWithVat', {
+                        amount: leaseUpfrontDisplay,
+                        breakdown: t('vatBreakdown', {
+                          net: leaseNetDetails.upfrontAmount,
+                          vat: leaseUpfrontVatDisplay
+                        })
+                      })
+                    ) : (
+                      t('upfrontDueToday', { amount: leaseUpfrontDisplay })
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
-          <button onClick={handleCompleteOrder} className="px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 flex items-center gap-x-2">
-            {t('completeBtn')}
-          </button>
+          {step === 1 ? (
+            <button
+              onClick={handleNextStep}
+              disabled={isSubmitting}
+              className="shrink-0 px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {t('nextBtn')}
+            </button>
+          ) : (
+            <div className="shrink-0 flex flex-col items-stretch gap-2 w-[148px]">
+              <button
+                onClick={handlePreviousStep}
+                disabled={isSubmitting}
+                className="px-4 py-2 border border-slate-600 text-slate-200 font-medium rounded-3xl text-xs hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {t('previousBtn')}
+              </button>
+              <button
+                onClick={handleCompleteOrder}
+                disabled={isSubmitting || vatBlocksCheckout}
+                className="px-4 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {t('completeBtn')}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

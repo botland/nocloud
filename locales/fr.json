@@ -131,6 +131,13 @@
     "vatPlaceholder": "Numéro de TVA / SIRET",
     "poPlaceholder": "Numéro de bon de commande (optionnel)",
     "billingAddress": "ADRESSE DE FACTURATION",
+    "deliveryAddress": "ADRESSE DE LIVRAISON",
+    "deliveryDifferentLabel": "L'adresse de livraison est différente de l'adresse de facturation",
+    "stepInfo": "Informations",
+    "stepPayment": "Paiement",
+    "nextBtn": "Suivant",
+    "previousBtn": "Précédent",
+    "processingPayment": "Préparation du paiement sécurisé…",
     "streetPlaceholder": "Adresse",
     "cityPlaceholder": "Ville",
     "postalPlaceholder": "Code postal",
@@ -145,6 +152,7 @@
     "totalToPay": "Total à payer aujourd'hui",
     "completeBtn": "Finaliser la commande",
     "validation": "Veuillez renseigner le nom de l'entreprise, l'adresse e-mail, l'adresse et la ville",
+    "validationDelivery": "Veuillez renseigner l'adresse et la ville de livraison",
     "countries": {
       "FR": "France",
       "DE": "Allemagne",
@@ -187,7 +195,13 @@
     "vatBreakdown": "{net}€ HT + {vat}€ TVA",
     "monthlyPaymentWithVat": "{amount}€/mois pendant {months} mois ({breakdown})",
     "oneTimeUpfrontDueTodayWithVat": "Acompte unique dû aujourd'hui : {amount}€ ({breakdown})",
-    "vatTreatment": "TRAITEMENT TVA"
+    "vatTreatment": "TRAITEMENT TVA",
+    "viesChecking": "Vérification du numéro de TVA via VIES…",
+    "viesValid": "Numéro de TVA vérifié (VIES)",
+    "viesValidWithName": "TVA vérifiée : {name}",
+    "viesInvalid": "Le numéro de TVA n'a pas pu être vérifié via VIES",
+    "viesUnavailable": "La vérification VIES est temporairement indisponible — réessayez dans un instant",
+    "viesStillChecking": "Veuillez attendre la fin de la vérification TVA avant de continuer."
   },
   "success": {
     "title": "Merci pour votre commande !",

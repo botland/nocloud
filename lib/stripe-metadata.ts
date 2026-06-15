@@ -15,6 +15,11 @@ export interface OrderMetadataInput {
   city?: string;
   postal?: string;
   country?: string;
+  deliveryDifferent?: boolean;
+  deliveryAddress?: string;
+  deliveryCity?: string;
+  deliveryPostal?: string;
+  deliveryCountry?: string;
 
   financing?: 'full' | 'lease' | string;
   services?: Array<{ name: string; price: number }>;
@@ -55,15 +60,45 @@ export function buildB2BMetadata(input: Pick<OrderMetadataInput, 'company' | 'va
   };
 }
 
+function addressJson(fields: { address?: string; city?: string; postal?: string; country?: string }) {
+  return JSON.stringify({
+    address: fields.address || '',
+    city: fields.city || '',
+    postal: fields.postal || '',
+    country: fields.country || '',
+  });
+}
+
 export function buildAddressJson(input: Pick<OrderMetadataInput, 'address' | 'city' | 'postal' | 'country'>) {
   if (!input.address && !input.city && !input.postal && !input.country) return {};
   return {
-    address: JSON.stringify({
-      address: input.address || '',
-      city: input.city || '',
-      postal: input.postal || '',
-      country: input.country || '',
-    }),
+    address: addressJson(input),
+  };
+}
+
+export function buildDeliveryAddressJson(
+  input: Pick<OrderMetadataInput, 'deliveryDifferent' | 'deliveryAddress' | 'deliveryCity' | 'deliveryPostal' | 'deliveryCountry' | 'address' | 'city' | 'postal' | 'country'>
+) {
+  const separate = input.deliveryDifferent === true;
+  const fields = separate
+    ? {
+        address: input.deliveryAddress || '',
+        city: input.deliveryCity || '',
+        postal: input.deliveryPostal || '',
+        country: input.deliveryCountry || input.country || '',
+      }
+    : {
+        address: input.address || '',
+        city: input.city || '',
+        postal: input.postal || '',
+        country: input.country || '',
+      };
+
+  if (!fields.address && !fields.city && !fields.postal && !fields.country) return {};
+
+  return {
+    delivery_address: addressJson(fields),
+    delivery_different_from_billing: separate ? 'true' : 'false',
   };
 }
 
@@ -76,6 +111,7 @@ export function buildOrderMetadata(input: OrderMetadataInput): Record<string, st
   const meta: Record<string, string> = {
     ...buildB2BMetadata(input),
     ...buildAddressJson(input),
+    ...buildDeliveryAddressJson(input),
     pricing_version: input.pricingVersion,
     locale: input.locale || 'en',
   };
@@ -101,6 +137,7 @@ export function buildOrderMetadata(input: OrderMetadataInput): Record<string, st
     if (
       v != null &&
       !['company','vatNumber','poNumber','address','city','postal','country',
+        'deliveryDifferent','deliveryAddress','deliveryCity','deliveryPostal','deliveryCountry',
         'financing','services','pricingVersion','locale','orderPlacedAt',
         'contractType','leaseMonths','leaseCancelAt','leaseUpfrontAmount',
         'leaseMonthlyAmount','leaseFinancedAmount'

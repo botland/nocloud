@@ -131,6 +131,13 @@
     "vatPlaceholder": "VAT / SIRET number",
     "poPlaceholder": "PO number (optional)",
     "billingAddress": "BILLING ADDRESS",
+    "deliveryAddress": "DELIVERY ADDRESS",
+    "deliveryDifferentLabel": "Delivery address is different from billing address",
+    "stepInfo": "Information",
+    "stepPayment": "Payment",
+    "nextBtn": "Next",
+    "previousBtn": "Previous",
+    "processingPayment": "Preparing secure payment…",
     "streetPlaceholder": "Street address",
     "cityPlaceholder": "City",
     "postalPlaceholder": "Postal code",
@@ -145,6 +152,7 @@
     "totalToPay": "Total to pay today",
     "completeBtn": "Complete order",
     "validation": "Please fill in company name, email, address and city",
+    "validationDelivery": "Please fill in the delivery address and city",
     "countries": {
       "FR": "France",
       "DE": "Germany",
@@ -187,7 +195,13 @@
     "vatBreakdown": "Net €{net} + VAT €{vat} (incl.)",
     "monthlyPaymentWithVat": "€{amount}/month for {months} months ({breakdown})",
     "oneTimeUpfrontDueTodayWithVat": "One-time upfront due today: €{amount} ({breakdown})",
-    "vatTreatment": "VAT TREATMENT"
+    "vatTreatment": "VAT TREATMENT",
+    "viesChecking": "Verifying VAT number with VIES…",
+    "viesValid": "VAT number verified (VIES)",
+    "viesValidWithName": "VAT verified: {name}",
+    "viesInvalid": "VAT number could not be verified via VIES",
+    "viesUnavailable": "VIES verification is temporarily unavailable — try again shortly",
+    "viesStillChecking": "Please wait for VAT verification to complete before continuing."
   },
   "success": {
     "title": "Thank you for your order!",
