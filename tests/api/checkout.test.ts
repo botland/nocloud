@@ -6,7 +6,8 @@ import { Resend } from 'resend'
 import {
   calculateLease,
   HARDWARE_PRICES,
-  SERVICE_PRICES,
+  getServicePrice,
+  SERVICE_PRICES_BY_TIER,
   LEASE_MIN,
   LEASE_MAX,
   PBI_MIN,
@@ -16,6 +17,7 @@ import {
   PRICING_VERSION,
 } from '@/lib/pricing'
 import type { CheckoutPayload } from '@/lib/types'
+import { resolveServicePrice, launchFreeUntilEpoch } from '@/lib/promotions'
 import { validateVatWithVies } from '@/lib/vies'
 
 // --- Mocks (hoist-safe pattern: vi.mock returns a stable constructor fn; we .mockImplementation per test) ---
@@ -71,11 +73,16 @@ function basePayload(overrides: Partial<CheckoutPayload> = {}): CheckoutPayload 
 }
 
 function withServices(payload: CheckoutPayload, keys: Array<'managedCare' | 'secureVaultBackup'> = ['managedCare']): CheckoutPayload {
-  const services = keys.map((key) => ({
-    name: key === 'managedCare' ? 'Managed Care' : 'SecureVault Backup',
-    price: SERVICE_PRICES[key],
-    key,
-  }))
+  const slug = payload.items[0].product?.slug || 'studio'
+  const services = keys.map((key) => {
+    const resolved = resolveServicePrice(key, slug)
+    return {
+      name: key === 'managedCare' ? 'Managed Care' : 'SecureVault Backup',
+      price: resolved.net,
+      listPrice: resolved.list,
+      key,
+    }
+  })
   const qty = payload.items[0].quantity || 1
   const svcTotal = services.reduce((s, sv) => s + sv.price * qty, 0)
   return {
@@ -104,7 +111,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
 
     // Re-create fresh mock instances for every test (prevents cross-test pollution)
     mockStripeInstance = {
-      customers: { create: vi.fn() },
+      customers: { create: vi.fn(), update: vi.fn() },
       invoices: { create: vi.fn(), finalizeInvoice: vi.fn(), retrieve: vi.fn(), update: vi.fn(), del: vi.fn(), voidInvoice: vi.fn() },
       invoiceItems: { create: vi.fn() },
       products: { create: vi.fn() },
@@ -127,6 +134,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
 
     // Default successful returns for common objects
     mockStripeInstance.customers.create.mockResolvedValue({ id: 'cus_test' })
+    mockStripeInstance.customers.update.mockResolvedValue({ id: 'cus_test' })
     mockStripeInstance.invoices.create.mockResolvedValue({ id: 'in_test' })
     mockStripeInstance.invoices.retrieve.mockResolvedValue({ id: 'inv0', status: 'draft', total: 0, amount_due: 0, subscription: 'sub_test' })
     mockStripeInstance.invoices.update.mockResolvedValue({})
@@ -173,7 +181,16 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     })
     expect(sessionCall.payment_method_types).toEqual(['card'])
     expect(sessionCall.customer).toBe('cus_test')
+    expect(mockStripeInstance.customers.update).toHaveBeenCalled()
+    expect(sessionCall.billing_address_collection).toBe('auto')
+    expect(sessionCall.customer_update?.address).toBe('auto')
+    expect(sessionCall.customer_update?.shipping).toBe('never')
+    expect(sessionCall.shipping_address_collection).toBeUndefined()
     expect(sessionCall.invoice_creation?.enabled).toBe(true)
+    expect(sessionCall.line_items[0].price_data.product_data.metadata.product_line_id).toBe(
+      `Studio@${PRICING_VERSION}`,
+    )
+    expect(sessionCall.line_items[0].price_data.product_data.metadata.serial_number).toBeTruthy()
     expect(sessionCall.invoice_creation?.invoice_data?.metadata).toMatchObject({
       financing: 'full',
       pricing_version: PRICING_VERSION,
@@ -190,6 +207,8 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(res.status).toBe(200)
     const call = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]
     expect(call.payment_method_types).toEqual(['sepa_debit'])
+    expect(call.billing_address_collection).toBe('required')
+    expect(call.customer_update?.address).toBe('auto')
   })
 
   it('full + sepa (over SEPA limit): returns 400 with helpful message', async () => {
@@ -207,7 +226,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
   it('full + invoice (with services): returns success+invoiceId, creates send_invoice + service subs + trial invoice updates + sends Resend (customer + admin)', async () => {
     const payload = withServices(basePayload({ paymentMethod: 'invoice', financing: 'full' }))
     const hw = HARDWARE_PRICES.studio
-    const svc = SERVICE_PRICES.managedCare
+    const svcList = getServicePrice('managedCare', 'studio')
     const res = await POST(makeRequest(payload))
     const json = await res.json()
 
@@ -232,7 +251,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
         collection_method: 'send_invoice',
         items: expect.arrayContaining([
           expect.objectContaining({
-            price_data: expect.objectContaining({ unit_amount: svc * 100, recurring: { interval: 'month' } }),
+            price_data: expect.objectContaining({ unit_amount: svcList * 100, recurring: { interval: 'month' } }),
           }),
         ]),
       })
@@ -308,7 +327,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
   it('lease + card: creates lease sub (with trial + cancel_at) + pre-creates service subs + upfront Checkout session (returns url); no route-level Resend', async () => {
     const payload = withServices(basePayload({ paymentMethod: 'stripe', financing: 'lease' }), ['managedCare'])
     const hw = HARDWARE_PRICES.studio
-    const lease = calculateLease(hw, SERVICE_PRICES.managedCare)
+    const lease = calculateLease(hw, resolveServicePrice('managedCare', 'studio').net)
     expect(lease.isAllowed).toBe(true)
 
     const res = await POST(makeRequest(payload))
@@ -339,8 +358,22 @@ describe('api/checkout (functional contract tests - black box over payload + Str
       trial_end: expect.any(Number),
       payment_behavior: 'default_incomplete',
     })
-    expect(svcSubCall.items[0].price_data.unit_amount).toBe(SERVICE_PRICES.managedCare * 100)
-    expect(svcSubCall.metadata).toMatchObject({ service: 'Managed Care', is_lease_service: 'true' })
+    expect(svcSubCall.items[0].price_data.unit_amount).toBe(getServicePrice('managedCare', 'studio') * 100)
+    expect(svcSubCall.trial_end).toBe(launchFreeUntilEpoch('2027-01-01'))
+    expect(svcSubCall.metadata).toMatchObject({
+      service: 'Managed Care',
+      is_lease_service: 'true',
+      host_serial_number: expect.any(String),
+      product_line_id: `Managed-Care@${PRICING_VERSION}`,
+    })
+    expect(mockStripeInstance.products.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          host_serial_number: expect.any(String),
+          product_line_id: `Managed-Care@${PRICING_VERSION}`,
+        }),
+      }),
+    )
 
     // The 0-trial-invoice cleanup (del/void/label) runs after each sub create (defensive, in a try/catch).
     // In the test mock the create responses include a draft €0 latest_invoice, so retrieve + del are exercised.
@@ -379,9 +412,10 @@ describe('api/checkout (functional contract tests - black box over payload + Str
         }),
       })
     )
-    expect(mockStripeInstance.invoiceItems.create).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: lease.upfrontAmount * 100 })
-    )
+    const upfrontItemCall = mockStripeInstance.invoiceItems.create.mock.calls[0][0]
+    expect(upfrontItemCall.amount).toBe(lease.upfrontAmount * 100)
+    expect(upfrontItemCall.metadata?.serial_number).toBeTruthy()
+    expect(upfrontItemCall.metadata?.product_line_id).toBe(`Studio@${PRICING_VERSION}`)
 
     // Lease-specific registered emails (customer + admin)
     expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
@@ -464,9 +498,9 @@ describe('api/checkout (functional contract tests - black box over payload + Str
         {
           id: 1,
           product: { id: 0, slug: 'edge', name: 'Edge', tier: '', price: HARDWARE_PRICES.edge, description: '' },
-          services: [{ name: 'Managed Care', price: SERVICE_PRICES.managedCare, key: 'managedCare' }],
+          services: [{ name: 'Managed Care', price: SERVICE_PRICES_BY_TIER.edge.managedCare, key: 'managedCare' }],
           quantity: 2,
-          totalPrice: HARDWARE_PRICES.edge * 2 + SERVICE_PRICES.managedCare * 2,
+          totalPrice: HARDWARE_PRICES.edge * 2 + SERVICE_PRICES_BY_TIER.edge.managedCare * 2,
         },
         {
           id: 2,
@@ -485,12 +519,17 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]
     // 2*edge + 1*studio hardware
     const expectedHardware = (HARDWARE_PRICES.edge * 2 + HARDWARE_PRICES.studio) * 100
-    expect(sessionCall.line_items[0].quantity).toBe(2)
-    expect(sessionCall.line_items[1].quantity).toBe(1)
+    expect(sessionCall.line_items).toHaveLength(3)
+    expect(sessionCall.line_items.every((li: any) => li.quantity === 1)).toBe(true)
     // Services are only in metadata for the full-card path (provisioned in webhook)
     const servicesMeta = JSON.parse(sessionCall.metadata.services)
-    expect(servicesMeta.length).toBe(1)
-    expect(servicesMeta[0].price).toBe(SERVICE_PRICES.managedCare * 2)
+    expect(servicesMeta.length).toBe(2)
+    expect(servicesMeta[0].p).toBe(0)
+    expect(servicesMeta[0].lp).toBe(SERVICE_PRICES_BY_TIER.edge.managedCare)
+    expect(servicesMeta[0].lfu).toBe('2027-01-01')
+    expect(servicesMeta[0].sn).toMatch(/^NC-EDGE-/)
+    expect(servicesMeta[0].k).toBe('managedCare')
+    expect(servicesMeta[1].sn).not.toBe(servicesMeta[0].sn)
   })
 
   // ---------- Hardware customization round-trip (uses the shared pricing component) ----------
@@ -521,7 +560,8 @@ describe('api/checkout (functional contract tests - black box over payload + Str
 
     const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]
     // line item unit must reflect the full computed price (base + options)
-    expect(sessionCall.line_items[0].price_data.unit_amount).toBe(6040 * 100)
+    // Edge launch promo (10% off) applies in Jun 2026 test window: 6040 → 5436
+    expect(sessionCall.line_items[0].price_data.unit_amount).toBe(5436 * 100)
     expect(sessionCall.line_items[0].quantity).toBe(1)
 
     // hardware meta must be present and carry the chosen labels + extra

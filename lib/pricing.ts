@@ -29,7 +29,7 @@
  * (ensures consistency and eliminates duplication).
  */
 
-export const PRICING_VERSION = '2026-06-13-tier-spec-options';
+export const PRICING_VERSION = '2026-06-15-promotions-launch';
 // Bump this (and document the change) whenever any price, threshold, lease rule, or invoice policy changes.
 // It is passed through to Stripe session metadata and surfaced in order emails.
 
@@ -44,10 +44,22 @@ export const HARDWARE_PRICES = {
   forge: 14900,
 } as const;
 
+export type HardwareSlug = keyof typeof HARDWARE_PRICES;
+
+/** Studio-tier monthly prices (legacy flat reference + marketing fallback). */
 export const SERVICE_PRICES = {
   managedCare: 99,
   secureVaultBackup: 49,
 } as const;
+
+export type ServiceKey = keyof typeof SERVICE_PRICES;
+
+/** Authoritative recurring service prices per hardware tier (EUR / month / appliance). */
+export const SERVICE_PRICES_BY_TIER: Record<HardwareSlug, Record<ServiceKey, number>> = {
+  edge: { managedCare: 58, secureVaultBackup: 29 },
+  studio: { managedCare: 99, secureVaultBackup: 49 },
+  forge: { managedCare: 149, secureVaultBackup: 79 },
+};
 
 export const LEASE_MAX = 200000;            // EUR - leasing not available above this hardware total
 export const LEASE_MIN = 5000;              // EUR - leasing not available below this hardware total
@@ -73,16 +85,23 @@ export const UPFRONT_PERCENT = 20;          // % of hardware charged as upfront 
 // (via leaseDetails) *and* collected as a separate one-time charge (in addition to
 // the recurring subscription) when a lease order is created via Stripe.
 
-export type HardwareSlug = keyof typeof HARDWARE_PRICES;
-export type ServiceKey = keyof typeof SERVICE_PRICES;
-
 export function getHardwarePrice(slug: string): number {
   const prices = HARDWARE_PRICES as Record<string, number>;
   return prices[slug] ?? 0;
 }
 
-export function getServicePrice(key: ServiceKey): number {
+export function getServicePrice(key: ServiceKey, hardwareSlug?: HardwareSlug | string): number {
+  if (hardwareSlug && hardwareSlug in SERVICE_PRICES_BY_TIER) {
+    return SERVICE_PRICES_BY_TIER[hardwareSlug as HardwareSlug][key] ?? 0;
+  }
   return SERVICE_PRICES[key] ?? 0;
+}
+
+/** Lowest base catalog tier price (before promotions). Prefer resolveMinServicePrice for UI. */
+export function getMinServicePrice(key: ServiceKey): number {
+  return Math.min(
+    ...Object.values(SERVICE_PRICES_BY_TIER).map((tier) => tier[key] ?? Infinity),
+  );
 }
 
 export interface LeaseDetails {

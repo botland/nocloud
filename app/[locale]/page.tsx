@@ -8,7 +8,10 @@ import CartSidebar from '@/components/CartSidebar';
 import CheckoutModal from '@/components/CheckoutModal';
 import Container from '@/components/Container';
 import { Product, CartItem, CheckoutFormDraft } from '@/lib/types';
-import { HARDWARE_PRICES, SERVICE_PRICES, calculateHardwarePrice } from '@/lib/pricing';
+import { HARDWARE_PRICES, calculateHardwarePrice } from '@/lib/pricing';
+import { resolveHardwarePrice, resolveMinServicePrice } from '@/lib/promotions';
+import PromoBadge from '@/components/PromoBadge';
+import PromoPrice from '@/components/PromoPrice';
 import { BRAND_NAME, BRAND_TLD, BRAND_SLUG, BRAND_DISPLAY, getBrandEmail } from '@/lib/brand';
 import LogoIcon from '@/icons/logo.svg';
 
@@ -115,12 +118,18 @@ export default function LocaleHome() {
     }
   }, []);
 
-  const products: Product[] = baseProducts.map((base) => ({
-    ...base,
-    name: t(`products.items.${base.slug}.name`),
-    tier: t(`products.items.${base.slug}.tier`),
-    description: t(`products.items.${base.slug}.description`),
-  }));
+  const products: Product[] = baseProducts.map((base) => {
+    const resolved = resolveHardwarePrice(base.slug);
+    return {
+      ...base,
+      price: resolved.net,
+      listPrice: resolved.list > resolved.net ? resolved.list : undefined,
+      promotionBadge: resolved.badge,
+      name: t(`products.items.${base.slug}.name`),
+      tier: t(`products.items.${base.slug}.tier`),
+      description: t(`products.items.${base.slug}.description`),
+    };
+  });
 
   const openConfigurator = (product: Product, editItem?: CartItem) => {
     setSelectedProduct(product);
@@ -165,9 +174,10 @@ export default function LocaleHome() {
       prev.map((item) => {
         if (item.id === id) {
           // Use the shared calculator when customization is present (single logical component).
-          const unit = item.customization
-            ? calculateHardwarePrice(item.product.slug, item.customization)
-            : item.product.price;
+          const unit = resolveHardwarePrice(
+            item.product.slug,
+            item.customization,
+          ).net;
           const newTotal = unit * newQuantity;
           return { ...item, quantity: newQuantity, totalPrice: newTotal };
         }
@@ -353,14 +363,30 @@ export default function LocaleHome() {
           </div>
           
           <div className="grid md:grid-cols-2 gap-6 max-w-4xl">
-            <div className="bg-slate-950 border border-slate-700 p-7 rounded-3xl">
+            <div className="bg-slate-950 border border-slate-700 p-7 rounded-3xl relative">
+              {(() => {
+                const mc = resolveMinServicePrice('managedCare');
+                return mc.badge ? <PromoBadge badge={mc.badge} /> : null;
+              })()}
               <div className="flex gap-x-4">
                 <div className="w-11 h-11 rounded-2xl bg-emerald-900/30 text-emerald-400 flex items-center justify-center flex-shrink-0">
                   <i className="fa-solid fa-headset text-2xl"></i>
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-xl">{t('services.managedCare')}</div>
-                  <div className="text-emerald-400 font-medium">{t('common.price', { amount: SERVICE_PRICES.managedCare })}{t('common.perMonthLong')}</div>
+                  {(() => {
+                    const mc = resolveMinServicePrice('managedCare');
+                    return (
+                      <div className="text-emerald-400 font-medium mt-1 flex items-baseline gap-1.5 flex-wrap">
+                        <span className="text-xs text-slate-400">{t('products.from')}</span>
+                        <PromoPrice
+                          amount={mc.net}
+                          listAmount={mc.list > mc.net ? mc.list : undefined}
+                          suffix={t('common.perMonthLong')}
+                        />
+                      </div>
+                    );
+                  })()}
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc1')}</li>
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-emerald-400 text-xs mt-1"></i> {t('services.managedCareDesc2')}</li>
@@ -370,14 +396,30 @@ export default function LocaleHome() {
               </div>
             </div>
             
-            <div className="bg-slate-950 border border-slate-700 p-7 rounded-3xl">
+            <div className="bg-slate-950 border border-slate-700 p-7 rounded-3xl relative">
+              {(() => {
+                const vault = resolveMinServicePrice('secureVaultBackup');
+                return vault.badge ? <PromoBadge badge={vault.badge} /> : null;
+              })()}
               <div className="flex gap-x-4">
                 <div className="w-11 h-11 rounded-2xl bg-sky-900/30 text-sky-400 flex items-center justify-center flex-shrink-0">
                   <i className="fa-solid fa-shield-halved text-2xl"></i>
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-xl">{t('services.secureVaultBackup')}</div>
-                  <div className="text-sky-400 font-medium">{t('common.price', { amount: SERVICE_PRICES.secureVaultBackup })}{t('common.perMonthLong')}</div>
+                  {(() => {
+                    const vault = resolveMinServicePrice('secureVaultBackup');
+                    return (
+                      <div className="text-sky-400 font-medium mt-1 flex items-baseline gap-1.5 flex-wrap">
+                        <span className="text-xs text-slate-400">{t('products.from')}</span>
+                        <PromoPrice
+                          amount={vault.net}
+                          listAmount={vault.list > vault.net ? vault.list : undefined}
+                          suffix={t('common.perMonthLong')}
+                        />
+                      </div>
+                    );
+                  })()}
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc1')}</li>
                     <li className="flex gap-x-2"><i className="fa-solid fa-check text-sky-400 text-xs mt-1"></i> {t('services.secureVaultBackupDesc2')}</li>

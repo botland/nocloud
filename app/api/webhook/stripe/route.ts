@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { DEBUG_PAYMENTS } from '@/lib/pricing';
-import { createFullServiceSubscriptions } from '@/lib/create-service-subscriptions';
+import {
+  createFullServiceSubscriptions,
+  createRecurringServiceSubscription,
+  servicesFromOrderMetadata,
+} from '@/lib/create-service-subscriptions';
 import {
   sendOrderConfirmationCustomerEmail,
   sendAdminOrderNotificationEmail,
@@ -86,13 +90,13 @@ export async function POST(request: NextRequest) {
     const grossTotal = metadata.gross_total ? parseFloat(String(metadata.gross_total)) : undefined;
 
     let servicesStr = 'None';
-    let servicesArray: Array<{ name: string; price: number }> = [];
-    try {
-      if (metadata.services) {
-        servicesArray = JSON.parse(metadata.services);
-        servicesStr = servicesArray.map(s => `${s.name} (€${s.price}/mo)`).join(', ') || 'None';
-      }
-    } catch {}
+    const servicesArray = servicesFromOrderMetadata(metadata.services, pricingVersion);
+    if (servicesArray.length > 0) {
+      servicesStr = servicesArray.map((s) => {
+        const host = s.hostSerialNumber ? `, appliance S/N ${s.hostSerialNumber}` : '';
+        return `${s.name} (€${s.price}/mo${host})`;
+      }).join(', ');
+    }
     let hardwareStr = 'Standard';
     try {
       if (metadata.hardware) {
@@ -180,7 +184,7 @@ export async function POST(request: NextRequest) {
       if (DEBUG_PAYMENTS) {
         console.log('[PAYMENT DEBUG] delegating to createFullServiceSubscriptions (webhook path) for', orderId);
       }
-      await createFullServiceSubscriptions(stripe, session, servicesArray);
+      await createFullServiceSubscriptions(stripe, session, metadata.services!, pricingVersion);
     }
 
     // Handle pre-created lease subscription (from the new lease flow where upfront is paid separately
@@ -318,51 +322,35 @@ export async function POST(request: NextRequest) {
 
               console.log(`Created lease recurring sub ${sub.id} on payment of upfront invoice ${invoice.id} (trial ends ~1 month after payment)`);
 
-              // Also create separate perpetual service subs.
-              let servicesArray: Array<{ name: string; price: number }> = [];
-              try {
-                if (invMeta.services) servicesArray = JSON.parse(invMeta.services);
-              } catch {}
+              const pricingVer = invMeta.pricing_version || invMeta.pricingVersion || 'unknown';
+              const servicesArray = servicesFromOrderMetadata(invMeta.services, pricingVer);
               console.log(`Lease paid for ${invoice.id}: creating ${servicesArray.length} service subs (perpetual, independent of lease term)`);
-              for (const s of servicesArray) {
+              for (const svc of servicesArray) {
                 try {
-                  const serviceProduct = await stripe.products.create({ name: s.name });
-                  const svcSubParams: any = {
-                    customer: customerId,
-                    items: [{
-                      price_data: {
-                        currency: 'eur',
-                        product: serviceProduct.id,
-                        unit_amount: Math.round(s.price * 100),
-                        recurring: { interval: 'month' },
-                      },
-                    }],
+                  const svcSub = await createRecurringServiceSubscription(stripe, customerId, svc, {
                     trial_end: trialEnd,
+                    collection_method: isAuto ? 'charge_automatically' : 'send_invoice',
+                    ...(isAuto && defaultPaymentMethod
+                      ? { default_payment_method: defaultPaymentMethod }
+                      : {}),
+                    ...(!isAuto ? { days_until_due: 30 } : {}),
                     metadata: {
                       lease_upfront_invoice_paid: invoice.id,
-                      service: s.name,
                       is_lease_service: 'true',
                       order_placed_at: orderTs.toString(),
                     },
-                  };
-                  if (isAuto) {
-                    svcSubParams.collection_method = 'charge_automatically';
-                    if (defaultPaymentMethod) svcSubParams.default_payment_method = defaultPaymentMethod;
-                  } else {
-                    svcSubParams.collection_method = 'send_invoice';
-                    svcSubParams.days_until_due = 30;
-                  }
-                  const svcSub = await stripe.subscriptions.create(svcSubParams);
+                    expand: ['latest_invoice'],
+                  });
 
                   const latestInv = (svcSub as any).latest_invoice;
                   const invId = latestInv ? (typeof latestInv === 'string' ? latestInv : latestInv.id) : undefined;
                   if (invId) {
                     await handleSubscriptionTrialInvoice(stripe, invId, `lease service sub ${svcSub.id}`, {
-                      description: `Trial period for ${s.name} (lease service subscription ${svcSub.id}). Recurring payments for this service start after trial (~1 month after upfront payment ${invoice.id}). Services continue independently after the lease term ends.`,
+                      description: `Trial period for ${svc.name} (appliance S/N ${svc.hostSerialNumber}; lease service subscription ${svcSub.id}). Recurring payments start after trial (~1 month after upfront payment ${invoice.id}). Services continue independently after the lease term ends.`,
                       footer: 'This service subscription continues after the lease hardware payments end.',
                     });
                   }
-                  console.log(`Created lease service sub ${svcSub.id} for "${s.name}" on payment of ${invoice.id}`);
+                  console.log(`Created lease service sub ${svcSub.id} for "${svc.name}" (S/N ${svc.hostSerialNumber}) on payment of ${invoice.id}`);
                 } catch (svcErr) {
                   console.error('Failed to create lease service sub on upfront payment', svcErr);
                 }
@@ -506,13 +494,13 @@ export async function POST(request: NextRequest) {
     const isFr = orderLocale === 'fr';
 
     let servicesStr = 'None';
-    let servicesArray: Array<{ name: string; price: number }> = [];
-    try {
-      if (metadata.services) {
-        servicesArray = JSON.parse(metadata.services);
-        servicesStr = servicesArray.map(s => `${s.name} (€${s.price}/mo)`).join(', ') || 'None';
-      }
-    } catch {}
+    const leaseServicesArray = servicesFromOrderMetadata(metadata.services, pricingVersion);
+    if (leaseServicesArray.length > 0) {
+      servicesStr = leaseServicesArray.map((s) => {
+        const host = s.hostSerialNumber ? `, appliance S/N ${s.hostSerialNumber}` : '';
+        return `${s.name} (€${s.price}/mo${host})`;
+      }).join(', ');
+    }
     let hardwareStr = 'Standard';
     try {
       if (metadata.hardware) {

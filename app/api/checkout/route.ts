@@ -18,12 +18,29 @@ import {
   calculateHardwarePrice,
   formatHardwareCustomization,
 } from '@/lib/pricing';
-import { createB2BStripeCustomer, buildInvoiceShippingDetails } from '@/lib/stripe-customer';
+import {
+  createB2BStripeCustomer,
+  syncB2BStripeCustomer,
+  buildCheckoutAddressPrefillParams,
+  buildInvoiceShippingDetails,
+  type B2BCustomerParams,
+} from '@/lib/stripe-customer';
+import {
+  resolveOrderLineInstances,
+  compactServicesForMetadata,
+  buildHardwareCheckoutLineItems,
+  buildLeaseUpfrontCheckoutLineItems,
+  formatHardwareLineDescription,
+  formatLeaseUpfrontLineDescription,
+  hardwareLineItemMetadata,
+  leaseUpfrontNetPerUnit,
+} from '@/lib/product-instances';
+import { createRecurringServiceSubscription } from '@/lib/create-service-subscriptions';
 import { sendRegisteredInvoiceCustomerEmail, sendAdminInvoiceRegisteredEmail } from '@/lib/emails';
 import { buildPaymentContext, validatePaymentEligibility, resolvePricesAndServices } from '@/lib/payment-flow';
 import { cleanupZeroTrialInvoice, handleSubscriptionTrialInvoice, buildCheckoutInvoiceCreation } from '@/lib/stripe-invoices';
 import { buildOrderMetadata } from '@/lib/stripe-metadata';
-import { createMonthlyRecurringPriceDataItem } from '@/lib/stripe-subscriptions';
+
 import { BRAND_NAME } from '@/lib/brand';
 import { determineVatTreatment, computeVatAmounts, validateVatNumber, DEBUG_VAT as DEBUG_VAT_TREATMENT } from '@/lib/vat';
 import { validateVatWithVies } from '@/lib/vies';
@@ -67,6 +84,8 @@ export async function POST(request: NextRequest) {
     // resolve now also returns resolved hardware customizations (with labels + extras) via the
     // single logical component (calculateHardwarePrice) when items carry customization.
     const { hardwareTotal, servicesMonthly, resolvedServicesForMeta, resolvedHardwareForMeta = [] } = resolvePricesAndServices(items || []);
+    const { hardwareInstances, serviceInstances } = resolveOrderLineInstances(items || [], PRICING_VERSION);
+    const compactServices = compactServicesForMetadata(serviceInstances);
 
     if (DEBUG_PAYMENTS) {
       console.log('[PAYMENT DEBUG] checkout received payload', {
@@ -76,7 +95,8 @@ export async function POST(request: NextRequest) {
         itemsCount: (items || []).length,
         servicesInItems: (items || []).reduce((n: number, it: any) => n + ((it.services || []).length || 0), 0),
         resolvedServicesForMetaLen: resolvedServicesForMeta.length,
-        resolvedServicesForMeta,
+        serviceInstancesLen: serviceInstances.length,
+        compactServices,
         resolvedHardwareForMetaLen: resolvedHardwareForMeta.length,
         resolvedHardwareForMeta,
         hardwareTotal,
@@ -136,6 +156,7 @@ export async function POST(request: NextRequest) {
       servicesMonthly,
       hardwareTotal,
       recurringPaymentMethod: recurringPaymentMethod as any,
+      hasRecurringServices: serviceInstances.length > 0,
     });
 
     if (DEBUG_PAYMENTS) {
@@ -294,6 +315,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const vatNoteForLines = chargesVat ? ` (VAT ${Math.round(effectiveRate * 100)}% incl.)` : '';
+
+    const prepareHostedCheckout = async (
+      checkoutPm: 'stripe' | 'sepa',
+      customerId?: string,
+    ): Promise<Pick<Stripe.Checkout.SessionCreateParams, 'billing_address_collection' | 'customer_update' | 'shipping_address_collection'>> => {
+      if (customerId) {
+        try {
+          await syncB2BStripeCustomer(stripe, customerId, customerParams as B2BCustomerParams);
+        } catch (syncErr) {
+          console.warn('Could not sync Stripe customer before hosted checkout', syncErr);
+        }
+      }
+      return buildCheckoutAddressPrefillParams(checkoutPm, deliveryIsDifferent);
+    };
+
     // Grossing helpers (applied only to amounts sent to Stripe for charging/invoicing).
     // Pricing/resolver always returns net base. Gross = overlay using the resolved rate.
     const grossUnit = (net: number) => (chargesVat && effectiveRate > 0 ? computeVatAmounts(net, effectiveRate, true).gross : net);
@@ -355,7 +392,7 @@ export async function POST(request: NextRequest) {
             poNumber,
             ...addressMetaFields,
             financing: 'lease',
-            services: resolvedServicesForMeta,
+            services: compactServices,
             hardware: resolvedHardwareForMeta,
             pricingVersion: PRICING_VERSION,
             locale,
@@ -378,15 +415,22 @@ export async function POST(request: NextRequest) {
           }),
         });
 
-        await stripe.invoiceItems.create({
-          customer: stripeCustomerId,
-          invoice: upfrontInvoice.id,
-          amount: Math.round(grossUnit(lease.upfrontAmount) * 100),
-          currency: 'eur',
-          description: `Upfront payment (${UPFRONT_PERCENT}%) for leased ${BRAND_NAME} appliance${chargesVat ? ` (VAT ${Math.round(effectiveRate*100)}% incl.)` : ''}`,
-        });
+        for (const inst of hardwareInstances) {
+          const upfrontNet = leaseUpfrontNetPerUnit(inst, UPFRONT_PERCENT);
+          await stripe.invoiceItems.create({
+            customer: stripeCustomerId,
+            invoice: upfrontInvoice.id,
+            amount: Math.round(grossUnit(upfrontNet) * 100),
+            currency: 'eur',
+            description: formatLeaseUpfrontLineDescription(inst, UPFRONT_PERCENT, { vatNote: vatNoteForLines }),
+            metadata: {
+              ...hardwareLineItemMetadata(inst),
+              line_type: 'lease_upfront',
+            },
+          });
+        }
 
-        const hasRecurringAuto = resolvedServicesForMeta.length > 0 && recurringPaymentMethod && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
+        const hasRecurringAuto = serviceInstances.length > 0 && recurringPaymentMethod && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
         let leaseSubId;
         let leaseServiceSubIds: string[] = [];
         let setupSessionUrl;
@@ -419,7 +463,7 @@ export async function POST(request: NextRequest) {
               poNumber,
               ...addressMetaFields,
               financing: 'lease',
-              services: resolvedServicesForMeta,
+              services: compactServices,
             hardware: resolvedHardwareForMeta,
               pricingVersion: PRICING_VERSION,
               locale,
@@ -454,34 +498,29 @@ export async function POST(request: NextRequest) {
           }
           // pre-create services
           leaseServiceSubIds = [];
-          for (const s of resolvedServicesForMeta) {
+          for (const svc of serviceInstances) {
             try {
-              const item = await createMonthlyRecurringPriceDataItem(stripe, s.name, s.price);
-              const subParams2: any = {
-                customer: stripeCustomerId,
+              const svcSub = await createRecurringServiceSubscription(stripe, stripeCustomerId!, svc, {
+                grossUnit,
                 collection_method: 'charge_automatically',
                 trial_end: trialEnd,
                 payment_behavior: 'default_incomplete',
-                items: [item],
                 metadata: {
-                  service: s.name,
                   is_lease_service: 'true',
                   order_placed_at: orderPlacedAt.toString(),
                   main_invoice_id: upfrontInvoice.id,
                   recurring_payment_method: recurringPaymentMethod,
                 },
                 expand: ['latest_invoice'],
-              };
-              const svcSub = await stripe.subscriptions.create(subParams2);
+              });
               leaseServiceSubIds.push(svcSub.id);
 
-              // defensive 0 cleanup (shared helper)
               let latestInv = (svcSub as any).latest_invoice;
               let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
               if (invId) {
                 await cleanupZeroTrialInvoice(stripe, invId, `lease service sub ${svcSub.id} (hybrid)`);
               }
-              console.log(`Pre-created lease service sub ${svcSub.id} for "${s.name}" (hybrid invoice + recurring ${recurringPaymentMethod}; visible in trialing; PM attached after setup)`);
+              console.log(`Pre-created lease service sub ${svcSub.id} for "${svc.name}" (S/N ${svc.hostSerialNumber}; hybrid invoice + recurring ${recurringPaymentMethod})`);
             } catch (e) {
               console.error('Failed to pre-create lease service sub (lease invoice hybrid)', e);
             }
@@ -489,6 +528,25 @@ export async function POST(request: NextRequest) {
           // now create setup with the pre-created ids (so attach logic on setup.completed can find and attach PM)
           const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
             recurringPaymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
+          const leaseHybridSetupMeta = buildOrderMetadata({
+            company,
+            vatNumber,
+            poNumber,
+            ...addressMetaFields,
+            financing: 'lease',
+            services: compactServices,
+            hardware: resolvedHardwareForMeta,
+            customer_email: email || 'N/A',
+            pricingVersion: PRICING_VERSION,
+            locale,
+            orderPlacedAt,
+            main_invoice_id: upfrontInvoice.id,
+            recurring_payment_method: recurringPaymentMethod,
+            lease_subscription_id: leaseSubId,
+            lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
+            is_lease_recurring_setup: 'true',
+            ...vatMeta,
+          });
           const setupSession = await stripe.checkout.sessions.create({
             payment_method_types: pmTypes,
             mode: 'setup',
@@ -496,25 +554,8 @@ export async function POST(request: NextRequest) {
             success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
             locale,
-            metadata: buildOrderMetadata({
-              company,
-              vatNumber,
-              poNumber,
-              ...addressMetaFields,
-              financing: 'lease',
-              services: resolvedServicesForMeta,
-              hardware: resolvedHardwareForMeta,
-              customer_email: email || 'N/A',
-              pricingVersion: PRICING_VERSION,
-              locale,
-              orderPlacedAt,
-              main_invoice_id: upfrontInvoice.id,
-              recurring_payment_method: recurringPaymentMethod,
-              lease_subscription_id: leaseSubId,
-              lease_service_sub_ids: JSON.stringify(leaseServiceSubIds),
-              is_lease_recurring_setup: 'true',
-              ...vatMeta,
-            }),
+            metadata: leaseHybridSetupMeta,
+            ...(await prepareHostedCheckout(recurringPaymentMethod as 'stripe' | 'sepa', stripeCustomerId)),
           });
           setupSessionUrl = setupSession.url;
         }
@@ -599,7 +640,7 @@ export async function POST(request: NextRequest) {
             poNumber,
             ...addressMetaFields,
             financing: 'lease',
-            services: resolvedServicesForMeta,
+            services: compactServices,
             hardware: resolvedHardwareForMeta,
             pricingVersion: PRICING_VERSION,
             locale,
@@ -628,47 +669,30 @@ export async function POST(request: NextRequest) {
           await cleanupZeroTrialInvoice(stripe, invId, `lease hardware sub ${subscription.id}`);
         }
 
-        if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] lease: pre-creating', resolvedServicesForMeta.length, 'service subs (for card/sepa lease)');
-        // Pre-create the perpetual service subs early (like the lease hardware sub), in trialing with default_incomplete.
-        // They will get the default PM attached in the webhook after the upfront payment.
-        // This ensures the user sees the service subs immediately after placing the lease order.
+        if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] lease: pre-creating', serviceInstances.length, 'service subs (for card/sepa lease)');
         let leaseServiceSubIds: string[] = [];
-        for (const s of resolvedServicesForMeta) {
+        for (const svc of serviceInstances) {
           try {
-            const serviceProduct = await stripe.products.create({ name: s.name });
-            const subParams2: any = {
-              customer: stripeCustomerId,
+            const svcSub = await createRecurringServiceSubscription(stripe, stripeCustomerId!, svc, {
+              grossUnit,
               collection_method: 'charge_automatically',
               trial_end: orderPlacedAt + 32 * 24 * 3600,
               payment_behavior: 'default_incomplete',
-              items: [{
-                price_data: {
-                  currency: 'eur',
-                  product: serviceProduct.id,
-                  unit_amount: Math.round(grossUnit(s.price) * 100),
-                  recurring: { interval: 'month' },
-                },
-              }],
               metadata: {
-                service: s.name,
                 is_lease_service: 'true',
                 order_placed_at: orderPlacedAt.toString(),
               },
               expand: ['latest_invoice'],
-            };
-            const svcSub = await stripe.subscriptions.create(subParams2);
+            });
             leaseServiceSubIds.push(svcSub.id);
 
-            // Note: we no longer rely on trial_end + 0-trial-invoice cleanup for the "1 month after order"
-            // delay on lease service subs. The delay is now via billing_cycle_anchor...
-            // Defensive cleanup kept for safety (helper will log-and-skip if already finalized).
             let latestInv = (svcSub as any).latest_invoice;
             let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
             if (invId) {
               await cleanupZeroTrialInvoice(stripe, invId, `lease service sub ${svcSub.id}`);
             }
 
-            console.log(`Pre-created lease service sub ${svcSub.id} for "${s.name}" (will attach PM after upfront payment; visible immediately; billing starts ~1mo after order via anchor)`);
+            console.log(`Pre-created lease service sub ${svcSub.id} for "${svc.name}" (S/N ${svc.hostSerialNumber}; PM attached after upfront payment)`);
           } catch (e) {
             console.error('Failed to pre-create lease service sub in route', e);
           }
@@ -684,7 +708,7 @@ export async function POST(request: NextRequest) {
           poNumber,
           ...addressMetaFields,
           financing: 'lease',
-          services: resolvedServicesForMeta,
+          services: compactServices,
           hardware: resolvedHardwareForMeta,
           customer_email: email || 'N/A',
           pricingVersion: PRICING_VERSION,
@@ -705,17 +729,12 @@ export async function POST(request: NextRequest) {
         const upfrontSession = await stripe.checkout.sessions.create({
           payment_method_types: pmTypes,
           mode: 'payment',
-          line_items: [{
-            price_data: {
-              currency: 'eur',
-              product_data: {
-                name: `${BRAND_NAME} Appliance Lease Upfront (${UPFRONT_PERCENT}%)`,
-                description: `Due today. Recurring monthly lease payments start in approximately 1 month.${chargesVat ? ` VAT ${Math.round(effectiveRate*100)}% incl.` : ''}`,
-              },
-              unit_amount: Math.round(grossUnit(lease.upfrontAmount) * 100),
-            },
-            quantity: 1,
-          }],
+          line_items: buildLeaseUpfrontCheckoutLineItems(
+            hardwareInstances,
+            grossUnit,
+            UPFRONT_PERCENT,
+            { vatNote: vatNoteForLines },
+          ),
           customer: stripeCustomerId,
           success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
@@ -732,6 +751,7 @@ export async function POST(request: NextRequest) {
           payment_intent_data: {
             setup_future_usage: 'off_session',
           },
+          ...(await prepareHostedCheckout(paymentMethod as 'stripe' | 'sepa', stripeCustomerId)),
         });
 
         return NextResponse.json({ url: upfrontSession.url });
@@ -775,7 +795,7 @@ export async function POST(request: NextRequest) {
           poNumber,
           ...addressMetaFields,
           financing,
-          services: resolvedServicesForMeta,
+          services: compactServices,
           hardware: resolvedHardwareForMeta,
           customer_email: email || 'N/A',
           pricingVersion: PRICING_VERSION,
@@ -785,30 +805,20 @@ export async function POST(request: NextRequest) {
         }),
       });
 
-      // Add hardware line items (one-time). (Services are never on the initial Net-30 invoice when the user
-      // chose a card/SEPA method for recurring inside the invoice box; they are handled via automatic subs.)
-      for (const item of (items || [])) {
-        const qty = item.quantity || 1;
-        const slug = item.product?.slug as string | undefined;
-        // Authoritative unit price via the single logical component (respects customization + per-tier option prices).
-        const unitNet = slug && item.customization
-          ? calculateHardwarePrice(slug, item.customization)
-          : (slug ? getHardwarePrice(slug) : (item.product?.price || 0));
-        const unit = grossUnit(unitNet);
-        const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
-        const cfg = formatHardwareCustomization(item.customization);
-        const descExtra = cfg ? ` • ${cfg}` : '';
-        const vatNote = chargesVat ? ` (VAT ${Math.round(effectiveRate * 100)}% incl.)` : '';
+      // One invoice line per physical unit (serial + product_line_id in description/metadata).
+      for (const inst of hardwareInstances) {
+        const unit = grossUnit(inst.unitNet);
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
           invoice: invoice.id,
-          amount: Math.round(unit * 100 * qty),
+          amount: Math.round(unit * 100),
           currency: 'eur',
-          description: `${BRAND_NAME} ${item.product?.name || 'Appliance'}${descExtra}${svcNames.length ? ` (includes: ${svcNames.join(', ')})` : ''}${vatNote}`,
+          description: formatHardwareLineDescription(inst, { vatNote: vatNoteForLines }),
+          metadata: hardwareLineItemMetadata(inst),
         });
       }
 
-      const hasServices = resolvedServicesForMeta.length > 0;
+      const hasServices = serviceInstances.length > 0;
       const useRecurringAutoForServices = hasServices && recurringPaymentMethod && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
 
       if (useRecurringAutoForServices) {
@@ -820,41 +830,29 @@ export async function POST(request: NextRequest) {
         // cannot happen for pay-by-invoice + recurring auto (full or lease).
         const trialEnd = orderPlacedAt + 32 * 24 * 3600;
         let serviceSubscriptionIds: string[] = [];
-        for (const s of resolvedServicesForMeta) {
+        for (const svc of serviceInstances) {
           try {
-            const serviceProduct = await stripe.products.create({ name: s.name });
-            const subParams: any = {
-              customer: stripeCustomerId,
+            const svcSub = await createRecurringServiceSubscription(stripe, stripeCustomerId!, svc, {
+              grossUnit,
               collection_method: 'charge_automatically',
               trial_end: trialEnd,
               payment_behavior: 'default_incomplete',
-              items: [{
-                price_data: {
-                  currency: 'eur',
-                  product: serviceProduct.id,
-                  unit_amount: Math.round(grossUnit(s.price) * 100),
-                  recurring: { interval: 'month' },
-                },
-              }],
               metadata: {
-                service: s.name,
                 order_placed_at: orderPlacedAt.toString(),
                 main_invoice_id: invoice.id,
                 recurring_payment_method: recurringPaymentMethod,
               },
               expand: ['latest_invoice'],
-            };
-            const svcSub = await stripe.subscriptions.create(subParams);
+            });
             serviceSubscriptionIds.push(svcSub.id);
 
-            // defensive 0 cleanup via shared helper
             let latestInv = (svcSub as any).latest_invoice;
             let invId = typeof latestInv === 'string' ? latestInv : latestInv?.id;
             if (invId) {
               await cleanupZeroTrialInvoice(stripe, invId, `service sub ${svcSub.id} (hybrid invoice)`);
             }
 
-            console.log(`Pre-created service sub ${svcSub.id} for "${s.name}" (hybrid invoice + recurring ${recurringPaymentMethod}; visible in trialing; PM attached after setup)`);
+            console.log(`Pre-created service sub ${svcSub.id} for "${svc.name}" (S/N ${svc.hostSerialNumber}; hybrid invoice + recurring ${recurringPaymentMethod})`);
           } catch (e) {
             console.error('Failed to pre-create service sub for hybrid invoice recurring', e);
           }
@@ -863,6 +861,22 @@ export async function POST(request: NextRequest) {
         const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
           recurringPaymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
 
+        const hybridSetupMeta = buildOrderMetadata({
+          company,
+          vatNumber,
+          poNumber,
+          ...addressMetaFields,
+          financing,
+          services: compactServices,
+          hardware: resolvedHardwareForMeta,
+          pricingVersion: PRICING_VERSION,
+          locale,
+          orderPlacedAt,
+          main_invoice_id: invoice.id,
+          recurring_payment_method: recurringPaymentMethod,
+          service_subscription_ids: JSON.stringify(serviceSubscriptionIds),
+          ...vatMeta,
+        });
         const setupSession = await stripe.checkout.sessions.create({
           payment_method_types: pmTypes,
           mode: 'setup',
@@ -870,22 +884,8 @@ export async function POST(request: NextRequest) {
           success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
           locale,
-          metadata: buildOrderMetadata({
-          company,
-          vatNumber,
-          poNumber,
-          ...addressMetaFields,
-          financing,
-          services: resolvedServicesForMeta,
-          pricingVersion: PRICING_VERSION,
-          locale,
-          orderPlacedAt,
-          main_invoice_id: invoice.id,
-          recurring_payment_method: recurringPaymentMethod,
-          service_subscription_ids: JSON.stringify(serviceSubscriptionIds),
-          // VAT treatment + customer choice (audit + compliance)
-          ...vatMeta,
-        }),
+          metadata: hybridSetupMeta,
+          ...(await prepareHostedCheckout(recurringPaymentMethod as 'stripe' | 'sepa', stripeCustomerId)),
         });
 
         // We still finalize/send the hardware invoice and the "you will receive the Net 30 invoice" emails.
@@ -919,26 +919,16 @@ export async function POST(request: NextRequest) {
       // Creates send_invoice service subs using order-based billing_cycle_anchor (non-trial)
       // so the first real recurring starts ~1 month after order time (uniform rule).
       // Kept for compatibility with older clients / the existing test.
-      for (const s of resolvedServicesForMeta) {
+      for (const svc of serviceInstances) {
         try {
-          const serviceProduct = await stripe.products.create({ name: s.name });
           const trialEnd = orderPlacedAt + 32 * 24 * 3600;
-          const sub = await stripe.subscriptions.create({
-            customer: stripeCustomerId,
+          const sub = await createRecurringServiceSubscription(stripe, stripeCustomerId!, svc, {
+            grossUnit,
             collection_method: 'send_invoice',
             days_until_due: 30,
             trial_end: trialEnd,
-            items: [{
-              price_data: {
-                currency: 'eur',
-                product: serviceProduct.id,
-                unit_amount: Math.round(grossUnit(s.price) * 100),
-                recurring: { interval: 'month' },
-              } as any,
-            }],
             metadata: {
               order_invoice: invoice.id,
-              service: s.name,
               pricing_version: PRICING_VERSION,
               order_placed_at: orderPlacedAt.toString(),
             },
@@ -948,13 +938,13 @@ export async function POST(request: NextRequest) {
           const latestInv = (sub as any).latest_invoice;
           const invId = latestInv ? (typeof latestInv === 'string' ? latestInv : latestInv.id) : undefined;
           if (invId) {
-            await handleSubscriptionTrialInvoice(stripe, invId, `send_invoice service sub "${s.name}"`, {
-              description: `Trial period for ${s.name}. Recurring monthly service payments will start after this trial (approximately 1 month after the order). See main order invoice ${invoice.id}.`,
+            await handleSubscriptionTrialInvoice(stripe, invId, `send_invoice service sub "${svc.name}"`, {
+              description: `Trial period for ${svc.name} (appliance S/N ${svc.hostSerialNumber}). Recurring monthly service payments will start after this trial (approximately 1 month after the order). See main order invoice ${invoice.id}.`,
               footer: 'Recurring services begin ~1 month after initial hardware payment.',
             });
           }
 
-          console.log(`Created send_invoice service sub (trial) for "${s.name}" on invoice ${invoice.id}`);
+          console.log(`Created send_invoice service sub (trial) for "${svc.name}" (S/N ${svc.hostSerialNumber}) on invoice ${invoice.id}`);
         } catch (subErr) {
           console.error('Failed to setup recurring service sub for pay-by-invoice', subErr);
         }
@@ -988,30 +978,8 @@ export async function POST(request: NextRequest) {
     // Services (if any) will be turned into real subscriptions by the webhook.
     // Use proper quantity + unit price (resolved server-side) so Stripe line items correctly reflect qty > 1.
     if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> FULL (non-lease) branch (strategy:', paymentContext.strategy, ')');
-    const lineItems: any[] = (items || []).map((item: any) => {
-      const qty = item.quantity || 1;
-      const slug = item.product?.slug as string | undefined;
-      // Use the single logical component for hardware unit price (base + chosen option prices from customization).
-      const unitNet = slug && item.customization
-        ? calculateHardwarePrice(slug, item.customization)
-        : (slug ? getHardwarePrice(slug) : (item.product?.price || 0));
-      const unit = grossUnit(unitNet);
-      const svcNames = (item.services || []).map((s: any) => s.name).filter(Boolean);
-      const cfg = formatHardwareCustomization(item.customization);
-      const vatNote = chargesVat ? ` (VAT ${Math.round(effectiveRate * 100)}% incl.)` : '';
-      return {
-        price_data: {
-          currency: 'eur',
-          product_data: {
-            name: `${BRAND_NAME} ${item.product?.name || 'Appliance'}`,
-            description: cfg
-              ? (svcNames.length > 0 ? `${cfg} • Includes: ${svcNames.join(', ')}${vatNote}` : `${cfg}${vatNote}`)
-              : (svcNames.length > 0 ? `Includes: ${svcNames.join(', ')}${vatNote}` : (vatNote || undefined)),
-          },
-          unit_amount: Math.round(unit * 100),
-        },
-        quantity: qty,
-      };
+    const lineItems = buildHardwareCheckoutLineItems(hardwareInstances, grossUnit, {
+      vatNote: vatNoteForLines,
     });
 
     const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
@@ -1031,7 +999,7 @@ export async function POST(request: NextRequest) {
       poNumber,
       ...addressMetaFields,
       financing,
-      services: resolvedServicesForMeta,
+      services: compactServices,
       hardware: resolvedHardwareForMeta,
       pricingVersion: PRICING_VERSION,
       locale,
@@ -1068,9 +1036,10 @@ export async function POST(request: NextRequest) {
         vatTreatment: vatTreatment.mandatoryTreatment,
         description: `${BRAND_NAME} hardware order`,
       }),
+      ...(await prepareHostedCheckout(paymentMethod as 'stripe' | 'sepa', stripeCustomerId)),
     };
     if (DEBUG_PAYMENTS) {
-      console.log('[PAYMENT DEBUG] full session metadata.services =', JSON.stringify(resolvedServicesForMeta));
+      console.log('[PAYMENT DEBUG] full session metadata.services =', JSON.stringify(compactServices));
       console.log('[PAYMENT DEBUG] full session metadata.hardware =', JSON.stringify(resolvedHardwareForMeta));
     }
     const session = await stripe.checkout.sessions.create(sessionParams);

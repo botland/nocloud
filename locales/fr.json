@@ -116,6 +116,7 @@
     "empty": "Votre panier est vide",
     "itemLabel": "{brand} {name} × {qty}",
     "hardwareTotal": "Total matériel",
+    "exclVatNote": "HT",
     "servicesMonthly": "Services (mensuels)",
     "seeConfigurator": "voir le configurateur",
     "proceedCheckout": "Passer à la caisse sécurisée",
@@ -217,5 +218,27 @@
     "recurringSuffixShort": "/mois récurrent",
     "recurringSuffix": "/mois services récurrents",
     "price": "{amount}€"
+  },
+  "promotions": {
+    "badgePromo": "Promo",
+    "badgeFree": "Gratuit",
+    "freePrice": "Gratuit",
+    "managedCareLaunchFree": "Offre de lancement",
+    "managedCareLaunchFreeUntil": "Gratuit jusqu'au {date}",
+    "launchEdge": "Tarif lancement",
+    "vaultStudio": "Promo Vault",
+    "recurringPromoUntil": "{promo}{suffix} jusqu'au {date}",
+    "recurringFreeUntil": "Gratuit jusqu'au {date}",
+    "recurringThenList": "puis {list}{suffix}",
+    "hardwareFromList": "à partir de",
+    "hardwarePromoUntil": "jusqu'au {date}",
+    "recurringPmRequired": "Un moyen de paiement est requis pour les services récurrents — la facturation débute après la période promotionnelle.",
+    "recurringScheduleTitle": "Services récurrents (estimation)",
+    "recurringScheduleUntil": "{price}{suffix} jusqu'au {date}",
+    "recurringScheduleThenUntil": "puis {price}{suffix} jusqu'au {date}",
+    "recurringScheduleFreeUntil": "Gratuit jusqu'au {date}",
+    "recurringScheduleThenFreeUntil": "puis gratuit jusqu'au {date}",
+    "recurringScheduleThenOngoing": "puis {price}{suffix}",
+    "recurringScheduleNote": "Total mensuel indicatif. Les périodes promotionnelles et tarifs standards sont affichés avant le paiement ; les conditions définitives figurent sur votre confirmation de commande."
   }
 }

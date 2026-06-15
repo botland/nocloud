@@ -1,7 +1,145 @@
 import Stripe from 'stripe';
 import { DEBUG_PAYMENTS } from './pricing';
 import { extractPaymentMethodFromSession, setDefaultPaymentMethodOnCustomerAndSubs } from './stripe-pm';
-import { createMonthlyRecurringPriceDataItem } from './stripe-subscriptions';
+import {
+  createMonthlyRecurringPriceDataItem,
+  createPhasedMonthlySubscription,
+} from './stripe-subscriptions';
+import {
+  parseServicesFromMetadata,
+  serviceSubscriptionMetadata,
+  serviceSubscriptionProductInfo,
+  type ServiceInstance,
+} from './product-instances';
+import { isBeforeUtcDate, launchFreeUntilEpoch, promoPhaseEndEpoch } from './promotions';
+
+export type ServiceForSubscription = ServiceInstance;
+
+/** Parse compact `services` metadata from checkout / invoice. */
+export function servicesFromOrderMetadata(
+  servicesJson: string | undefined,
+  pricingVersion: string,
+): ServiceForSubscription[] {
+  if (!servicesJson) return [];
+  try {
+    return parseServicesFromMetadata(servicesJson, pricingVersion);
+  } catch {
+    return [];
+  }
+}
+
+export type CreateRecurringServiceSubOptions = {
+  grossUnit?: (net: number) => number;
+  collection_method?: 'charge_automatically' | 'send_invoice';
+  trial_end?: number;
+  days_until_due?: number;
+  payment_behavior?: 'default_incomplete';
+  default_payment_method?: string;
+  metadata?: Record<string, string>;
+  expand?: string[];
+};
+
+/**
+ * Create one monthly recurring subscription for a single service instance.
+ * Product name, description, and metadata carry product_line_id and host serial for invoices.
+ */
+function hasActiveTierPromo(service: ServiceInstance): boolean {
+  return (
+    !!service.promoEndsAt &&
+    service.price < service.listPrice &&
+    !service.launchFreeUntil
+  );
+}
+
+export async function createRecurringServiceSubscription(
+  stripe: Stripe,
+  customerId: string,
+  service: ServiceInstance,
+  options: CreateRecurringServiceSubOptions = {},
+): Promise<Stripe.Subscription> {
+  const gross = options.grossUnit ?? ((n: number) => n);
+  const productInfo = serviceSubscriptionProductInfo(service);
+  const launchActive =
+    !!service.launchFreeUntil && isBeforeUtcDate(service.launchFreeUntil);
+  const tierPromoActive = hasActiveTierPromo(service);
+
+  let trialEnd = options.trial_end;
+  if (launchActive && service.launchFreeUntil) {
+    trialEnd = launchFreeUntilEpoch(service.launchFreeUntil);
+  }
+
+  const subMetadata = {
+    ...serviceSubscriptionMetadata(service, options.metadata),
+    ...(launchActive && service.launchFreeUntil
+      ? { launch_free_until: service.launchFreeUntil }
+      : {}),
+  };
+
+  const productMetadata = {
+    ...productInfo.metadata,
+    ...(launchActive
+      ? {
+          launch_free_until: service.launchFreeUntil!,
+          launch_list_price: String(service.listPrice),
+        }
+      : {}),
+  };
+
+  if (tierPromoActive && service.promoEndsAt) {
+    const promoEnd = promoPhaseEndEpoch(service.promoEndsAt);
+    const billingStart = trialEnd ?? Math.floor(Date.now() / 1000);
+
+    if (billingStart < promoEnd) {
+      return createPhasedMonthlySubscription(stripe, customerId, {
+        productName: productInfo.name,
+        productDescription: productInfo.description,
+        productMetadata,
+        promoAmountEur: gross(service.price),
+        listAmountEur: gross(service.listPrice),
+        promoPhaseEndEpoch: promoEnd,
+        trialEnd,
+        metadata: subMetadata,
+        collection_method: options.collection_method,
+        days_until_due: options.days_until_due,
+        payment_behavior: options.payment_behavior,
+        default_payment_method: options.default_payment_method,
+        expand: options.expand,
+      });
+    }
+  }
+
+  const billableMonthly = launchActive
+    ? (service.listPrice ?? service.price)
+    : tierPromoActive
+      ? service.listPrice
+      : service.price;
+
+  const item = await createMonthlyRecurringPriceDataItem(
+    stripe,
+    productInfo.name,
+    gross(billableMonthly),
+    {
+      description: productInfo.description,
+      metadata: productMetadata,
+    },
+  );
+
+  const subParams: Stripe.SubscriptionCreateParams = {
+    customer: customerId,
+    items: [item],
+    metadata: subMetadata,
+    ...(options.collection_method ? { collection_method: options.collection_method } : {}),
+    ...(trialEnd ? { trial_end: trialEnd } : {}),
+    ...(options.days_until_due ? { days_until_due: options.days_until_due } : {}),
+    ...(options.payment_behavior ? { payment_behavior: options.payment_behavior } : {}),
+    ...(options.default_payment_method
+      ? { default_payment_method: options.default_payment_method }
+      : {}),
+    ...(options.expand ? { expand: options.expand } : {}),
+  };
+
+  return stripe.subscriptions.create(subParams);
+}
 
 /**
  * Shared helper to create the monthly service subscriptions for a completed
@@ -16,10 +154,18 @@ import { createMonthlyRecurringPriceDataItem } from './stripe-subscriptions';
 export async function createFullServiceSubscriptions(
   stripe: Stripe,
   completedSession: Stripe.Checkout.Session,
-  servicesArray: Array<{ name: string; price: number }>
+  servicesInput: ServiceInstance[] | string,
+  pricingVersion?: string,
 ) {
   const customerId = completedSession.customer as string | undefined;
   const orderId = completedSession.id;
+  const meta = (completedSession as any).metadata || {};
+  const version = pricingVersion || meta.pricing_version || meta.pricingVersion || 'unknown';
+
+  const servicesArray: ServiceInstance[] =
+    typeof servicesInput === 'string'
+      ? servicesFromOrderMetadata(servicesInput, version)
+      : servicesInput;
 
   if (!customerId || servicesArray.length === 0) {
     if (DEBUG_PAYMENTS) {
@@ -35,8 +181,8 @@ export async function createFullServiceSubscriptions(
       limit: 20,
     });
     const alreadyCreated = existingSubs.data.some((sub: any) => {
-      const meta = sub.metadata || {};
-      return meta.order_session === orderId && meta.service; // has service meta => one of ours
+      const subMeta = sub.metadata || {};
+      return subMeta.order_session === orderId && subMeta.service;
     });
     if (alreadyCreated) {
       console.log(`[PAYMENT DEBUG] createFullServiceSubscriptions: subs already exist for order ${orderId}, skipping creation`);
@@ -50,7 +196,6 @@ export async function createFullServiceSubscriptions(
     console.log('[PAYMENT DEBUG] createFullServiceSubscriptions starting for', orderId, 'services:', servicesArray.length);
   }
 
-  // PM extraction + attach now delegated to shared helpers (see lib/stripe-pm.ts)
   const defaultPaymentMethod = await extractPaymentMethodFromSession(stripe, completedSession);
 
   if (!defaultPaymentMethod) {
@@ -63,19 +208,9 @@ export async function createFullServiceSubscriptions(
     await setDefaultPaymentMethodOnCustomerAndSubs(stripe, customerId, defaultPaymentMethod);
   }
 
-  // For the uniform "recurring starts exactly 1 month after order time" rule,
-  // we set trial_end based on the order_placed_at from metadata (if present).
-  // This achieves the delayed start for full+card/sepa services and hybrid recurring,
-  // using the order time rather than creation time (no special cases).
-  // trial_end is the reliable way to delay first charge by ~1mo for monthly subs.
-  const meta = (completedSession as any).metadata || {};
   const orderTs = meta.order_placed_at ? parseInt(meta.order_placed_at, 10) : null;
   const servicesTrialEnd = orderTs ? orderTs + 32 * 24 * 3600 : null;
 
-  // Support for hybrid "pay by invoice (hardware) + recurring services by card/sepa (setup)" path:
-  // The service subs are now pre-created in the checkout route (for visibility right after order,
-  // before/during the setup trip to collect the PM "numbers"). On setup completion (webhook or fulfill),
-  // we attach the collected PM instead of creating new subs.
   const preSubIdsStr = meta.service_subscription_ids || meta.serviceSubscriptionIds;
   if (preSubIdsStr) {
     let preIds: string[] = [];
@@ -97,32 +232,23 @@ export async function createFullServiceSubscriptions(
 
   for (const svc of servicesArray) {
     try {
-      const item = await createMonthlyRecurringPriceDataItem(stripe, svc.name, svc.price);
-
-      const subParams: any = {
-        customer: customerId,
+      const subParams: CreateRecurringServiceSubOptions = {
         collection_method: 'charge_automatically',
-        items: [item],
         metadata: {
           order_session: orderId,
-          service: svc.name,
           ...(orderTs && { order_placed_at: orderTs.toString() }),
         },
+        ...(servicesTrialEnd ? { trial_end: servicesTrialEnd } : {}),
+        ...(defaultPaymentMethod
+          ? { default_payment_method: defaultPaymentMethod }
+          : { payment_behavior: 'default_incomplete' }),
       };
-      if (servicesTrialEnd) {
-        subParams.trial_end = servicesTrialEnd;
-      }
-      if (defaultPaymentMethod) {
-        subParams.default_payment_method = defaultPaymentMethod;
-      } else {
-        subParams.payment_behavior = 'default_incomplete';
-      }
 
       if (DEBUG_PAYMENTS) {
-        console.log('[PAYMENT DEBUG] (fulfill) creating service sub for', svc.name, 'hasDefaultPM=', !!subParams.default_payment_method, 'hasPaymentBehavior=', !!subParams.payment_behavior, 'hasTrial=', !!servicesTrialEnd);
+        console.log('[PAYMENT DEBUG] (fulfill) creating service sub for', svc.name, 'host=', svc.hostSerialNumber, 'hasDefaultPM=', !!defaultPaymentMethod, 'hasTrial=', !!servicesTrialEnd);
       }
 
-      const createdSub = await stripe.subscriptions.create(subParams);
+      const createdSub = await createRecurringServiceSubscription(stripe, customerId, svc, subParams);
 
       if (defaultPaymentMethod) {
         try {
@@ -134,9 +260,8 @@ export async function createFullServiceSubscriptions(
         }
       }
 
-      console.log(`Created service subscription ${createdSub.id} for "${svc.name}" on customer ${customerId} (pm: ${defaultPaymentMethod || 'none; used default_incomplete for visibility'})`);
+      console.log(`Created service subscription ${createdSub.id} for "${svc.name}" (S/N ${svc.hostSerialNumber}) on customer ${customerId} (pm: ${defaultPaymentMethod || 'none; used default_incomplete for visibility'})`);
 
-      // Diagnostic first invoice
       try {
         const firstInv = (createdSub as any).latest_invoice;
         const invId = typeof firstInv === 'string' ? firstInv : firstInv?.id;
@@ -159,22 +284,17 @@ export async function createFullServiceSubscriptions(
           } catch {}
         }
         try {
-          const item2 = await createMonthlyRecurringPriceDataItem(stripe, svc.name, svc.price);
-          const subParams2: any = {
-            customer: customerId,
+          const retriedSub = await createRecurringServiceSubscription(stripe, customerId, svc, {
             collection_method: 'charge_automatically',
-            items: [item2],
-            metadata: { order_session: orderId, service: svc.name, ...(orderTs && { order_placed_at: orderTs.toString() }) },
-          };
-          if (servicesTrialEnd) {
-            subParams2.trial_end = servicesTrialEnd;
-          }
-          if (defaultPaymentMethod) {
-            subParams2.default_payment_method = defaultPaymentMethod;
-          } else {
-            subParams2.payment_behavior = 'default_incomplete';
-          }
-          const retriedSub = await stripe.subscriptions.create(subParams2);
+            metadata: {
+              order_session: orderId,
+              ...(orderTs && { order_placed_at: orderTs.toString() }),
+            },
+            ...(servicesTrialEnd ? { trial_end: servicesTrialEnd } : {}),
+            ...(defaultPaymentMethod
+              ? { default_payment_method: defaultPaymentMethod }
+              : { payment_behavior: 'default_incomplete' }),
+          });
 
           if (defaultPaymentMethod) {
             try {
@@ -186,7 +306,7 @@ export async function createFullServiceSubscriptions(
             }
           }
 
-          console.log(`Retry succeeded for service sub ${retriedSub.id} "${svc.name}" on customer ${customerId}`);
+          console.log(`Retry succeeded for service sub ${retriedSub.id} "${svc.name}" (S/N ${svc.hostSerialNumber}) on customer ${customerId}`);
         } catch (retryErr) {
           console.error('Retry also failed (fulfill) for service subscription', retryErr);
         }
@@ -196,7 +316,6 @@ export async function createFullServiceSubscriptions(
     }
   }
 
-  // Re-set customer default after the loop
   if (defaultPaymentMethod && customerId) {
     try {
       await stripe.customers.update(customerId, {

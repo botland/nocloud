@@ -5,6 +5,13 @@ import { useTranslations, useLocale } from 'next-intl';
 import { calculateLease, isOverSepaLimit, isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX } from '@/lib/pricing';
 import { CartItem, CheckoutFormDraft } from '@/lib/types';
 import { determineVatTreatment, computeVatAmounts } from '@/lib/vat';
+import {
+  aggregatedRecurringLinesFromCart,
+  hasRecurringServices,
+  recurringServicesMonthly,
+} from '@/lib/cart-services';
+import RecurringServicesSummary from '@/components/RecurringServicesSummary';
+import VatPriceLine from '@/components/VatPriceLine';
 
 interface Props {
   cart: CartItem[];
@@ -81,9 +88,9 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
 
-  const servicesMonthly = cart.reduce((sum, item) => 
-    sum + (item.services || []).reduce((s: number, p) => s + (p.price || 0) * (item.quantity || 1), 0)
-  , 0);
+  const servicesMonthly = recurringServicesMonthly(cart);
+  const cartHasRecurring = hasRecurringServices(cart);
+  const recurringLines = aggregatedRecurringLinesFromCart(cart);
 
   // Always compute lease preview numbers (independent of current financing choice).
   // Uses centralized calculateLease so client/server stay in sync.
@@ -164,7 +171,9 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   // Recurring services (grossed when VAT chosen)
   const svcNet = servicesMonthly;
   const svcGross = showVatBreakdown ? computeVatAmounts(svcNet, vatRateForDisplay, true).gross : svcNet;
-  const svcVat = showVatBreakdown ? computeVatAmounts(svcNet, vatRateForDisplay, true).vatAmount : 0;
+  const grossRecurring = showVatBreakdown
+    ? (net: number) => computeVatAmounts(net, vatRateForDisplay, true).gross
+    : undefined;
 
   // Lease figures: keep the net details for math/limits, use *Display for all UI text when VAT
   const leaseNetDetails = leaseDetails;
@@ -188,6 +197,13 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
       setVatInclusiveWithDraft(false);
     }
   }, [canOfferVatInclusive, vatInclusive]);
+
+  // Lease is only available inside hardware total range — fall back to pay-in-full when out of range.
+  useEffect(() => {
+    if (!canLease && financing === 'lease') {
+      setFinancingWithDraft('full');
+    }
+  }, [canLease, financing, hardwareTotal, servicesMonthly]);
 
   const locale = useLocale();
 
@@ -285,7 +301,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
         // Always include (optional in type). Server will ignore or reject based on current determination.
         vatInclusive,
       };
-      if (paymentMethod === 'invoice' && servicesMonthly > 0) {
+      if (paymentMethod === 'invoice' && cartHasRecurring) {
         payload.recurringPaymentMethod = recurringPaymentMethod;
       }
       // Include order_placed_at if known from draft (server captures the authoritative value
@@ -718,7 +734,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                       they must pick (inside this box) how the *recurring* part is paid: card or SEPA.
                       The backend will create the Net-30 invoice for hardware and a mode:'setup' Checkout for the
                       recurring PM so that service subs are automatic (charge_automatically) instead of send_invoice. */}
-                  {servicesMonthly > 0 && paymentMethod === 'invoice' && (
+                  {cartHasRecurring && paymentMethod === 'invoice' && (
                     <div className="mt-3 rounded-xl bg-slate-950 p-3 border border-slate-700/60">
                       <div className="text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-medium">
                         {t('recurringPaymentForServices')}
@@ -771,42 +787,48 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
           <div className="min-w-0 flex-1 pr-4">
             {step === 1 ? (
               <>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-slate-400">{tcart('hardwareTotal')}</span>
-                  <span className="font-semibold tabular-nums">{tc('common.price', { amount: hardwareTotal })}</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>{tcart('servicesMonthly')}</span>
-                  <span className="tabular-nums">{tc('common.price', { amount: servicesMonthly })}</span>
-                </div>
+                <VatPriceLine
+                  label={tcart('hardwareTotal')}
+                  amount={hwGross}
+                  net={hwNet}
+                  vat={hwVat}
+                  showBreakdown={showVatBreakdown}
+                  className="mb-1"
+                />
+                {cartHasRecurring && (
+                  <RecurringServicesSummary
+                    lines={recurringLines}
+                    showPmNote
+                    grossAmount={grossRecurring}
+                    className="mt-1"
+                    nameClassName="text-slate-400"
+                  />
+                )}
               </>
             ) : (
               <>
-                <div className="text-xs text-slate-400">
-                  {isLease
-                    ? t('monthlyTotalLabel', { months: leaseMonths })
-                    : t('totalToPay')}
-                </div>
-                <div className="text-2xl font-semibold tabular-nums">
-                  {tc('common.price', { amount: isLease ? leaseMonthlyDisplay : hwGross })}
-                </div>
+                <VatPriceLine
+                  label={
+                    isLease
+                      ? t('monthlyTotalLabel', { months: leaseMonths })
+                      : t('totalToPay')
+                  }
+                  amount={isLease ? leaseMonthlyDisplay : hwGross}
+                  net={isLease ? leaseNetDetails.monthlyTotal : hwNet}
+                  vat={isLease ? leaseMonthlyVatDisplay : hwVat}
+                  showBreakdown={showVatBreakdown}
+                  variant="summary"
+                />
 
-                {showVatBreakdown && (
-                  <div className="text-[10px] text-emerald-400">
-                    {t('vatBreakdown', {
-                      net: isLease ? leaseNetDetails.monthlyTotal : hwNet,
-                      vat: isLease ? leaseMonthlyVatDisplay : hwVat
-                    })}
-                  </div>
-                )}
-
-                {svcNet > 0 && (
-                  <div className="text-[10px] text-emerald-400">
-                    + {tc('common.price', { amount: svcGross })}{tc('common.recurringSuffix')}
-                    {showVatBreakdown && (
-                      <> ({t('vatBreakdown', { net: svcNet, vat: svcVat })})</>
-                    )}
-                  </div>
+                {cartHasRecurring && (
+                  <RecurringServicesSummary
+                    lines={recurringLines}
+                    variant="schedule"
+                    showPmNote
+                    grossAmount={grossRecurring}
+                    className="text-[10px] text-emerald-400 mt-0.5"
+                    nameClassName="text-emerald-400/90"
+                  />
                 )}
 
                 {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}

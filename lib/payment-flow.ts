@@ -4,13 +4,14 @@ import {
   isInvoiceAllowed,
   isOverSepaLimit,
   getHardwarePrice,
-  getServicePrice,
+
   ServiceKey,
   PRICING_VERSION,
   calculateHardwarePrice,
   formatHardwareCustomization,
   type HardwareCustomization,
 } from './pricing';
+import { resolveHardwarePrice, resolveServicePrice } from './promotions';
 
 export type Financing = 'full' | 'lease';
 export type PaymentMethod = 'stripe' | 'sepa' | 'invoice';
@@ -45,9 +46,11 @@ export function buildPaymentContext(params: {
   servicesMonthly: number;
   hardwareTotal: number;
   recurringPaymentMethod?: RecurringPaymentMethod;
+  /** Any recurring service in the order (including launch-free / €0 promos). */
+  hasRecurringServices?: boolean;
 }): PaymentContext {
-  const { financing, paymentMethod, servicesMonthly, hardwareTotal, recurringPaymentMethod } = params;
-  const hasServices = servicesMonthly > 0;
+  const { financing, paymentMethod, servicesMonthly, hardwareTotal, recurringPaymentMethod, hasRecurringServices } = params;
+  const hasServices = hasRecurringServices ?? servicesMonthly > 0;
 
   const isHybrid = paymentMethod === 'invoice' && hasServices && (recurringPaymentMethod === 'stripe' || recurringPaymentMethod === 'sepa');
 
@@ -133,12 +136,17 @@ export function resolvePricesAndServices(items: any[] = []): ResolvedOrderAmount
 
     // Use the single logical component (calculateHardwarePrice) when customization is supplied.
     // Falls back to base price for items without customization (preserves all existing behavior).
-    const unitHw = slug && item.customization
-      ? calculateHardwarePrice(slug, item.customization as HardwareCustomization)
-      : (slug ? getHardwarePrice(slug) : (item.product?.price || 0));
+    const customization = item.customization as HardwareCustomization | undefined;
+    const hwResolved = slug
+      ? resolveHardwarePrice(slug, customization)
+      : undefined;
+    const unitHw = hwResolved?.net ?? (item.product?.price || 0);
 
     const baseForSlug = slug ? getHardwarePrice(slug) : 0;
-    const extraForItem = Math.max(0, unitHw - baseForSlug);
+    const listUnitBeforePromo = slug
+      ? (customization ? calculateHardwarePrice(slug, customization) : getHardwarePrice(slug))
+      : unitHw;
+    const extraForItem = Math.max(0, listUnitBeforePromo - baseForSlug);
 
     hardwareTotal += unitHw * qty;
 
@@ -156,7 +164,7 @@ export function resolvePricesAndServices(items: any[] = []): ResolvedOrderAmount
     const svcs = item.services || [];
     for (const s of svcs) {
       const key = (s.key as ServiceKey | undefined) || undefined;
-      const svcPrice = key ? getServicePrice(key) : (s.price || 0);
+      const svcPrice = key ? resolveServicePrice(key, slug).net : (s.price || 0);
       const lineTotal = svcPrice * qty;
       servicesMonthly += lineTotal;
 

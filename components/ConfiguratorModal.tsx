@@ -4,12 +4,14 @@ import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Product, CartItem } from '@/lib/types';
 import {
-  SERVICE_PRICES,
-  calculateHardwarePrice,
   getSpecOptions,
   getDefaultOption,
   type HardwareCustomization,
 } from '@/lib/pricing';
+import { resolveHardwarePrice, resolveServicePrice } from '@/lib/promotions';
+import PromoBadge from '@/components/PromoBadge';
+import PromoPrice from '@/components/PromoPrice';
+import RecurringServicesSummary from '@/components/RecurringServicesSummary';
 
 interface Props {
   product: Product;
@@ -88,17 +90,39 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
 
   // Live authoritative hardware unit price (base + chosen option prices).
   // This is the single logical component call — same fn used by server.
-  const hardwareUnit = calculateHardwarePrice(slug, customization);
-  const hardwareExtra = Math.max(0, hardwareUnit - product.price);
+  const hwResolved = resolveHardwarePrice(slug, customization);
+  const hardwareUnit = hwResolved.net;
+  const hardwareListUnit = hwResolved.list;
+  const hardwareExtra = Math.max(0, hardwareUnit - (product.listPrice ?? product.price));
 
-  const managedUnit = SERVICE_PRICES.managedCare;
-  const backupUnit = SERVICE_PRICES.secureVaultBackup;
-  const managedPrice = managedUnit * quantity;
-  const backupPrice = backupUnit * quantity;
+  const managedResolved = resolveServicePrice('managedCare', slug);
+  const backupResolved = resolveServicePrice('secureVaultBackup', slug);
+  const managedPrice = managedResolved.net * quantity;
+  const backupPrice = backupResolved.net * quantity;
 
-  const selectedServices: { name: string; price: number; key: 'managedCare' | 'secureVaultBackup' }[] = [];
-  if (managed) selectedServices.push({ name: t('managedCare'), price: managedUnit, key: 'managedCare' });
-  if (backup) selectedServices.push({ name: t('secureVaultBackup'), price: backupUnit, key: 'secureVaultBackup' });
+  const selectedServices: CartItem['services'] = [];
+  if (managed) {
+    selectedServices.push({
+      name: t('managedCare'),
+      price: managedResolved.net,
+      listPrice: managedResolved.list,
+      key: 'managedCare',
+      promotionBadgeKey: managedResolved.badge?.labelKey,
+      promotionKind: managedResolved.badge?.kind,
+      launchFreeUntil: managedResolved.launchFreeUntil,
+    });
+  }
+  if (backup) {
+    selectedServices.push({
+      name: t('secureVaultBackup'),
+      price: backupResolved.net,
+      listPrice: backupResolved.list,
+      key: 'secureVaultBackup',
+      promotionBadgeKey: backupResolved.badge?.labelKey,
+      promotionKind: backupResolved.badge?.kind,
+      promoEndsAt: backupResolved.promoEndsAt,
+    });
+  }
 
   const totalPrice = hardwareUnit * quantity;
   const recurringPrice = selectedServices.reduce((sum, s) => sum + s.price * quantity, 0);
@@ -119,7 +143,8 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur z-[100] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl overflow-hidden flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
+      <div className="relative bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl flex flex-col max-h-[92vh] overflow-visible" onClick={e => e.stopPropagation()}>
+        {hwResolved.badge && <PromoBadge badge={hwResolved.badge} />}
         <div className="px-7 pt-6 pb-5 border-b border-slate-800 flex justify-between items-start flex-shrink-0">
           <div>
             <div className="font-semibold text-2xl tracking-tight">{product.name}</div>
@@ -131,7 +156,13 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
         <div className="p-7 overflow-y-auto flex-1">
           <div className="flex justify-between items-baseline mb-6">
             <div className="text-sm text-slate-400">{t('baseAppliance')}</div>
-            <div className="text-3xl font-semibold tabular-nums">{tc('common.price', { amount: product.price })}</div>
+            <PromoPrice
+              amount={hardwareUnit}
+              listAmount={hardwareListUnit > hardwareUnit ? hardwareListUnit : undefined}
+              untilDate={hwResolved.badge?.until}
+              mode="oneTime"
+              size="lg"
+            />
           </div>
           
           <div className="mb-7">
@@ -206,17 +237,41 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
           <div>
             <div className="uppercase text-xs tracking-widest text-slate-400 mb-3 font-medium">{t('optionalServices')}</div>
             <div className="space-y-3">
-              <label className="flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors">
-                <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} className="accent-cyan-400 mt-1" />
-                <div className="flex-1">
-                  <div className="flex justify-between"><span className="font-medium">{t('managedCare')}</span> <span className="text-emerald-400 font-mono text-sm">{tc('common.price', { amount: managedPrice })}{tc('common.perMonth')}</span></div>
+              <label className={`relative flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors overflow-visible ${managedResolved.badge ? 'mt-4' : ''}`}>
+                {managedResolved.badge && <PromoBadge badge={managedResolved.badge} />}
+                <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} className={`accent-cyan-400 shrink-0 ${managedResolved.badge ? 'mt-5' : 'mt-1'}`} />
+                <div className={`flex-1 min-w-0 ${managedResolved.badge ? 'pt-5 pr-1' : ''}`}>
+                  <div className="flex justify-between items-start gap-3">
+                    <span className="font-medium">{t('managedCare')}</span>
+                    <PromoPrice
+                      amount={managedResolved.net}
+                      listAmount={managedResolved.list > managedResolved.net ? managedResolved.list : undefined}
+                      untilDate={managedResolved.launchFreeUntil}
+                      untilKind="launch_free"
+                      suffix={tc('common.perMonth')}
+                      size="sm"
+                      className="text-emerald-400 shrink-0 max-w-[58%]"
+                    />
+                  </div>
                   <div className="text-xs text-slate-400">{t('managedCareNote')}</div>
                 </div>
               </label>
-              <label className="flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors">
-                <input type="checkbox" checked={backup} onChange={e => setBackup(e.target.checked)} className="accent-cyan-400 mt-1" />
-                <div className="flex-1">
-                  <div className="flex justify-between"><span className="font-medium">{t('secureVaultBackup')}</span> <span className="text-sky-400 font-mono text-sm">{tc('common.price', { amount: backupPrice })}{tc('common.perMonth')}</span></div>
+              <label className={`relative flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors overflow-visible ${backupResolved.badge ? 'mt-4' : ''}`}>
+                {backupResolved.badge && <PromoBadge badge={backupResolved.badge} />}
+                <input type="checkbox" checked={backup} onChange={e => setBackup(e.target.checked)} className={`accent-cyan-400 shrink-0 ${backupResolved.badge ? 'mt-5' : 'mt-1'}`} />
+                <div className={`flex-1 min-w-0 ${backupResolved.badge ? 'pt-5 pr-1' : ''}`}>
+                  <div className="flex justify-between items-start gap-3">
+                    <span className="font-medium">{t('secureVaultBackup')}</span>
+                    <PromoPrice
+                      amount={backupResolved.net}
+                      listAmount={backupResolved.list > backupResolved.net ? backupResolved.list : undefined}
+                      untilDate={backupResolved.promoEndsAt}
+                      untilKind="promotion"
+                      suffix={tc('common.perMonth')}
+                      size="sm"
+                      className="text-sky-400 shrink-0 max-w-[58%]"
+                    />
+                  </div>
                   <div className="text-xs text-slate-400">{t('secureVaultBackupNote')}</div>
                 </div>
               </label>
@@ -228,8 +283,18 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
           <div>
             <div className="text-xs text-slate-400">{t('totalToday')}</div>
             <div className="text-3xl font-semibold tabular-nums tracking-tighter">{tc('common.price', { amount: totalPrice })}</div>
-            {recurringPrice > 0 && (
-              <div className="text-xs text-emerald-400 mt-0.5">+ {tc('common.price', { amount: recurringPrice })}{tc('common.recurringSuffixShort')}</div>
+            {selectedServices.length > 0 && (
+              <RecurringServicesSummary
+                lines={selectedServices.map((svc) => ({
+                  id: svc.key || svc.name,
+                  name: svc.name,
+                  price: svc.price,
+                  listPrice: svc.listPrice,
+                  launchFreeUntil: svc.launchFreeUntil,
+                  promoEndsAt: svc.promoEndsAt,
+                }))}
+                className="mt-2 max-w-md"
+              />
             )}
           </div>
           <button onClick={handleAddToCart} className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-bold rounded-3xl text-sm">

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { DEBUG_PAYMENTS } from '@/lib/pricing';
 import { createFullServiceSubscriptions } from '@/lib/create-service-subscriptions';
+import { PRICING_VERSION } from '@/lib/pricing';
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get('session_id');
@@ -29,25 +30,22 @@ export async function GET(request: NextRequest) {
     const metadata = session.metadata || {};
     const financing = metadata.financing || 'full';
 
-    let servicesArray: Array<{ name: string; price: number }> = [];
-    try {
-      if (metadata.services) {
-        servicesArray = JSON.parse(metadata.services);
-      }
-    } catch {}
+    const pricingVersion = metadata.pricing_version || metadata.pricingVersion || PRICING_VERSION;
+    const servicesJson = metadata.services as string | undefined;
+    const hasServices = !!servicesJson && servicesJson !== '[]';
 
     if (DEBUG_PAYMENTS) {
       console.log('[PAYMENT DEBUG] /api/fulfill GET', {
         sessionId,
         financing,
-        servicesLen: servicesArray.length,
+        hasServices,
         hasCustomer: !!session.customer,
       });
     }
 
-    if (session.customer && financing !== 'lease' && servicesArray.length > 0) {
+    if (session.customer && financing !== 'lease' && hasServices) {
       console.log(`[PAYMENT DEBUG] fulfill: triggering service sub creation for ${sessionId} (full + services)`);
-      await createFullServiceSubscriptions(stripe, session, servicesArray);
+      await createFullServiceSubscriptions(stripe, session, servicesJson!, pricingVersion);
       return NextResponse.json({ success: true, message: 'Service subscriptions ensured (or already existed)' });
     }
 

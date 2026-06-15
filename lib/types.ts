@@ -1,4 +1,5 @@
 import type { HardwareCustomization } from './pricing';
+import type { PriceBadge } from './promotions';
 
 export interface Product {
   id: number;
@@ -6,13 +7,20 @@ export interface Product {
   name: string;
   tier: string;
   price: number;
+  listPrice?: number;
   description: string;
+  promotionBadge?: PriceBadge;
 }
 
 export interface CartService {
   name: string;
   price: number;
+  listPrice?: number;
   key?: 'managedCare' | 'secureVaultBackup';
+  promotionBadgeKey?: string;
+  promotionKind?: 'promotion' | 'launch_free';
+  launchFreeUntil?: string;
+  promoEndsAt?: string;
 }
 
 export interface CartItem {

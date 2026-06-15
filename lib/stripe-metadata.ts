@@ -22,7 +22,7 @@ export interface OrderMetadataInput {
   deliveryCountry?: string;
 
   financing?: 'full' | 'lease' | string;
-  services?: Array<{ name: string; price: number }>;
+  services?: Array<{ name?: string; price?: number; n?: string; p?: number; k?: string; sn?: string; hs?: string; hn?: string }>;
   pricingVersion: string;
   locale?: string;
   orderPlacedAt?: number | string;

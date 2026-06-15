@@ -15,6 +15,8 @@ import {
   UPFRONT_PERCENT,
   getHardwarePrice,
   getServicePrice,
+  getMinServicePrice,
+  SERVICE_PRICES_BY_TIER,
   calculateLease,
   isLeaseAllowed,
   getUpfrontAmount,
@@ -75,7 +77,16 @@ describe('lib/pricing (functional business rules - implementation independent)',
       expect(getHardwarePrice('')).toBe(0)
     })
 
-    it('getServicePrice returns correct price for known keys and 0 for unknown', () => {
+    it('getMinServicePrice returns lowest tier price for marketing', () => {
+      expect(getMinServicePrice('managedCare')).toBe(SERVICE_PRICES_BY_TIER.edge.managedCare)
+      expect(getMinServicePrice('secureVaultBackup')).toBe(SERVICE_PRICES_BY_TIER.edge.secureVaultBackup)
+    })
+
+    it('getServicePrice returns tier prices when hardware slug provided, else studio defaults', () => {
+      expect(getServicePrice('managedCare', 'edge')).toBe(58)
+      expect(getServicePrice('managedCare', 'studio')).toBe(99)
+      expect(getServicePrice('managedCare', 'forge')).toBe(149)
+      expect(getServicePrice('secureVaultBackup', 'edge')).toBe(29)
       expect(getServicePrice('managedCare')).toBe(99)
       expect(getServicePrice('secureVaultBackup')).toBe(49)
       // @ts-expect-error intentional for runtime guard test

@@ -90,10 +90,7 @@ export function resolveDeliveryAddress(params: AddressFields & {
  *
  * Used by /api/checkout for the three main financing paths.
  */
-export async function createB2BStripeCustomer(
-  stripe: Stripe,
-  params: B2BCustomerParams
-): Promise<string> {
+function buildCustomerStripeParams(params: B2BCustomerParams): Stripe.CustomerCreateParams {
   const {
     email,
     company,
@@ -143,7 +140,49 @@ export async function createB2BStripeCustomer(
     };
   }
 
-  const customer = await stripe.customers.create(customerParams);
+  return customerParams;
+}
+
+/**
+ * Updates an existing Stripe Customer with the latest B2B billing/shipping from our checkout form.
+ * Call before redirecting to hosted Checkout so billing address is prefilled (especially SEPA).
+ */
+export async function syncB2BStripeCustomer(
+  stripe: Stripe,
+  customerId: string,
+  params: B2BCustomerParams,
+): Promise<void> {
+  await stripe.customers.update(customerId, buildCustomerStripeParams(params));
+}
+
+/**
+ * Checkout Session params so Stripe prefills billing from the Customer record we
+ * already populated in our checkout form. Shipping is synced on the Customer
+ * beforehand and must not be editable in hosted Checkout — changes go through
+ * our checkout form only.
+ */
+export function buildCheckoutAddressPrefillParams(
+  paymentMethod: 'stripe' | 'sepa',
+  _deliveryDifferent?: boolean,
+): Pick<
+  Stripe.Checkout.SessionCreateParams,
+  'billing_address_collection' | 'customer_update'
+> {
+  return {
+    billing_address_collection: paymentMethod === 'sepa' ? 'required' : 'auto',
+    customer_update: {
+      address: 'auto',
+      name: 'auto',
+      shipping: 'never',
+    },
+  };
+}
+
+export async function createB2BStripeCustomer(
+  stripe: Stripe,
+  params: B2BCustomerParams
+): Promise<string> {
+  const customer = await stripe.customers.create(buildCustomerStripeParams(params));
 
   return customer.id;
 }
