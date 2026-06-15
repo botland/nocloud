@@ -89,8 +89,7 @@ describe('lib/pricing (functional business rules - implementation independent)',
       expect(getServicePrice('secureVaultBackup', 'edge')).toBe(29)
       expect(getServicePrice('managedCare')).toBe(99)
       expect(getServicePrice('secureVaultBackup')).toBe(49)
-      // @ts-expect-error intentional for runtime guard test
-      expect(getServicePrice('nope' as any)).toBe(0)
+      expect(getServicePrice('nope' as never)).toBe(0)
     })
   })
 

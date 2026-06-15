@@ -28,7 +28,7 @@ export async function createMonthlyRecurringPrice(
     currency: 'eur',
     product: productId,
     unit_amount: Math.round(unitAmountEur * 100),
-    recurring: { interval: 'month' },
+    recurring: { interval: 'month' as const },
     nickname: name,
   });
 
@@ -44,8 +44,8 @@ export async function createMonthlyRecurringPriceDataItem(
   stripe: Stripe,
   name: string,
   unitAmountEur: number,
-  options?: MonthlyRecurringProductOptions & { extraPriceData?: Record<string, any> },
-) {
+  options?: MonthlyRecurringProductOptions & { extraPriceData?: Record<string, unknown> },
+): Promise<Stripe.SubscriptionCreateParams.Item> {
   const product = await stripe.products.create({
     name,
     description: options?.description,
@@ -58,7 +58,7 @@ export async function createMonthlyRecurringPriceDataItem(
       currency: 'eur',
       product: product.id,
       unit_amount: Math.round(unitAmountEur * 100),
-      recurring: { interval: 'month' },
+      recurring: { interval: 'month' as const },
       ...(serial ? { nickname: name } : {}),
       ...(options?.extraPriceData || {}),
     },
@@ -101,14 +101,14 @@ export async function createPhasedMonthlySubscription(
       currency: 'eur',
       product: product.id,
       unit_amount: Math.round(options.promoAmountEur * 100),
-      recurring: { interval: 'month' },
+      recurring: { interval: 'month' as const },
       nickname: `${options.productName} (promo)`,
     }),
     stripe.prices.create({
       currency: 'eur',
       product: product.id,
       unit_amount: Math.round(options.listAmountEur * 100),
-      recurring: { interval: 'month' },
+      recurring: { interval: 'month' as const },
       nickname: `${options.productName} (list)`,
     }),
   ]);
