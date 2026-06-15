@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { getLocale } from 'next-intl/server';
 import { Inter, Space_Grotesk } from 'next/font/google';
+import { BRAND_DISPLAY } from '@/lib/brand';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -18,8 +19,8 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 const titles: Record<string, string> = {
-  en: 'nocloud.ai — Private Generative AI Appliances | B2B',
-  fr: 'nocloud.ai — Appareils IA Générative Privés | B2B',
+  en: `${BRAND_DISPLAY} — Private Generative AI Appliances | B2B`,
+  fr: `${BRAND_DISPLAY} — Appareils IA Générative Privés | B2B`,
 };
 
 const descriptions: Record<string, string> = {

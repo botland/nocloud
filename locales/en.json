@@ -11,7 +11,7 @@
   "nav": {
     "products": "Products",
     "services": "Services",
-    "why": "Why NoCloud",
+    "why": "Why {brand}",
     "docs": "Docs"
   },
   "products": {
@@ -77,7 +77,7 @@
     "cta": "Contact sales"
   },
   "footer": {
-    "copyright": "© {year} nocloud.ai — Private generative AI infrastructure for Europe",
+    "copyright": "© {year} {brand} — Private generative AI infrastructure for Europe",
     "legal": "Legal",
     "privacy": "Privacy (RGPD)",
     "support": "Support"
@@ -94,13 +94,18 @@
     "totalToday": "Total today",
     "recurringNote": "+ recurring services",
     "addToCart": "Add to cart",
+    "updateCart": "Update cart",
     "specs": {
       "inference": "Inference",
       "models": "Models",
       "memory": "Memory",
       "storage": "Storage",
-      "formFactor": "Form factor"
+      "formFactor": "Form factor",
+      "ram": "System RAM",
+      "vram": "VRAM (GPU)",
+      "disk": "Storage"
     },
+    "included": "included",
     "managedCare": "Managed Care",
     "managedCareNote": "Remote management, updates & priority support",
     "secureVaultBackup": "SecureVault Backup",
@@ -109,13 +114,15 @@
   "cart": {
     "yourOrder": "Your order",
     "empty": "Your cart is empty",
-    "itemLabel": "NoCloud {name} × {qty}",
+    "itemLabel": "{brand} {name} × {qty}",
     "hardwareTotal": "Hardware total",
+    "exclVatNote": "Excl. VAT",
     "servicesMonthly": "Services (monthly)",
     "seeConfigurator": "see configurator",
     "proceedCheckout": "Proceed to secure checkout",
     "secureNote": "Secure • VAT handled • European invoicing",
-    "remove": "Remove"
+    "remove": "Remove",
+    "edit": "Edit"
   },
   "checkout": {
     "completeOrder": "Complete your order",
@@ -125,6 +132,13 @@
     "vatPlaceholder": "VAT / SIRET number",
     "poPlaceholder": "PO number (optional)",
     "billingAddress": "BILLING ADDRESS",
+    "deliveryAddress": "DELIVERY ADDRESS",
+    "deliveryDifferentLabel": "Delivery address is different from billing address",
+    "stepInfo": "Information",
+    "stepPayment": "Payment",
+    "nextBtn": "Next",
+    "previousBtn": "Previous",
+    "processingPayment": "Preparing secure payment…",
     "streetPlaceholder": "Street address",
     "cityPlaceholder": "City",
     "postalPlaceholder": "Postal code",
@@ -139,6 +153,7 @@
     "totalToPay": "Total to pay today",
     "completeBtn": "Complete order",
     "validation": "Please fill in company name, email, address and city",
+    "validationDelivery": "Please fill in the delivery address and city",
     "countries": {
       "FR": "France",
       "DE": "Germany",
@@ -165,7 +180,29 @@
     "leaseDesc": "Hardware amortized over {months} months + services included",
     "monthlyPayment": "€{amount}/month for {months} months",
     "firstMonthNote": "First payment charged today via Stripe",
-    "monthlyTotalLabel": "Monthly payment ({months} months)"
+    "upfrontDueToday": "€{amount} due today",
+    "leaseRangeNote": "(eligible for hardware €{min} – €{max})",
+    "invoiceRangeNote": "(min €{min} – max €{max} — choose card or reduce order)",
+    "invoicePolicyNote": "(Net 30 for hardware/upfront; pick card or SEPA below for recurring services)",
+    "monthlyTotalLabel": "Monthly payment ({months} months)",
+    "recurringPaymentForServices": "Payment method for recurring services",
+    "recurringCard": "Credit / Debit card",
+    "recurringCardTag": "Stripe",
+    "recurringSepa": "SEPA Direct Debit",
+    "recurringSepaDesc": "For the monthly service charges (collected automatically)",
+    "vatInclusiveLabel": "I wish to be billed VAT-inclusive",
+    "vatInclusiveExplanation": "VAT will be charged by the supplier and added to the total. This election is only available when not prohibited by mandatory reverse charge or other legal rules.",
+    "vatInclusiveWarning": "Selecting this will result in VAT at {rate}% being applied to the order (gross total charged).",
+    "vatBreakdown": "Net €{net} + VAT €{vat} (incl.)",
+    "monthlyPaymentWithVat": "€{amount}/month for {months} months ({breakdown})",
+    "oneTimeUpfrontDueTodayWithVat": "One-time upfront due today: €{amount} ({breakdown})",
+    "vatTreatment": "VAT TREATMENT",
+    "viesChecking": "Verifying VAT number with VIES…",
+    "viesValid": "VAT number verified (VIES)",
+    "viesValidWithName": "VAT verified: {name}",
+    "viesInvalid": "VAT number could not be verified via VIES",
+    "viesUnavailable": "VIES verification is temporarily unavailable — try again shortly",
+    "viesStillChecking": "Please wait for VAT verification to complete before continuing."
   },
   "success": {
     "title": "Thank you for your order!",
@@ -179,6 +216,29 @@
     "perMonth": "/mo",
     "perMonthLong": " / month",
     "recurringSuffixShort": "/mo recurring",
-    "recurringSuffix": "/mo recurring services"
+    "recurringSuffix": "/mo recurring services",
+    "price": "€{amount}"
+  },
+  "promotions": {
+    "badgePromo": "Promo",
+    "badgeFree": "Free",
+    "freePrice": "Free",
+    "managedCareLaunchFree": "Launch offer",
+    "managedCareLaunchFreeUntil": "Free until {date}",
+    "launchEdge": "Launch pricing",
+    "vaultStudio": "Vault promo",
+    "recurringPromoUntil": "{promo}{suffix} until {date}",
+    "recurringFreeUntil": "Free until {date}",
+    "recurringThenList": "then {list}{suffix}",
+    "hardwareFromList": "from",
+    "hardwarePromoUntil": "until {date}",
+    "recurringPmRequired": "A payment method is required for recurring services — billing starts after the promotional period.",
+    "recurringScheduleTitle": "Recurring services (estimate)",
+    "recurringScheduleUntil": "{price}{suffix} until {date}",
+    "recurringScheduleThenUntil": "then {price}{suffix} until {date}",
+    "recurringScheduleFreeUntil": "Free until {date}",
+    "recurringScheduleThenFreeUntil": "then free until {date}",
+    "recurringScheduleThenOngoing": "then {price}{suffix}",
+    "recurringScheduleNote": "Indicative monthly total. Promotional periods and standard rates are shown before payment; final terms appear on your order confirmation."
   }
 }

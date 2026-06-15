@@ -11,7 +11,7 @@
   "nav": {
     "products": "Produits",
     "services": "Services",
-    "why": "Pourquoi NoCloud",
+    "why": "Pourquoi {brand}",
     "docs": "Docs"
   },
   "products": {
@@ -77,7 +77,7 @@
     "cta": "Contacter les ventes"
   },
   "footer": {
-    "copyright": "© {year} nocloud.ai — Infrastructure IA générative privée pour l'Europe",
+    "copyright": "© {year} {brand} — Infrastructure IA générative privée pour l'Europe",
     "legal": "Mentions légales",
     "privacy": "Confidentialité (RGPD)",
     "support": "Support"
@@ -94,13 +94,18 @@
     "totalToday": "Total aujourd'hui",
     "recurringNote": "+ services récurrents",
     "addToCart": "Ajouter au panier",
+    "updateCart": "Mettre à jour le panier",
     "specs": {
       "inference": "Inférence",
       "models": "Modèles",
       "memory": "Mémoire",
       "storage": "Stockage",
-      "formFactor": "Format"
+      "formFactor": "Format",
+      "ram": "RAM système",
+      "vram": "VRAM (GPU)",
+      "disk": "Stockage"
     },
+    "included": "inclus",
     "managedCare": "Maintenance Gérée",
     "managedCareNote": "Gestion à distance, mises à jour & support prioritaire",
     "secureVaultBackup": "Sauvegarde SecureVault",
@@ -109,13 +114,15 @@
   "cart": {
     "yourOrder": "Votre commande",
     "empty": "Votre panier est vide",
-    "itemLabel": "NoCloud {name} × {qty}",
+    "itemLabel": "{brand} {name} × {qty}",
     "hardwareTotal": "Total matériel",
+    "exclVatNote": "HT",
     "servicesMonthly": "Services (mensuels)",
     "seeConfigurator": "voir le configurateur",
     "proceedCheckout": "Passer à la caisse sécurisée",
     "secureNote": "Sécurisé • TVA gérée • Facturation européenne",
-    "remove": "Supprimer"
+    "remove": "Supprimer",
+    "edit": "Modifier"
   },
   "checkout": {
     "completeOrder": "Finalisez votre commande",
@@ -125,6 +132,13 @@
     "vatPlaceholder": "Numéro de TVA / SIRET",
     "poPlaceholder": "Numéro de bon de commande (optionnel)",
     "billingAddress": "ADRESSE DE FACTURATION",
+    "deliveryAddress": "ADRESSE DE LIVRAISON",
+    "deliveryDifferentLabel": "L'adresse de livraison est différente de l'adresse de facturation",
+    "stepInfo": "Informations",
+    "stepPayment": "Paiement",
+    "nextBtn": "Suivant",
+    "previousBtn": "Précédent",
+    "processingPayment": "Préparation du paiement sécurisé…",
     "streetPlaceholder": "Adresse",
     "cityPlaceholder": "Ville",
     "postalPlaceholder": "Code postal",
@@ -139,6 +153,7 @@
     "totalToPay": "Total à payer aujourd'hui",
     "completeBtn": "Finaliser la commande",
     "validation": "Veuillez renseigner le nom de l'entreprise, l'adresse e-mail, l'adresse et la ville",
+    "validationDelivery": "Veuillez renseigner l'adresse et la ville de livraison",
     "countries": {
       "FR": "France",
       "DE": "Allemagne",
@@ -163,9 +178,31 @@
     "payFullDesc": "Paiement unique pour les appareils",
     "lease": "Location / financement",
     "leaseDesc": "Matériel amorti sur {months} mois + services inclus",
-    "monthlyPayment": "€{amount}/mois pendant {months} mois",
+    "monthlyPayment": "{amount}€/mois pendant {months} mois",
     "firstMonthNote": "Premier paiement prélevé aujourd'hui via Stripe",
-    "monthlyTotalLabel": "Paiement mensuel ({months} mois)"
+    "upfrontDueToday": "{amount}€ dus aujourd'hui",
+    "leaseRangeNote": "(éligible pour un matériel de {min}€ à {max}€)",
+    "invoiceRangeNote": "(min {min}€ – max {max}€ — choisissez carte ou réduisez la commande)",
+    "invoicePolicyNote": "(Net 30 pour le matériel/acompte ; choisissez carte ou SEPA ci-dessous pour les services récurrents)",
+    "monthlyTotalLabel": "Paiement mensuel ({months} mois)",
+    "recurringPaymentForServices": "Méthode de paiement pour les services récurrents",
+    "recurringCard": "Carte de crédit / débit",
+    "recurringCardTag": "Stripe",
+    "recurringSepa": "Prélèvement SEPA",
+    "recurringSepaDesc": "Pour les charges mensuelles des services (prélèvement automatique)",
+    "vatInclusiveLabel": "Je souhaite être facturé TTC (TVA incluse)",
+    "vatInclusiveExplanation": "La TVA sera facturée par le fournisseur et ajoutée au total. Ce choix n'est proposé que lorsqu'il n'est pas interdit par les règles de reverse charge obligatoire ou autres dispositions légales.",
+    "vatInclusiveWarning": "Ce choix entraînera l'application de la TVA à {rate}% sur la commande (total TTC facturé).",
+    "vatBreakdown": "{net}€ HT + {vat}€ TVA",
+    "monthlyPaymentWithVat": "{amount}€/mois pendant {months} mois ({breakdown})",
+    "oneTimeUpfrontDueTodayWithVat": "Acompte unique dû aujourd'hui : {amount}€ ({breakdown})",
+    "vatTreatment": "TRAITEMENT TVA",
+    "viesChecking": "Vérification du numéro de TVA via VIES…",
+    "viesValid": "Numéro de TVA vérifié (VIES)",
+    "viesValidWithName": "TVA vérifiée : {name}",
+    "viesInvalid": "Le numéro de TVA n'a pas pu être vérifié via VIES",
+    "viesUnavailable": "La vérification VIES est temporairement indisponible — réessayez dans un instant",
+    "viesStillChecking": "Veuillez attendre la fin de la vérification TVA avant de continuer."
   },
   "success": {
     "title": "Merci pour votre commande !",
@@ -179,6 +216,29 @@
     "perMonth": "/mois",
     "perMonthLong": " / mois",
     "recurringSuffixShort": "/mois récurrent",
-    "recurringSuffix": "/mois services récurrents"
+    "recurringSuffix": "/mois services récurrents",
+    "price": "{amount}€"
+  },
+  "promotions": {
+    "badgePromo": "Promo",
+    "badgeFree": "Gratuit",
+    "freePrice": "Gratuit",
+    "managedCareLaunchFree": "Offre de lancement",
+    "managedCareLaunchFreeUntil": "Gratuit jusqu'au {date}",
+    "launchEdge": "Tarif lancement",
+    "vaultStudio": "Promo Vault",
+    "recurringPromoUntil": "{promo}{suffix} jusqu'au {date}",
+    "recurringFreeUntil": "Gratuit jusqu'au {date}",
+    "recurringThenList": "puis {list}{suffix}",
+    "hardwareFromList": "à partir de",
+    "hardwarePromoUntil": "jusqu'au {date}",
+    "recurringPmRequired": "Un moyen de paiement est requis pour les services récurrents — la facturation débute après la période promotionnelle.",
+    "recurringScheduleTitle": "Services récurrents (estimation)",
+    "recurringScheduleUntil": "{price}{suffix} jusqu'au {date}",
+    "recurringScheduleThenUntil": "puis {price}{suffix} jusqu'au {date}",
+    "recurringScheduleFreeUntil": "Gratuit jusqu'au {date}",
+    "recurringScheduleThenFreeUntil": "puis gratuit jusqu'au {date}",
+    "recurringScheduleThenOngoing": "puis {price}{suffix}",
+    "recurringScheduleNote": "Total mensuel indicatif. Les périodes promotionnelles et tarifs standards sont affichés avant le paiement ; les conditions définitives figurent sur votre confirmation de commande."
   }
 }

@@ -13,7 +13,16 @@ export default function SuccessPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
-      setSessionId(sp.get('session_id'));
+      const sid = sp.get('session_id');
+      setSessionId(sid);
+      if (sid) {
+        // Best-effort: ensure service subscriptions are created for full + card/sepa orders.
+        // This is a fallback so users reliably see the recurring subs even if the
+        // Stripe webhook (the canonical path) has not yet delivered or is not configured
+        // in their local dev environment (common cause of "still no subs" for full credit card).
+        // The webhook will also call the same helper (with idempotency guard).
+        fetch(`/api/fulfill?session_id=${encodeURIComponent(sid)}`).catch(() => {});
+      }
     }
   }, []);
 
