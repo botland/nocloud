@@ -608,7 +608,8 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     const gross = Math.round(hw * 1.19)
     const res = await POST(makeRequest(payload))
     expect(res.status).toBe(200)
-    expect(res.json()).resolves.toHaveProperty('invoiceId') // or url in some paths; success shape
+    const json = await res.json()
+    expect(json).toHaveProperty('invoiceId')
     // invoiceItem used gross amount
     const itemCall = mockStripeInstance.invoiceItems.create.mock.calls.find((c: any[]) => c[0] && c[0].amount)
     expect(itemCall).toBeTruthy()

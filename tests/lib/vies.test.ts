@@ -48,4 +48,33 @@ describe('lib/vies', () => {
     expect(result.isValid).toBe(false)
     expect(result.unavailable).toBe(true)
   })
+
+  it('validateVatWithVies rejects registered-but-invalid numbers', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      text: async () => `
+        <soap:Envelope><soap:Body>
+          <checkVatResponse><valid>false</valid></checkVatResponse>
+        </soap:Body></soap:Envelope>`,
+    } as Response)
+
+    const result = await validateVatWithVies('DE123456789', 'DE')
+    expect(result.isValid).toBe(false)
+    expect(result.reason).toContain('not registered')
+  })
+
+  it('validateVatWithVies returns unavailable on network errors', async () => {
+    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('network down'))
+
+    const result = await validateVatWithVies('DE123456789', 'DE')
+    expect(result.unavailable).toBe(true)
+    expect(result.reason).toContain('Could not reach VIES')
+  })
+
+  it('validateVatWithVies rejects non-EU VAT prefixes', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch')
+    const result = await validateVatWithVies('US123456789', 'US')
+    expect(result.isValid).toBe(false)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
 })

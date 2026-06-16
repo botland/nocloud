@@ -28,10 +28,13 @@ Real B2B checkout for on-premise AI hardware appliances with optional managed se
    npm install
    ```
 
-2. Copy the example and fill real secrets (never commit `.env.local`):
+2. Copy the example and fill real secrets (never commit env files with real keys):
    ```bash
-   cp .env.example .env.local
+   cp .env.example .env.development.local
    ```
+   Use **`.env.development.local`** for local dev — Next.js loads it only with `next dev`, not during production build or `next start`.
+
+   **Do not use `.env.local` on a production server.** Next.js always loads `.env.local` in production (it appears in `next build` as `Environments: .env.local, .env.production`) and its values **override** `.env.production`. Keep live secrets in **`.env.production`** only. `npm run deploy` runs `build:prod`, which refuses to build if `.env.local` is still present.
    Required keys:
    - `STRIPE_SECRET_KEY` (sk_test_...)
    - `STRIPE_WEBHOOK_SECRET` (whsec_... — required for the webhook to verify events and send emails + create service subs)
@@ -54,7 +57,7 @@ Real B2B checkout for on-premise AI hardware appliances with optional managed se
    stripe login
    stripe listen --forward-to http://localhost:8080/api/webhook/stripe
    ```
-   Copy the signing secret into `STRIPE_WEBHOOK_SECRET` in `.env.local`.
+   Copy the signing secret into `STRIPE_WEBHOOK_SECRET` in `.env.development.local`.
 
 ## Rebranding / White-labeling
 
