@@ -61,13 +61,13 @@ export const SERVICE_PRICES_BY_TIER: Record<HardwareSlug, Record<ServiceKey, num
   forge: { managedCare: 149, secureVaultBackup: 79 },
 };
 
-export const LEASE_MAX = 200000;            // EUR - leasing not available above this hardware total
+export const LEASE_MAX = 20000;             // EUR - leasing not available above this hardware total
 export const LEASE_MIN = 5000;              // EUR - leasing not available below this hardware total
 export const LEASE_THRESHOLD = 10000;       // EUR — below this: 12mo lease; at/above: 24mo
 export const LEASE_MONTHS_UNDER = 12;
 export const LEASE_MONTHS_OVER = 24;
 
-export const PBI_MAX = 20000;               // EUR - pay by invoice not available above this hardware total
+export const PBI_MAX = 200000;              // EUR - pay by invoice not available above this hardware total
 export const PBI_MIN = 5000;                // EUR - pay by invoice not available below this hardware total
 
 export const SEPA_MAX = 10000;              // EUR — Stripe-enforced soft cap for SEPA Direct Debit (we guard both sides)
@@ -225,54 +225,52 @@ export interface HardwareCustomization {
 export const TIER_SPEC_OPTIONS: Record<HardwareSlug, TierSpecOptions> = {
   edge: {
     ram: [
-      { value: 16, label: '16 GB', price: -200 },
-      { value: 24, label: '24 GB', price: 0 },     // default (matches legacy "24 GB")
-      { value: 32, label: '32 GB', price: 280 },
-      { value: 48, label: '48 GB', price: 650 },
+      { value: 32, label: '32 GB', price: 0 },	// default
+      { value: 64, label: '64 GB', price: 490 },
     ],
     vram: [
-      { value: 16, label: '16 GB', price: 0 },     // default
-      { value: 24, label: '24 GB', price: 420 },
+      { value: 16, label: '16 GB GDDR6', price: 0 },     // default
+      { value: 20, label: '20 GB GDDR6', price: 1590 },
+      { value: 24, label: '24 GB GDDR6', price: 2690 },
+      { value: 32, label: '32 GB GDDR7', price: 4090 },
     ],
     disk: [
-      { value: 1, label: '1 TB NVMe', price: 0 },  // default
-      { value: 2, label: '2 TB HDD', price: 350 },
+      { value: 1, label: '2 TB NVMe', price: 0 },  // default
+      { value: 4, label: '4 TB NVMe', price: 790 },
     ],
   },
   studio: {
     ram: [
-      { value: 64, label: '64 GB', price: -150 },
-      { value: 96, label: '96 GB', price: 0 },     // default
-      { value: 128, label: '128 GB', price: 320 },
-      { value: 192, label: '192 GB', price: 780 },
+      { value: 64, label: '64 GB', price: 0 },	// default
+      { value: 128, label: '128 GB', price: 1090 },
     ],
     vram: [
-      { value: 48, label: '48 GB', price: -80 },
-      { value: 96, label: '96 GB', price: 0 },     // default
-      { value: 128, label: '128 GB', price: 450 },
+      { value: 32, label: '32 GB GDDR6', price: 0 },     // default
+      { value: 48, label: '48 GB GDDR7', price: 6290 },
+      { value: 72, label: '72 GB GDDR7', price: 8890 },
     ],
     disk: [
-      { value: 2, label: '2 TB RAID', price: -120 },
-      { value: 4, label: '4 TB RAID', price: 0 },  // default
-      { value: 8, label: '8 TB Enterprise', price: 680 },
+      { value: 4, label: '4 TB NVMe', price: 0 },	// default
+      { value: 8, label: '8 TB NVMe', price: 1590 },
     ],
   },
   forge: {
     ram: [
-      { value: 96, label: '96 GB', price: -200 },
       { value: 128, label: '128 GB', price: 0 },   // default
-      { value: 192, label: '192 GB', price: 380 },
-      { value: 256, label: '256 GB', price: 820 },
+      { value: 192, label: '192 GB', price: 2290 },
+      { value: 256, label: '256 GB', price: 7690 },
     ],
     vram: [
-      { value: 192, label: '192 GB HBM', price: -300 },
-      { value: 256, label: '256 GB HBM', price: 0 }, // default (matches legacy "256+ GB HBM")
-      { value: 384, label: '384 GB HBM', price: 920 },
+      { value: 64, label: '64 GB GDDR6', price: 0 }, // default
+      { value: 72, label: '72 GB GDDR7 ECC', price: 10490 },
+      { value: 96, label: '96 GB GDDR7 ECC', price: 12090 },
+      { value: 144, label: '144 GB GDDR7 ECC', price: 20490 },
+      { value: 192, label: '192 GB GDDR7 ECC', price: 24090 },
     ],
     disk: [
-      { value: 4, label: '4 TB Enterprise', price: -150 },
-      { value: 8, label: '8 TB Enterprise', price: 0 }, // default
-      { value: 16, label: '16 TB Enterprise', price: 1250 },
+      { value: 8, label: '8 TB NVMe RAID 1', price: 0 }, // default
+      { value: 16, label: '16 TB NVMe RAID 1', price: 3290 },
+      { value: 32, label: '32 TB NVMe RAID 1', price: 7490 },
     ],
   },
 } as const;
