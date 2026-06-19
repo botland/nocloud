@@ -1,12 +1,12 @@
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 
-const withNextIntl = createNextIntlPlugin();
+const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
 /** @type {import('next').NextConfig} */
 const nextConfig: NextConfig = {
   // Allow dev HMR and dev features when accessing via the tunnel/public IP used in this environment.
-  allowedDevOrigins: ['inferedge.ai'],
+  allowedDevOrigins: ['inferedge.ai','ownedge.ai','b2b.ownedge.ai'],
 
   // SVGR for Turbopack (Next.js 16)
   turbopack: {

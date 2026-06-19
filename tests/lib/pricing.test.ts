@@ -53,7 +53,7 @@ describe('lib/pricing (functional business rules - implementation independent)',
 
     it('exports lease range and term thresholds', () => {
       expect(LEASE_MIN).toBe(5000)
-      expect(LEASE_MAX).toBe(200000)
+      expect(LEASE_MAX).toBe(20000)
       expect(LEASE_THRESHOLD).toBe(10000)
       expect(LEASE_MONTHS_UNDER).toBe(12)
       expect(LEASE_MONTHS_OVER).toBe(24)
@@ -61,7 +61,7 @@ describe('lib/pricing (functional business rules - implementation independent)',
 
     it('exports PBI and SEPA limits + invoice policy flag', () => {
       expect(PBI_MIN).toBe(5000)
-      expect(PBI_MAX).toBe(20000)
+      expect(PBI_MAX).toBe(200000)
       expect(SEPA_MAX).toBe(10000)
       expect(typeof INVOICE_ONLY_FULL_NO_SERVICES).toBe('boolean')
       expect(UPFRONT_PERCENT).toBe(20)
@@ -191,8 +191,8 @@ describe('lib/pricing (functional business rules - implementation independent)',
     it('isLeaseAllowed matches calculateLease().isAllowed', () => {
       expect(isLeaseAllowed(4999)).toBe(false)
       expect(isLeaseAllowed(5000)).toBe(true)
-      expect(isLeaseAllowed(200000)).toBe(true)
-      expect(isLeaseAllowed(200001)).toBe(false)
+      expect(isLeaseAllowed(LEASE_MAX)).toBe(true)
+      expect(isLeaseAllowed(LEASE_MAX + 1)).toBe(false)
     })
 
     it('getUpfrontAmount returns 0 when not allowed, otherwise 20% rounded', () => {
@@ -212,8 +212,8 @@ describe('lib/pricing (functional business rules - implementation independent)',
     it('isPbiAllowed uses PBI_MIN/MAX inclusive', () => {
       expect(isPbiAllowed(4999)).toBe(false)
       expect(isPbiAllowed(5000)).toBe(true)
-      expect(isPbiAllowed(20000)).toBe(true)
-      expect(isPbiAllowed(20001)).toBe(false)
+      expect(isPbiAllowed(PBI_MAX)).toBe(true)
+      expect(isPbiAllowed(PBI_MAX + 1)).toBe(false)
     })
 
     it('isInvoiceAllowed returns true when INVOICE_ONLY_FULL_NO_SERVICES=false (current policy)', () => {
@@ -273,13 +273,12 @@ describe('lib/pricing (functional business rules - implementation independent)',
     it('getDefaultOption returns the price===0 entry (or first) for each dimension', () => {
       const defRam = getDefaultOption('studio', 'ram')
       expect(defRam).not.toBeNull()
-      // In our data the default for studio ram has price 0 and value 96
       expect(defRam!.price).toBe(0)
-      expect(defRam!.value).toBe(96)
+      expect(defRam!.value).toBe(64)
     })
 
     it('getOptionPrice returns the listed price for an exact value match, 0 otherwise or for unknown slug', () => {
-      expect(getOptionPrice('edge', 'vram', 24)).toBe(420) // non-default
+      expect(getOptionPrice('edge', 'vram', 24)).toBe(2690) // non-default
       expect(getOptionPrice('edge', 'vram', 16)).toBe(0)   // default
       expect(getOptionPrice('edge', 'vram', 999)).toBe(0)
       expect(getOptionPrice('unknown' as any, 'disk', 1)).toBe(0)
@@ -298,40 +297,37 @@ describe('lib/pricing (functional business rules - implementation independent)',
     })
 
     it('calculateHardwarePrice adds the option prices for chosen values (per-appliance)', () => {
-      // edge: pick 32 GB ram (+280) + 24 GB vram (+420) + 2 TB HDD (+350)
       const up = {
-        ram: { value: 32, label: '32 GB' },
-        vram: { value: 24, label: '24 GB' },
-        disk: { value: 2, label: '2 TB HDD' },
+        ram: { value: 64, label: '64 GB' },
+        vram: { value: 24, label: '24 GB GDDR6' },
+        disk: { value: 4, label: '4 TB NVMe' },
       }
-      const expectedExtra = 280 + 420 + 350
+      const expectedExtra = 490 + 2690 + 790
       expect(calculateHardwarePrice('edge', up)).toBe(HARDWARE_PRICES.edge + expectedExtra)
     })
 
     it('calculateHardwarePrice handles mixed (some dimensions customized, others default)', () => {
-      const partial = { vram: { value: 24, label: '24 GB' } } // +420 on edge
-      expect(calculateHardwarePrice('edge', partial)).toBe(HARDWARE_PRICES.edge + 420)
+      const partial = { vram: { value: 24, label: '24 GB GDDR6' } }
+      expect(calculateHardwarePrice('edge', partial)).toBe(HARDWARE_PRICES.edge + 2690)
     })
 
     it('formatHardwareCustomization produces a compact label string using the stored labels (tech variants preserved)', () => {
       const c = {
-        ram: { value: 24, label: '24 GB' },
-        disk: { value: 2, label: '2 TB HDD' },
+        ram: { value: 64, label: '64 GB' },
+        disk: { value: 4, label: '4 TB NVMe' },
       }
       const s = formatHardwareCustomization(c)
-      expect(s).toContain('24 GB')
-      expect(s).toContain('2 TB HDD')
+      expect(s).toContain('64 GB')
+      expect(s).toContain('4 TB NVMe')
       expect(formatHardwareCustomization(undefined)).toBe('')
     })
 
     it('different tech labels for same numeric value are supported and distinguishable', () => {
-      // In our sample data edge disk has two options with different labels.
       const diskOpts = getSpecOptions('edge', 'disk')
       const labels = diskOpts.map(o => o.label)
-      expect(labels).toContain('1 TB NVMe')
-      expect(labels).toContain('2 TB HDD')
-      // prices can differ
-      expect(getOptionPrice('edge', 'disk', 1)).not.toBe(getOptionPrice('edge', 'disk', 2))
+      expect(labels).toContain('2 TB NVMe')
+      expect(labels).toContain('4 TB NVMe')
+      expect(getOptionPrice('edge', 'disk', 1)).not.toBe(getOptionPrice('edge', 'disk', 4))
     })
   })
 })

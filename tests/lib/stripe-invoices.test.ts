@@ -37,20 +37,24 @@ describe('lib/stripe-invoices', () => {
         invoices: {
           retrieve: vi.fn(),
           del: vi.fn(),
+          finalizeInvoice: vi.fn(),
           voidInvoice: vi.fn(),
         },
       }
     })
 
-    it('deletes draft zero invoices', async () => {
+    it('finalizes and voids draft zero invoices', async () => {
       stripe.invoices.retrieve.mockResolvedValue({
         status: 'draft',
         total: 0,
         amount_due: 0,
       })
+      stripe.invoices.finalizeInvoice.mockResolvedValue({ status: 'open' })
 
       await cleanupZeroTrialInvoice(stripe as Stripe, 'inv_zero', 'test ctx')
-      expect(stripe.invoices.del).toHaveBeenCalledWith('inv_zero')
+      expect(stripe.invoices.del).not.toHaveBeenCalled()
+      expect(stripe.invoices.finalizeInvoice).toHaveBeenCalledWith('inv_zero')
+      expect(stripe.invoices.voidInvoice).toHaveBeenCalledWith('inv_zero')
     })
 
     it('voids open zero invoices', async () => {
@@ -62,6 +66,19 @@ describe('lib/stripe-invoices', () => {
 
       await cleanupZeroTrialInvoice(stripe as Stripe, 'inv_open', 'test ctx')
       expect(stripe.invoices.voidInvoice).toHaveBeenCalledWith('inv_open')
+    })
+
+    it('skips void when draft finalizes as paid', async () => {
+      stripe.invoices.retrieve.mockResolvedValue({
+        status: 'draft',
+        total: 0,
+        amount_due: 0,
+      })
+      stripe.invoices.finalizeInvoice.mockResolvedValue({ status: 'paid' })
+
+      await cleanupZeroTrialInvoice(stripe as Stripe, 'inv_sub_paid', 'test ctx')
+      expect(stripe.invoices.del).not.toHaveBeenCalled()
+      expect(stripe.invoices.voidInvoice).not.toHaveBeenCalled()
     })
 
     it('skips non-zero invoices', async () => {
@@ -86,6 +103,8 @@ describe('lib/stripe-invoices', () => {
         invoices: {
           retrieve: vi.fn(),
           del: vi.fn(),
+          finalizeInvoice: vi.fn(),
+          voidInvoice: vi.fn(),
           update: vi.fn(),
         },
       }
@@ -98,8 +117,11 @@ describe('lib/stripe-invoices', () => {
         amount_due: 0,
       })
 
+      stripe.invoices.finalizeInvoice.mockResolvedValue({ status: 'open' })
+
       await handleSubscriptionTrialInvoice(stripe as Stripe, 'inv_zero', 'svc sub')
-      expect(stripe.invoices.del).toHaveBeenCalledWith('inv_zero')
+      expect(stripe.invoices.finalizeInvoice).toHaveBeenCalledWith('inv_zero')
+      expect(stripe.invoices.voidInvoice).toHaveBeenCalledWith('inv_zero')
     })
 
     it('sets auto_advance on non-zero draft invoices', async () => {

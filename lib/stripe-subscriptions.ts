@@ -52,14 +52,12 @@ export async function createMonthlyRecurringPriceDataItem(
     metadata: options?.metadata,
   });
 
-  const serial = options?.metadata?.serial_number || options?.metadata?.host_serial_number;
   return {
     price_data: {
       currency: 'eur',
       product: product.id,
       unit_amount: Math.round(unitAmountEur * 100),
       recurring: { interval: 'month' as const },
-      ...(serial ? { nickname: name } : {}),
       ...(options?.extraPriceData || {}),
     },
   };
@@ -126,6 +124,7 @@ export async function createPhasedMonthlySubscription(
 
   const schedule = await stripe.subscriptionSchedules.create({
     customer: customerId,
+    start_date: 'now',
     end_behavior: 'release',
     phases: [phase1, phase2],
     metadata: options.metadata,

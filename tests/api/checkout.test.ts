@@ -115,7 +115,9 @@ describe('api/checkout (functional contract tests - black box over payload + Str
       invoices: { create: vi.fn(), finalizeInvoice: vi.fn(), retrieve: vi.fn(), update: vi.fn(), del: vi.fn(), voidInvoice: vi.fn() },
       invoiceItems: { create: vi.fn() },
       products: { create: vi.fn() },
-      subscriptions: { create: vi.fn() },
+      prices: { create: vi.fn() },
+      subscriptions: { create: vi.fn(), retrieve: vi.fn() },
+      subscriptionSchedules: { create: vi.fn() },
       checkout: { sessions: { create: vi.fn() } },
     }
     mockResendInstance = {
@@ -143,7 +145,12 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     mockStripeInstance.invoiceItems.create.mockResolvedValue({})
     mockStripeInstance.invoices.finalizeInvoice.mockResolvedValue({})
     mockStripeInstance.products.create.mockResolvedValue({ id: 'prod_test' })
+    mockStripeInstance.prices.create
+      .mockResolvedValueOnce({ id: 'price_promo' })
+      .mockResolvedValueOnce({ id: 'price_list' })
     mockStripeInstance.subscriptions.create.mockResolvedValue({ id: 'sub_test', latest_invoice: { id: 'inv_test', status: 'draft', total: 0, amount_due: 0 } })
+    mockStripeInstance.subscriptions.retrieve.mockResolvedValue({ id: 'sub_scheduled', latest_invoice: { id: 'inv_sched', status: 'draft', total: 0, amount_due: 0 } })
+    mockStripeInstance.subscriptionSchedules.create.mockResolvedValue({ id: 'sched_test', subscription: 'sub_scheduled' })
     mockStripeInstance.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.test/pay' })
 
     mockResendInstance.emails.send.mockResolvedValue({ id: 'email_123' })
@@ -420,6 +427,115 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     // Lease-specific registered emails (customer + admin)
     expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
   })
+  it('lease + invoice + recurring card (hybrid) with tier-promo service: pre-creates phased schedule with start_date', async () => {
+    const payload = withServices(
+      basePayload({ paymentMethod: 'invoice', financing: 'lease' }),
+      ['secureVaultBackup'],
+    )
+    ;(payload as any).recurringPaymentMethod = 'stripe'
+
+    const hw = HARDWARE_PRICES.studio
+    const vaultResolved = resolveServicePrice('secureVaultBackup', 'studio')
+    const lease = calculateLease(hw, vaultResolved.net)
+    expect(lease.isAllowed).toBe(true)
+    expect(vaultResolved.promoEndsAt).toBe('2026-08-31')
+
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json).toHaveProperty('url')
+
+    expect(mockStripeInstance.subscriptionSchedules.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer: 'cus_test',
+        start_date: 'now',
+        end_behavior: 'release',
+        phases: expect.arrayContaining([
+          expect.objectContaining({
+            items: [{ price: 'price_promo', quantity: 1 }],
+            trial_end: expect.any(Number),
+          }),
+          expect.objectContaining({
+            items: [{ price: 'price_list', quantity: 1 }],
+          }),
+        ]),
+      }),
+    )
+
+    const setupCall = mockStripeInstance.checkout.sessions.create.mock.calls.find((c: any[]) => (c[0] || {}).mode === 'setup')
+    expect(setupCall).toBeTruthy()
+    expect(setupCall[0].metadata).toMatchObject({
+      financing: 'lease',
+      recurring_payment_method: 'stripe',
+      is_lease_recurring_setup: 'true',
+    })
+
+    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
+  })
+
+  it('lease + invoice + recurring card (hybrid) Edge + managedCare + vault: plain subs without price_data.nickname', async () => {
+    const edgeBase = HARDWARE_PRICES.edge
+    const payload = withServices(
+      basePayload({
+        paymentMethod: 'invoice',
+        financing: 'lease',
+        items: [{
+          ...basePayload().items[0],
+          product: { ...basePayload().items[0].product, slug: 'edge', name: 'Edge', price: edgeBase },
+          totalPrice: edgeBase + 2690,
+          customization: {
+            ram: { value: 32, label: '32 GB' },
+            vram: { value: 24, label: '24 GB GDDR6' },
+            disk: { value: 1, label: '2 TB NVMe' },
+          },
+        }],
+      }),
+      ['managedCare', 'secureVaultBackup'],
+    )
+    ;(payload as any).recurringPaymentMethod = 'stripe'
+
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+
+    // 1 lease hardware sub + 2 service subs (no tier promo on Edge vault)
+    expect(mockStripeInstance.subscriptions.create).toHaveBeenCalledTimes(3)
+    expect(mockStripeInstance.subscriptionSchedules.create).not.toHaveBeenCalled()
+
+    const serviceSubCalls = mockStripeInstance.subscriptions.create.mock.calls.slice(1)
+    expect(serviceSubCalls).toHaveLength(2)
+    for (const call of serviceSubCalls) {
+      expect(call[0].items[0].price_data.nickname).toBeUndefined()
+    }
+
+    const mcCall = serviceSubCalls.find((c: any[]) => c[0].metadata?.service === 'Managed Care')
+    expect(mcCall?.[0].trial_end).toBe(launchFreeUntilEpoch('2027-01-01'))
+  })
+
+  it('lease + invoice + recurring card (hybrid) Studio + managedCare + vault promo: dual promo types per service', async () => {
+    const payload = withServices(
+      basePayload({ paymentMethod: 'invoice', financing: 'lease' }),
+      ['managedCare', 'secureVaultBackup'],
+    )
+    ;(payload as any).recurringPaymentMethod = 'stripe'
+
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+
+    // lease hardware + managed care (plain) + vault (phased schedule)
+    expect(mockStripeInstance.subscriptions.create).toHaveBeenCalledTimes(2)
+    expect(mockStripeInstance.subscriptionSchedules.create).toHaveBeenCalledTimes(1)
+
+    const mcSub = mockStripeInstance.subscriptions.create.mock.calls.find(
+      (c: any[]) => c[0].metadata?.service === 'Managed Care',
+    )
+    expect(mcSub?.[0].trial_end).toBe(launchFreeUntilEpoch('2027-01-01'))
+    expect(mcSub?.[0].items[0].price_data.nickname).toBeUndefined()
+
+    expect(mockStripeInstance.subscriptionSchedules.create).toHaveBeenCalledWith(
+      expect.objectContaining({ start_date: 'now' }),
+    )
+  })
+
 
   // ---------- Validation & error paths (server is authoritative) ----------
 
@@ -439,15 +555,15 @@ describe('api/checkout (functional contract tests - black box over payload + Str
   })
 
   it('invoice + hardware outside PBI range returns 400', async () => {
-    // forge * 2 = 29800 > PBI_MAX (20000)
+    // forge * 15 = 223500 > PBI_MAX (200000)
     const bad = basePayload({
       paymentMethod: 'invoice',
       financing: 'full',
       items: [{
         ...basePayload().items[0],
         product: { ...basePayload().items[0].product, slug: 'forge' },
-        quantity: 2,
-        totalPrice: HARDWARE_PRICES.forge * 2,
+        quantity: 15,
+        totalPrice: HARDWARE_PRICES.forge * 15,
       }],
     })
     const res = await POST(makeRequest(bad))
@@ -534,8 +650,8 @@ describe('api/checkout (functional contract tests - black box over payload + Str
 
   // ---------- Hardware customization round-trip (uses the shared pricing component) ----------
   it('customization with non-default options resolves correct hardwareTotal and includes hardware meta', async () => {
-    // edge base 4990. Pick 32 GB ram (+280) + 24 GB vram (+420) + 2 TB HDD (+350) = extra 1050
-    // qty 1 => hardwareTotal = 4990 + 1050 = 6040
+    // edge base 4990 + 64 GB ram (+490) + 24 GB GDDR6 (+2690) + 4 TB NVMe (+790) = 8960
+    const hardwareNet = 8960
     const payload: CheckoutPayload = {
       ...basePayload(),
       items: [
@@ -544,11 +660,11 @@ describe('api/checkout (functional contract tests - black box over payload + Str
           product: { id: 0, slug: 'edge', name: 'Edge', tier: '', price: HARDWARE_PRICES.edge, description: '' },
           services: [],
           quantity: 1,
-          totalPrice: 6040, // client hint (ignored by server)
+          totalPrice: hardwareNet,
           customization: {
-            ram: { value: 32, label: '32 GB' },
-            vram: { value: 24, label: '24 GB' },
-            disk: { value: 2, label: '2 TB HDD' },
+            ram: { value: 64, label: '64 GB' },
+            vram: { value: 24, label: '24 GB GDDR6' },
+            disk: { value: 4, label: '4 TB NVMe' },
           },
         },
       ],
@@ -559,20 +675,17 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(res.status).toBe(200)
 
     const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]
-    // line item unit must reflect the full computed price (base + options)
-    // Edge launch promo (10% off) applies in Jun 2026 test window: 6040 → 5436
-    expect(sessionCall.line_items[0].price_data.unit_amount).toBe(5436 * 100)
+    // Edge launch promo (10% off) applies in Jun 2026 test window: 8960 → 8064
+    expect(sessionCall.line_items[0].price_data.unit_amount).toBe(8064 * 100)
     expect(sessionCall.line_items[0].quantity).toBe(1)
 
-    // hardware meta must be present and carry the chosen labels + extra
     const hwMeta = JSON.parse(sessionCall.metadata.hardware || '[]')
     expect(Array.isArray(hwMeta)).toBe(true)
     expect(hwMeta.length).toBe(1)
     expect(hwMeta[0].name).toBe('Edge')
-    expect(hwMeta[0].config).toContain('32 GB')
-    expect(hwMeta[0].config).toContain('2 TB HDD')
-    // extra for 1 unit
-    expect(hwMeta[0].extraCost).toBe(1050)
+    expect(hwMeta[0].config).toContain('64 GB')
+    expect(hwMeta[0].config).toContain('4 TB NVMe')
+    expect(hwMeta[0].extraCost).toBe(3970)
   })
 
   // ---------- VAT-inclusive choice (professional customer feature) ----------

@@ -56,6 +56,24 @@ export function buildCheckoutInvoiceCreation(
  *
  * Extracted to kill the 15-25 line near-duplicate try blocks.
  */
+async function voidZeroDraftTrialInvoice(
+  stripe: Stripe,
+  invId: string,
+  context: string
+) {
+  // Subscription drafts cannot be deleted (Stripe rejects del even when
+  // inv.subscription is absent on retrieve). Finalize then void, or accept €0 paid.
+  const finalized = await stripe.invoices.finalizeInvoice(invId);
+  if (finalized.status === 'open') {
+    await stripe.invoices.voidInvoice(invId);
+    console.log(`Voided €0 trial invoice ${invId} for ${context}`);
+  } else {
+    console.log(
+      `€0 trial invoice ${invId} for ${context} finalized (status=${finalized.status}); skipping.`
+    );
+  }
+}
+
 export async function cleanupZeroTrialInvoice(
   stripe: Stripe,
   invId: string,
@@ -74,8 +92,7 @@ export async function cleanupZeroTrialInvoice(
     if (!isZero) return;
 
     if (inv.status === 'draft') {
-      await stripe.invoices.del(invId);
-      console.log(`Deleted draft €0 trial invoice ${invId} for ${context}`);
+      await voidZeroDraftTrialInvoice(stripe, invId, context);
     } else if (inv.status === 'open') {
       await stripe.invoices.voidInvoice(invId);
       console.log(`Voided €0 trial invoice ${invId} for ${context}`);

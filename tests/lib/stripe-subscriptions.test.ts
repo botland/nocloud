@@ -87,8 +87,8 @@ describe('lib/stripe-subscriptions', () => {
       product: 'prod_1',
       unit_amount: 4500,
       recurring: { interval: 'month' },
-      nickname: 'Managed Care',
     })
+    expect(item.price_data).not.toHaveProperty('nickname')
   })
 
   it('createPhasedMonthlySubscription builds promo then list schedule', async () => {
@@ -110,6 +110,7 @@ describe('lib/stripe-subscriptions', () => {
     expect(stripe.subscriptionSchedules.create).toHaveBeenCalledWith(
       expect.objectContaining({
         customer: 'cus_1',
+        start_date: 'now',
         end_behavior: 'release',
         phases: [
           expect.objectContaining({
@@ -133,6 +134,17 @@ describe('lib/stripe-subscriptions', () => {
       expand: ['latest_invoice'],
     })
     expect(sub).toEqual({ id: 'sub_from_schedule' })
+  })
+
+  it('createMonthlyRecurringPriceDataItem omits nickname on price_data (Stripe 2026-05+)', async () => {
+    const stripe = mockStripe()
+    const item = await createMonthlyRecurringPriceDataItem(
+      stripe as unknown as Stripe,
+      'SecureVault Backup',
+      29,
+      { metadata: { host_serial_number: 'NC-EDGE-1' } },
+    )
+    expect(item.price_data).not.toHaveProperty('nickname')
   })
 
   it('createPhasedMonthlySubscription returns expanded subscription when schedule includes it', async () => {

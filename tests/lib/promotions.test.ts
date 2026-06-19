@@ -55,4 +55,31 @@ describe('lib/promotions', () => {
     expect(r.net).toBe(0)
     expect(r.badge?.kind).toBe('launch_free')
   })
+
+  it('resolveHardwarePrice with customization includes option surcharges before promo', () => {
+    const r = resolveHardwarePrice(
+      'edge',
+      {
+        vram: { value: 24, label: '24 GB GDDR6' },
+      },
+      june2026,
+    )
+    const listWithVram = HARDWARE_PRICES.edge + 2690
+    expect(r.list).toBe(listWithVram)
+    expect(r.net).toBe(Math.round(listWithVram * 0.9))
+  })
+
+  it('resolveHardwarePrice returns list price for unknown tier slugs', () => {
+    const r = resolveHardwarePrice('unknown-tier', undefined, june2026)
+    expect(r.net).toBe(0)
+    expect(r.list).toBe(0)
+    expect(r.badge).toBeUndefined()
+  })
+
+  it('resolveServicePrice skips tier promo when hardware slug is unknown', () => {
+    const r = resolveServicePrice('secureVaultBackup', 'unknown-tier', june2026)
+    expect(r.net).toBe(49)
+    expect(r.list).toBe(49)
+    expect(r.promoEndsAt).toBeUndefined()
+  })
 })

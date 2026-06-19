@@ -1,4 +1,5 @@
 import createMiddleware from 'next-intl/middleware';
+import { routing } from './i18n/routing';
 
 // NOTE: Next.js 16 emits a build warning:
 //   "The 'middleware' file convention is deprecated. Please use 'proxy' instead."
@@ -11,10 +12,7 @@ import createMiddleware from 'next-intl/middleware';
 // If the warning becomes a hard error in a future release, we will migrate then.
 // For now this is the lowest-risk approach (functionality > warning suppression).
 
-export default createMiddleware({
-  locales: ['en', 'fr'],
-  defaultLocale: 'en'
-});
+export default createMiddleware(routing);
 
 export const config = {
   matcher: ['/((?!api|_next|_vercel|.*\\..*).*)']

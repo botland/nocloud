@@ -110,6 +110,7 @@ describe('createRecurringServiceSubscription', () => {
     const subArg = stripe.subscriptions.create.mock.calls[0][0]
     expect(subArg.trial_end).toBe(launchFreeUntilEpoch('2027-01-01'))
     expect(subArg.items[0].price_data.unit_amount).toBe(SERVICE_PRICES_BY_TIER.studio.managedCare * 100)
+    expect(subArg.items[0].price_data.nickname).toBeUndefined()
     expect(subArg.metadata.launch_free_until).toBe('2027-01-01')
     expect(subArg.metadata.promo_ends_at).toBeUndefined()
   })
@@ -127,6 +128,7 @@ describe('createRecurringServiceSubscription', () => {
     expect(stripe.subscriptionSchedules.create).toHaveBeenCalledWith(
       expect.objectContaining({
         customer: 'cus_1',
+        start_date: 'now',
         end_behavior: 'release',
         phases: [
           expect.objectContaining({
@@ -314,5 +316,24 @@ describe('createFullServiceSubscriptions', () => {
     expect(stripe.subscriptions.update).toHaveBeenCalledWith('sub_retry', {
       default_payment_method: 'pm_card_123',
     })
+  })
+
+  it('logs and continues when retry after missing PM also fails', async () => {
+    stripe.subscriptions.create
+      .mockRejectedValueOnce(new Error('Customer has no attached payment source'))
+      .mockRejectedValueOnce(new Error('Still no payment source'))
+
+    await createFullServiceSubscriptions(stripe, session(), [stableVaultService()])
+
+    expect(stripe.subscriptions.create).toHaveBeenCalledTimes(2)
+  })
+
+  it('warns when final customer default PM update fails after service subs', async () => {
+    stripe.customers.update.mockRejectedValueOnce(new Error('customer update failed'))
+
+    await createFullServiceSubscriptions(stripe, session(), [stableVaultService()])
+
+    expect(stripe.subscriptions.create).toHaveBeenCalled()
+    expect(stripe.customers.update).toHaveBeenCalled()
   })
 })
