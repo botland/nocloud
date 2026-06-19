@@ -6,6 +6,7 @@ import { Resend } from 'resend'
 import {
   calculateLease,
   HARDWARE_PRICES,
+  PREORDER_DEPOSITS,
   getServicePrice,
   SERVICE_PRICES_BY_TIER,
   LEASE_MIN,
@@ -133,6 +134,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     setEnv('NEXT_PUBLIC_SITE_URL', 'http://localhost:8080')
     setEnv('RESEND_API_KEY', 're_test_dummy')
     setEnv('ADMIN_EMAIL', 'admin@example.com')
+    setEnv('NEXT_PUBLIC_COMMERCE_MODE', 'live')
 
     // Default successful returns for common objects
     mockStripeInstance.customers.create.mockResolvedValue({ id: 'cus_test' })
@@ -230,7 +232,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(json.error).toMatch(/SEPA Direct Debit payments are limited to €10,000/)
   })
 
-  it('full + invoice (with services): returns success+invoiceId, creates send_invoice + service subs + trial invoice updates + sends Resend (customer + admin)', async () => {
+  it('full + invoice (with services): returns success+invoiceId, creates send_invoice + service subs + trial invoice updates + sends customer Resend only (admin on payment success via webhook)', async () => {
     const payload = withServices(basePayload({ paymentMethod: 'invoice', financing: 'full' }))
     const hw = HARDWARE_PRICES.studio
     const svcList = getServicePrice('managedCare', 'studio')
@@ -264,10 +266,8 @@ describe('api/checkout (functional contract tests - black box over payload + Str
       })
     )
 
-    // Resend called twice (customer + admin)
-    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
-    const subjects = mockResendInstance.emails.send.mock.calls.map((c: any[]) => c[0].subject)
-    expect(subjects.some((s: string) => s.toLowerCase().includes('order'))).toBe(true)
+    // Customer registered email only — detailed admin email fires on invoice.paid (webhook), not at registration
+    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(1)
   })
 
   it('full + invoice (with services) + recurring card (hybrid): returns url (setup), creates main invoice (hardware only) + Resend, pre-creates charge_automatically service subs in route (for visibility after setup trip; PM attached later), no send_invoice service subs', async () => {
@@ -327,8 +327,8 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(setupArg.metadata.main_invoice_id).toBeTruthy()
     expect(setupArg.metadata.service_subscription_ids).toBeTruthy()
 
-    // Invoice registered emails still sent (2)
-    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
+    // Customer registered email only (admin on payment success via webhook)
+    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(1)
   })
 
   it('lease + card: creates lease sub (with trial + cancel_at) + pre-creates service subs + upfront Checkout session (returns url); no route-level Resend', async () => {
@@ -397,7 +397,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(mockResendInstance.emails.send).not.toHaveBeenCalled()
   })
 
-  it('lease + invoice: creates only upfront send_invoice + InvoiceItem, returns success+invoiceId, sends lease-upfront Resend emails', async () => {
+  it('lease + invoice: creates only upfront send_invoice + InvoiceItem, returns success+invoiceId, sends customer registered email only', async () => {
     const payload = basePayload({ paymentMethod: 'invoice', financing: 'lease' })
     const hw = HARDWARE_PRICES.studio
     const lease = calculateLease(hw, 0)
@@ -424,8 +424,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(upfrontItemCall.metadata?.serial_number).toBeTruthy()
     expect(upfrontItemCall.metadata?.product_line_id).toBe(`Studio@${PRICING_VERSION}`)
 
-    // Lease-specific registered emails (customer + admin)
-    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
+    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(1)
   })
   it('lease + invoice + recurring card (hybrid) with tier-promo service: pre-creates phased schedule with start_date', async () => {
     const payload = withServices(
@@ -470,7 +469,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
       is_lease_recurring_setup: 'true',
     })
 
-    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(2)
+    expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(1)
   })
 
   it('lease + invoice + recurring card (hybrid) Edge + managedCare + vault: plain subs without price_data.nickname', async () => {
@@ -753,5 +752,51 @@ describe('api/checkout (functional contract tests - black box over payload + Str
     expect(sessionCall.line_items[0].price_data.unit_amount).toBe(hw * 100) // net
     expect(sessionCall.metadata.vat_inclusive_choice).toBe('false')
     expect(sessionCall.metadata.vat_treatment).toBe('charge_vat')
+  })
+
+  describe('pre-order mode (NEXT_PUBLIC_COMMERCE_MODE=preorder)', () => {
+    beforeEach(() => {
+      setEnv('NEXT_PUBLIC_COMMERCE_MODE', 'preorder')
+    })
+
+    it('card: charges deposit only with preorder metadata and saves PM', async () => {
+      const payload = basePayload({ paymentMethod: 'stripe', financing: 'full' })
+      const hw = HARDWARE_PRICES.studio
+      const res = await POST(makeRequest(payload))
+      expect(res.status).toBe(200)
+      const json = await res.json()
+      expect(json).toHaveProperty('url')
+
+      const sessionCall = mockStripeInstance.checkout.sessions.create.mock.calls[0][0]
+      expect(sessionCall.mode).toBe('payment')
+      expect(sessionCall.line_items[0].price_data.unit_amount).toBe(PREORDER_DEPOSITS.studio * 100)
+      expect(sessionCall.payment_intent_data).toEqual({ setup_future_usage: 'off_session' })
+      expect(sessionCall.metadata).toMatchObject({
+        order_type: 'preorder',
+        quoted_hardware_total: String(hw),
+        quoted_deposit: String(PREORDER_DEPOSITS.studio),
+        quoted_balance_due: String(hw - PREORDER_DEPOSITS.studio),
+        price_lock_policy: 'honor_quoted',
+      })
+      expect(mockResendInstance.emails.send).not.toHaveBeenCalled()
+    })
+
+    it('invoice: creates deposit invoice with preorder metadata, customer email only', async () => {
+      const payload = basePayload({ paymentMethod: 'invoice', financing: 'full' })
+      const res = await POST(makeRequest(payload))
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ success: true, invoiceId: 'in_test' })
+
+      expect(mockStripeInstance.invoices.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ order_type: 'preorder' }),
+        }),
+      )
+      expect(mockStripeInstance.invoiceItems.create).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: PREORDER_DEPOSITS.studio * 100 }),
+      )
+      expect(mockStripeInstance.subscriptions.create).not.toHaveBeenCalled()
+      expect(mockResendInstance.emails.send).toHaveBeenCalledTimes(1)
+    })
   })
 })

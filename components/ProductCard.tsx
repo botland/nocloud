@@ -4,6 +4,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { Product } from '@/lib/types';
 import PromoBadge from '@/components/PromoBadge';
 import { formatPromoDate } from '@/lib/promo-display';
+import { isPreorderMode } from '@/lib/commerce-mode';
+import { getPreorderDeposit } from '@/lib/pricing';
 
 interface Props {
   product: Product;
@@ -16,6 +18,8 @@ export default function ProductCard({ product, onConfigure }: Props) {
   const tc = useTranslations('common');
   const tp = useTranslations('promotions');
   const bestFor = t(`bestFor.${product.id}`);
+  const preorderMode = isPreorderMode();
+  const deposit = getPreorderDeposit(product.slug);
 
   const hasPromo =
     product.listPrice != null && product.listPrice > product.price;
@@ -70,13 +74,22 @@ export default function ProductCard({ product, onConfigure }: Props) {
           <span>{t('bestForLabel')}</span>
           <span className={`font-medium ${tierColor}`}>{bestFor}</span>
         </div>
+        {preorderMode && (
+          <div className="flex justify-between text-slate-400 mb-1.5">
+            <span>{t('preorderDepositLabel')}</span>
+            <span className="font-medium text-amber-400/90">
+              {tc('price', { amount: deposit })}
+              <span className="text-slate-500 font-normal ml-1">{tc('exclVat')}</span>
+            </span>
+          </div>
+        )}
       </div>
 
       <button
         onClick={onConfigure}
         className="mt-auto w-full py-[15px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 transition-all flex items-center justify-center gap-x-2"
       >
-        {t('configure')}
+        {preorderMode ? t('preorder') : t('configure')}
       </button>
     </div>
   );

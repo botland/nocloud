@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { DEBUG_PAYMENTS } from '@/lib/pricing';
 import {
   createFullServiceSubscriptions,
+  createPreorderServiceSubscriptions,
   createRecurringServiceSubscription,
   servicesFromOrderMetadata,
 } from '@/lib/create-service-subscriptions';
@@ -14,6 +15,30 @@ import {
 import { extractPaymentMethodFromSession, setDefaultPaymentMethodOnCustomerAndSubs } from '@/lib/stripe-pm';
 import { handleSubscriptionTrialInvoice } from '@/lib/stripe-invoices';
 import { BRAND_NAME } from '@/lib/brand';
+import { buildOrderDisplayFromMetadata } from '@/lib/order-display';
+
+async function provisionPreorderServicesAfterBalancePaid(
+  stripe: Stripe,
+  meta: Record<string, string>,
+  customerId: string,
+  balancePaidAtUnix: number,
+  defaultPaymentMethod?: string,
+) {
+  const depositSessionId = meta.deposit_session_id;
+  const servicesJson = meta.services;
+  if (!depositSessionId || !servicesJson || servicesJson === '[]') {
+    return;
+  }
+  const pricingVer = meta.pricing_version || meta.pricingVersion || 'unknown';
+  await createPreorderServiceSubscriptions(stripe, {
+    customerId,
+    depositSessionId,
+    servicesJson,
+    pricingVersion: pricingVer,
+    balancePaidAtUnix,
+    defaultPaymentMethod,
+  });
+}
 
 export async function POST(request: NextRequest) {
   console.log('[PAYMENT DEBUG] /api/webhook/stripe route invoked, STRIPE_WEBHOOK_SECRET present:', !!process.env.STRIPE_WEBHOOK_SECRET, 'STRIPE_SECRET_KEY present:', !!process.env.STRIPE_SECRET_KEY);
@@ -89,27 +114,9 @@ export async function POST(request: NextRequest) {
     const vatAmountMeta = metadata.vat_amount ? parseFloat(String(metadata.vat_amount)) : undefined;
     const grossTotal = metadata.gross_total ? parseFloat(String(metadata.gross_total)) : undefined;
 
-    let servicesStr = 'None';
+    const { servicesStr, hardwareStr } = buildOrderDisplayFromMetadata(metadata, pricingVersion);
     const servicesArray = servicesFromOrderMetadata(metadata.services, pricingVersion);
-    if (servicesArray.length > 0) {
-      servicesStr = servicesArray.map((s) => {
-        const host = s.hostSerialNumber ? `, appliance S/N ${s.hostSerialNumber}` : '';
-        return `${s.name} (€${s.price}/mo${host})`;
-      }).join(', ');
-    }
-    let hardwareStr = 'Standard';
-    try {
-      if (metadata.hardware) {
-        const hw = typeof metadata.hardware === 'string' ? JSON.parse(metadata.hardware) : metadata.hardware;
-        if (Array.isArray(hw) && hw.length > 0) {
-          hardwareStr = hw.map((h: any) => {
-            const base = h.name || '';
-            const cfg = h.config && h.config !== 'Standard' ? ` (${h.config})` : '';
-            return `${base}${cfg}`;
-          }).join(', ');
-        }
-      }
-    } catch {}
+    const isPreorder = metadata.order_type === 'preorder';
     if (DEBUG_PAYMENTS || servicesArray.length > 0) {
       console.log(`[PAYMENT DEBUG] checkout.session.completed: order=${orderId} financing=${financing} customer=${session.customer} servicesLen=${servicesArray.length} rawServicesMeta=${metadata.services}`);
     } else {
@@ -124,7 +131,9 @@ export async function POST(request: NextRequest) {
     const upfrontAmountForEmail = (metadata as any).lease_upfront_amount;
 
     // Customer email - invoice / confirmation (rich thanks)
-    if (customerEmail && !isSetupForRecurringServicesUnderInvoice) {
+    const paymentSucceeded = session.payment_status === 'paid';
+
+    if (customerEmail && !isSetupForRecurringServicesUnderInvoice && paymentSucceeded) {
       await sendOrderConfirmationCustomerEmail({
         to: customerEmail,
         orderId,
@@ -140,6 +149,9 @@ export async function POST(request: NextRequest) {
         poNumber,
         pricingVersion,
         locale: orderLocale,
+        isPreorderDeposit: isPreorder,
+        balanceDue: metadata.quoted_balance_due,
+        quotedHardwareTotal: metadata.quoted_hardware_total,
         vatInclusive,
         vatTreatment,
         vatRate,
@@ -149,8 +161,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Admin notification
-    if (process.env.ADMIN_EMAIL && !isSetupForRecurringServicesUnderInvoice) {
+    // Detailed admin notification — only after successful payment (not on invoice registration or failures).
+    if (process.env.ADMIN_EMAIL && !isSetupForRecurringServicesUnderInvoice && paymentSucceeded) {
       await sendAdminOrderNotificationEmail({
         orderId,
         amount,
@@ -166,6 +178,12 @@ export async function POST(request: NextRequest) {
         pricingVersion,
         locale: orderLocale,
         customerEmail,
+        orderType: isPreorder ? 'preorder' : undefined,
+        preorderStatus: isPreorder ? 'deposit_paid' : undefined,
+        depositAmount: isPreorder ? metadata.quoted_deposit : undefined,
+        balanceDue: isPreorder ? metadata.quoted_balance_due : undefined,
+        quotedTotal: isPreorder ? metadata.quoted_hardware_total : undefined,
+        priceLockPolicy: isPreorder ? metadata.price_lock_policy : undefined,
         vatInclusive,
         vatTreatment,
         vatRate,
@@ -175,12 +193,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (isPreorder && session.customer && paymentSucceeded) {
+      const defaultPaymentMethod = await extractPaymentMethodFromSession(stripe, expandedSession || session);
+      if (defaultPaymentMethod) {
+        await setDefaultPaymentMethodOnCustomerAndSubs(
+          stripe,
+          session.customer as string,
+          defaultPaymentMethod,
+          [],
+        );
+      }
+    }
+
     // For direct purchases (financing=full), turn selected services into real recurring Subscriptions.
     // The pm collected by the one-time Checkout session must be explicitly attached so the
     // monthly subs can actually charge (without this, subs are often created without a default pm
     // and won't auto-bill, especially noticeable with SEPA). Robustness added for subsequent cycles...
     // Now delegated to shared helper (with idempotency check + default_incomplete fallback).
-    if (session.customer && financing !== 'lease' && servicesArray.length > 0) {
+    if (session.customer && financing !== 'lease' && !isPreorder && servicesArray.length > 0) {
       if (DEBUG_PAYMENTS) {
         console.log('[PAYMENT DEBUG] delegating to createFullServiceSubscriptions (webhook path) for', orderId);
       }
@@ -251,8 +281,13 @@ export async function POST(request: NextRequest) {
     if (!subId) {
       const invMeta = (invoice as any).metadata || {};
       const invFinancing = invMeta.financing || 'full';
-      if (invFinancing === 'full' || (invFinancing === 'lease' && invMeta.is_upfront_only)) {
-        const isLeaseUpfront = invFinancing === 'lease' && invMeta.is_upfront_only;
+      const isPreorderInv = invMeta.order_type === 'preorder';
+      const isBalanceCharge = invMeta.is_balance_charge === 'true';
+      const invPricingVersion = invMeta.pricing_version || invMeta.pricingVersion || 'unknown';
+      const invDisplay = buildOrderDisplayFromMetadata(invMeta, invPricingVersion);
+
+      if (invFinancing === 'full' || (invFinancing === 'lease' && invMeta.is_upfront_only) || isPreorderInv) {
+        const isLeaseUpfront = invFinancing === 'lease' && invMeta.is_upfront_only && !isPreorderInv;
 
         if (isLeaseUpfront) {
           // Create the recurring lease subscription now that the upfront has been paid.
@@ -376,41 +411,113 @@ export async function POST(request: NextRequest) {
         const vatAmountPaid = invMeta.vat_amount ? parseFloat(String(invMeta.vat_amount)) : undefined;
         const grossTotalPaid = invMeta.gross_total ? parseFloat(String(invMeta.gross_total)) : undefined;
 
-        await sendInvoicePaidCustomerEmail({
-          to: customerEmail,
-          invoiceId: invoice.id,
-          // VAT fields passed through (may be undefined for old orders)
-          vatInclusive: vatInclusivePaid,
-          vatTreatment: vatTreatmentPaid,
-          vatRate: vatRatePaid,
-          netTotal: netTotalPaid,
-          vatAmount: vatAmountPaid,
-          grossTotal: grossTotalPaid,
-          amountPaid,
-          currency: curr,
-          locale: orderLocale,
-          isLeaseUpfront,
-        });
+        if (isPreorderInv) {
+          await sendOrderConfirmationCustomerEmail({
+            to: customerEmail,
+            orderId: invoice.id,
+            amount: amountPaid,
+            currency: curr,
+            financing: 'full',
+            servicesStr: invDisplay.servicesStr,
+            hardwareStr: invDisplay.hardwareStr,
+            companyName: invMeta.company_name || invMeta.companyName || 'N/A',
+            vatNumber: invMeta.vat_number || invMeta.vatNumber || 'N/A',
+            poNumber: invMeta.po_number || invMeta.poNumber || 'N/A',
+            pricingVersion: invPricingVersion,
+            locale: orderLocale,
+            isPreorderDeposit: !isBalanceCharge,
+            balanceDue: isBalanceCharge ? undefined : invMeta.quoted_balance_due,
+            quotedHardwareTotal: invMeta.quoted_hardware_total,
+            vatInclusive: vatInclusivePaid,
+            vatTreatment: vatTreatmentPaid,
+            vatRate: vatRatePaid,
+            netTotal: netTotalPaid,
+            vatAmount: vatAmountPaid,
+            grossTotal: grossTotalPaid,
+          });
+        } else {
+          await sendInvoicePaidCustomerEmail({
+            to: customerEmail,
+            invoiceId: invoice.id,
+            vatInclusive: vatInclusivePaid,
+            vatTreatment: vatTreatmentPaid,
+            vatRate: vatRatePaid,
+            netTotal: netTotalPaid,
+            vatAmount: vatAmountPaid,
+            grossTotal: grossTotalPaid,
+            amountPaid,
+            currency: curr,
+            locale: orderLocale,
+            isLeaseUpfront,
+          });
+        }
 
-        await sendAdminOrderNotificationEmail({
-          orderId: invoice.id,
-          amount: amountPaid,
-          currency: curr,
-          financing: invFinancing,
-          servicesStr: 'None',
-          hardwareStr: 'Standard',
-          companyName: invMeta.company_name || invMeta.companyName || 'N/A',
-          vatNumber: invMeta.vat_number || invMeta.vatNumber || 'N/A',
-          poNumber: invMeta.po_number || invMeta.poNumber || 'N/A',
-          pricingVersion: invMeta.pricing_version || invMeta.pricingVersion || 'unknown',
-          locale: orderLocale,
-          customerEmail,
-          invoiceId: invoice.id,
-          isLeaseInvoicePaid: isLeaseUpfront,
-          isPaidNotification: true,
-        });
+        if (process.env.ADMIN_EMAIL) {
+          await sendAdminOrderNotificationEmail({
+            orderId: invoice.id,
+            amount: amountPaid,
+            currency: curr,
+            financing: invFinancing,
+            servicesStr: invDisplay.servicesStr,
+            hardwareStr: invDisplay.hardwareStr,
+            companyName: invMeta.company_name || invMeta.companyName || 'N/A',
+            vatNumber: invMeta.vat_number || invMeta.vatNumber || 'N/A',
+            poNumber: invMeta.po_number || invMeta.poNumber || 'N/A',
+            pricingVersion: invPricingVersion,
+            locale: orderLocale,
+            customerEmail,
+            invoiceId: invoice.id,
+            isLeaseInvoicePaid: isLeaseUpfront,
+            orderType: isPreorderInv ? 'preorder' : undefined,
+            preorderStatus: isPreorderInv
+              ? (isBalanceCharge ? 'balance_paid' : 'deposit_paid')
+              : undefined,
+            depositAmount: isPreorderInv && !isBalanceCharge ? invMeta.quoted_deposit : undefined,
+            balanceDue: isPreorderInv ? invMeta.quoted_balance_due : undefined,
+            quotedTotal: isPreorderInv ? invMeta.quoted_hardware_total : undefined,
+            priceLockPolicy: isPreorderInv ? invMeta.price_lock_policy : undefined,
+            fulfillmentAction: isBalanceCharge ? 'balance_invoice_paid' : undefined,
+            vatInclusive: vatInclusivePaid,
+            vatTreatment: vatTreatmentPaid,
+            vatRate: vatRatePaid,
+            netTotal: netTotalPaid,
+            vatAmount: vatAmountPaid,
+            grossTotal: grossTotalPaid,
+          });
+        }
 
-        console.log(`${isLeaseUpfront ? 'Lease upfront' : 'B2B pay-by-invoice'} paid: ${invoice.id}`);
+        if (isPreorderInv && isBalanceCharge) {
+          const customerId = typeof invoice.customer === 'string'
+            ? invoice.customer
+            : (invoice.customer as { id?: string } | null)?.id;
+          let defaultPaymentMethod: string | undefined;
+          try {
+            const piId = typeof (invoice as Stripe.Invoice).payment_intent === 'string'
+              ? (invoice as Stripe.Invoice).payment_intent as string
+              : ((invoice as Stripe.Invoice).payment_intent as Stripe.PaymentIntent | null)?.id;
+            if (piId) {
+              const pi = await stripe.paymentIntents.retrieve(piId, { expand: ['payment_method'] });
+              const pm = (pi as Stripe.PaymentIntent).payment_method;
+              defaultPaymentMethod = typeof pm === 'string' ? pm : (pm as Stripe.PaymentMethod | null)?.id;
+            }
+          } catch (pmErr) {
+            console.warn('Could not extract PM from preorder balance invoice', pmErr);
+          }
+          const paidAt =
+            (invoice as Stripe.Invoice).status_transitions?.paid_at ??
+            Math.floor(Date.now() / 1000);
+          if (customerId) {
+            await provisionPreorderServicesAfterBalancePaid(
+              stripe,
+              invMeta as Record<string, string>,
+              customerId,
+              paidAt,
+              defaultPaymentMethod,
+            );
+          }
+        }
+
+        console.log(`${isPreorderInv ? 'Pre-order' : isLeaseUpfront ? 'Lease upfront' : 'B2B pay-by-invoice'} paid: ${invoice.id}`);
       }
       return NextResponse.json({ received: true });
     }
@@ -556,6 +663,77 @@ export async function POST(request: NextRequest) {
     });
 
     console.log(`Lease order paid (invoice): ${orderId} (sub ${sub.id})`);
+  }
+
+  if (event.type === 'payment_intent.succeeded') {
+    const pi = event.data.object as Stripe.PaymentIntent;
+    const piMeta = pi.metadata || {};
+    if (piMeta.is_balance_charge === 'true' && piMeta.order_type === 'preorder') {
+      const pricingVer = piMeta.pricing_version || piMeta.pricingVersion || 'unknown';
+      const display = buildOrderDisplayFromMetadata(piMeta, pricingVer);
+      const amount = pi.amount_received ? (pi.amount_received / 100).toFixed(2) : '0.00';
+      const currency = (pi.currency || 'eur').toUpperCase();
+      const customerEmail = piMeta.customer_email || pi.receipt_email || '';
+      const orderLocale = (piMeta.locale as string) || 'en';
+
+      if (customerEmail) {
+        await sendOrderConfirmationCustomerEmail({
+          to: customerEmail,
+          orderId: pi.id,
+          amount,
+          currency,
+          financing: 'full',
+          servicesStr: display.servicesStr,
+          hardwareStr: display.hardwareStr,
+          companyName: piMeta.company_name || 'N/A',
+          vatNumber: piMeta.vat_number || 'N/A',
+          poNumber: piMeta.po_number || 'N/A',
+          pricingVersion: pricingVer,
+          locale: orderLocale,
+          quotedHardwareTotal: piMeta.quoted_hardware_total,
+        });
+      }
+
+      if (process.env.ADMIN_EMAIL) {
+        await sendAdminOrderNotificationEmail({
+          orderId: pi.id,
+          amount,
+          currency,
+          financing: 'full',
+          servicesStr: display.servicesStr,
+          hardwareStr: display.hardwareStr,
+          companyName: piMeta.company_name || 'N/A',
+          vatNumber: piMeta.vat_number || 'N/A',
+          poNumber: piMeta.po_number || 'N/A',
+          pricingVersion: pricingVer,
+          locale: orderLocale,
+          customerEmail,
+          orderType: 'preorder',
+          preorderStatus: 'balance_paid',
+          balanceDue: piMeta.quoted_balance_due,
+          quotedTotal: piMeta.quoted_hardware_total,
+          priceLockPolicy: piMeta.price_lock_policy,
+          fulfillmentAction: 'balance_auto_charge',
+        });
+      }
+
+      const customerId = typeof pi.customer === 'string' ? pi.customer : pi.customer?.id;
+      let defaultPaymentMethod: string | undefined;
+      const pm = pi.payment_method;
+      defaultPaymentMethod = typeof pm === 'string' ? pm : (pm as Stripe.PaymentMethod | null)?.id;
+      const balancePaidAt = pi.created || Math.floor(Date.now() / 1000);
+      if (customerId) {
+        await provisionPreorderServicesAfterBalancePaid(
+          stripe,
+          piMeta as Record<string, string>,
+          customerId,
+          balancePaidAt,
+          defaultPaymentMethod,
+        );
+      }
+
+      console.log(`Pre-order balance charged: ${pi.id}`);
+    }
   }
 
   return NextResponse.json({ received: true });

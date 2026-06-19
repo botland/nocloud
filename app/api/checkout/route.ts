@@ -17,7 +17,11 @@ import {
   DEBUG_PAYMENTS,
   calculateHardwarePrice,
   formatHardwareCustomization,
+  computeTotalPreorderDeposit,
+  computePreorderQuote,
+  PREORDER_PRICE_LOCK_POLICY,
 } from '@/lib/pricing';
+import { isPreorderMode } from '@/lib/commerce-mode';
 import {
   createB2BStripeCustomer,
   syncB2BStripeCustomer,
@@ -36,7 +40,7 @@ import {
   leaseUpfrontNetPerUnit,
 } from '@/lib/product-instances';
 import { createRecurringServiceSubscription } from '@/lib/create-service-subscriptions';
-import { sendRegisteredInvoiceCustomerEmail, sendAdminInvoiceRegisteredEmail } from '@/lib/emails';
+import { sendRegisteredInvoiceCustomerEmail } from '@/lib/emails';
 import { buildPaymentContext, validatePaymentEligibility, resolvePricesAndServices } from '@/lib/payment-flow';
 import { cleanupZeroTrialInvoice, handleSubscriptionTrialInvoice, buildCheckoutInvoiceCreation } from '@/lib/stripe-invoices';
 import { buildOrderMetadata } from '@/lib/stripe-metadata';
@@ -185,7 +189,10 @@ export async function POST(request: NextRequest) {
       monthlyTotal = leaseDetails.monthlyTotal;
     }
 
-    const dueAmount = financing === 'lease' ? monthlyTotal : hardwareTotal;
+    const totalPreorderDeposit = isPreorderMode() ? computeTotalPreorderDeposit(items || []) : 0;
+    const dueAmount = isPreorderMode()
+      ? totalPreorderDeposit
+      : (financing === 'lease' ? monthlyTotal : hardwareTotal);
 
     // Enforce lease and pay-by-invoice eligibility ranges using the constants from lib/pricing.ts
     // (client UX mirrors this; server is authoritative). Now delegated to shared validator.
@@ -213,6 +220,11 @@ export async function POST(request: NextRequest) {
     if (eligibilityError === 'SEPA_SERVICES') {
       return NextResponse.json({
         error: `SEPA Direct Debit payments are limited to €10,000. Your recurring services total is €${servicesMonthly}. Please select "Credit / Debit card" for the recurring services (inside the Pay by Invoice box) or reduce the services.`
+      }, { status: 400 });
+    }
+    if (eligibilityError === 'PREORDER_DEPOSIT') {
+      return NextResponse.json({
+        error: 'Pre-order deposit could not be calculated. Please check your cart and try again.',
       }, { status: 400 });
     }
 
@@ -341,6 +353,134 @@ export async function POST(request: NextRequest) {
     // pre-create paths and all deferred paths (webhook, fulfill, hybrid) use the *same*
     // reference, eliminating special cases based on payment time vs. registration time.
     const orderPlacedAt = Math.floor(Date.now() / 1000);
+
+    // === PRE-ORDER MODE (deposit only; full buy flow unchanged when NEXT_PUBLIC_COMMERCE_MODE=live) ===
+    if (isPreorderMode()) {
+      if (DEBUG_PAYMENTS) console.log('[PAYMENT DEBUG] routing -> PREORDER branch (strategy:', paymentContext.strategy, ')');
+
+      const preorderQuote = computePreorderQuote(hardwareTotal, totalPreorderDeposit);
+      const depositNet = preorderQuote.totalDeposit;
+      const depositVatAmounts = computeVatAmounts(depositNet, effectiveRate, chargesVat);
+      const grossDeposit = depositVatAmounts.gross;
+      const balanceGross = chargesVat && effectiveRate > 0
+        ? computeVatAmounts(preorderQuote.balanceDue, effectiveRate, true).gross
+        : preorderQuote.balanceDue;
+
+      const preorderVatMeta = {
+        vat_inclusive_choice: customerChoiceInclusive ? 'true' : 'false',
+        vat_treatment: vatTreatment.mandatoryTreatment,
+        vat_rate: String(effectiveRate),
+        net_total: String(depositNet),
+        vat_amount: String(depositVatAmounts.vatAmount),
+        gross_total: String(grossDeposit),
+        vat_determination_reason: vatTreatment.reason,
+        vat_number_validated: vatTreatment.isValidVatNumber ? 'true' : 'false',
+        vat_vies_checked: viesValidated ? 'true' : 'false',
+        ...(chargesVat ? { vat_charged: 'true' } : {}),
+      };
+
+      const preorderMetadata = buildOrderMetadata({
+        company,
+        vatNumber,
+        poNumber,
+        ...addressMetaFields,
+        financing: 'full',
+        services: compactServices,
+        hardware: resolvedHardwareForMeta,
+        customer_email: email || 'N/A',
+        pricingVersion: PRICING_VERSION,
+        locale,
+        orderPlacedAt,
+        order_type: 'preorder',
+        preorder_status: 'deposit_pending',
+        quoted_hardware_total: String(preorderQuote.hardwareTotal),
+        quoted_deposit: String(preorderQuote.totalDeposit),
+        quoted_balance_due: String(preorderQuote.balanceDue),
+        quoted_services_monthly: String(servicesMonthly),
+        pricing_version_at_deposit: PRICING_VERSION,
+        price_lock_policy: PREORDER_PRICE_LOCK_POLICY,
+        ...preorderVatMeta,
+      });
+
+      if (paymentMethod === 'invoice') {
+        if (!stripeCustomerId && email) {
+          try {
+            stripeCustomerId = await createB2BStripeCustomer(stripe, customerParams);
+          } catch (custErr) {
+            console.error('Failed to create Stripe customer for preorder invoice', custErr);
+            return NextResponse.json({ error: 'Unable to prepare customer for invoice.' }, { status: 500 });
+          }
+        }
+
+        const invoice = await stripe.invoices.create({
+          customer: stripeCustomerId,
+          collection_method: 'send_invoice',
+          days_until_due: 30,
+          auto_advance: true,
+          ...(invoiceShippingDetails ? { shipping_details: invoiceShippingDetails } : {}),
+          metadata: preorderMetadata,
+        });
+
+        await stripe.invoiceItems.create({
+          customer: stripeCustomerId,
+          invoice: invoice.id,
+          amount: Math.round(grossDeposit * 100),
+          currency: 'eur',
+          description: `${BRAND_NAME} pre-order deposit${vatNoteForLines}`,
+        });
+
+        await stripe.invoices.finalizeInvoice(invoice.id);
+
+        await sendRegisteredInvoiceCustomerEmail({
+          to: email,
+          invoiceId: invoice.id,
+          company: company || 'N/A',
+          locale,
+        });
+
+        console.log(`Pre-order deposit invoice created: ${invoice.id}`);
+        return NextResponse.json({ success: true, invoiceId: invoice.id });
+      }
+
+      // Card / SEPA deposit via hosted Checkout
+      const pmTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+        paymentMethod === 'sepa' ? ['sepa_debit'] : ['card'];
+
+      const preorderSession = await stripe.checkout.sessions.create({
+        payment_method_types: pmTypes,
+        mode: 'payment',
+        line_items: [{
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: `${BRAND_NAME} Pre-order Deposit`,
+              description: `Deposit credited toward your appliance order. Balance due at ship: €${chargesVat ? balanceGross : preorderQuote.balanceDue}.${vatNoteForLines}`,
+            },
+            unit_amount: Math.round(grossDeposit * 100),
+          },
+          quantity: 1,
+        }],
+        customer: stripeCustomerId,
+        success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8080'}/${locale}?canceled=true`,
+        locale,
+        metadata: preorderMetadata,
+        payment_intent_data: {
+          setup_future_usage: 'off_session',
+        },
+        invoice_creation: buildCheckoutInvoiceCreation({
+          metadata: preorderMetadata,
+          company,
+          vatNumber,
+          poNumber,
+          vatTreatment: vatTreatment.mandatoryTreatment,
+          description: `${BRAND_NAME} pre-order deposit`,
+        }),
+        ...(await prepareHostedCheckout(paymentMethod as 'stripe' | 'sepa', stripeCustomerId)),
+      });
+
+      return NextResponse.json({ url: preorderSession.url });
+    }
 
     // IMPORTANT (per approved plan "Lease safety rule" + user feedback):
     // The entire lease block below (direct subscriptions.create, pending InvoiceItem for upfront,
@@ -589,14 +729,6 @@ export async function POST(request: NextRequest) {
           locale,
           isLeaseUpfront: true,
         });
-        await sendAdminInvoiceRegisteredEmail({
-          to: '', // not used
-          invoiceId: upfrontInvoice.id,
-          company: company || 'N/A',
-          emailFallback: email,
-          isLeaseUpfront: true,
-        });
-
         if (setupSessionUrl) {
           console.log(`Lease upfront invoice created: ${upfrontInvoice.id} (pre-created recurring subs for hybrid, setup for ${recurringPaymentMethod})`);
           return NextResponse.json({ url: setupSessionUrl });
@@ -901,16 +1033,6 @@ export async function POST(request: NextRequest) {
           recurringPaymentMethod,
           setupSessionId: setupSession.id,
         });
-        await sendAdminInvoiceRegisteredEmail({
-          to: '',
-          invoiceId: invoice.id,
-          company: company || 'N/A',
-          emailFallback: email,
-          isHybrid: true,
-          recurringPaymentMethod,
-          setupSessionId: setupSession.id,
-        });
-
         console.log(`Real B2B invoice created (hybrid): ${invoice.id}. Redirecting to setup session ${setupSession.id} for recurring services (${recurringPaymentMethod}).`);
         return NextResponse.json({ url: setupSession.url });
       }
@@ -961,13 +1083,6 @@ export async function POST(request: NextRequest) {
         company: company || 'N/A',
         locale,
       });
-      await sendAdminInvoiceRegisteredEmail({
-        to: '',
-        invoiceId: invoice.id,
-        company: company || 'N/A',
-        emailFallback: email,
-      });
-
       // Return success (client will show friendly overlay; no hosted "pay now" URL because this is Net 30 send_invoice).
       // The real Stripe Invoice is now in the dashboard and will be delivered to the customer.
       console.log(`Real B2B invoice created and finalized: ${invoice.id} for customer ${stripeCustomerId}`);

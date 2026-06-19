@@ -4,13 +4,13 @@ import {
   isInvoiceAllowed,
   isOverSepaLimit,
   getHardwarePrice,
-
   ServiceKey,
   PRICING_VERSION,
   calculateHardwarePrice,
   formatHardwareCustomization,
   type HardwareCustomization,
 } from './pricing';
+import { isPreorderMode } from './commerce-mode';
 import { resolveHardwarePrice, resolveServicePrice } from './promotions';
 
 export type Financing = 'full' | 'lease';
@@ -24,6 +24,8 @@ export interface PaymentContext {
   recurringPaymentMethod?: RecurringPaymentMethod;
   /** High-level strategy name for logging and branching */
   strategy:
+    | 'preorder-deposit-card-sepa'
+    | 'preorder-deposit-invoice'
     | 'lease-card-sepa'
     | 'lease-invoice'
     | 'lease-invoice-hybrid'
@@ -56,7 +58,13 @@ export function buildPaymentContext(params: {
 
   let strategy: PaymentContext['strategy'] = 'invalid';
 
-  if (financing === 'lease') {
+  if (isPreorderMode()) {
+    if (paymentMethod === 'invoice') {
+      strategy = 'preorder-deposit-invoice';
+    } else {
+      strategy = 'preorder-deposit-card-sepa';
+    }
+  } else if (financing === 'lease') {
     if (paymentMethod === 'invoice') {
       strategy = isHybrid ? 'lease-invoice-hybrid' : 'lease-invoice';
     } else {
@@ -91,6 +99,12 @@ export function buildPaymentContext(params: {
  * Returns error message or null if OK.
  */
 export function validatePaymentEligibility(context: PaymentContext, hardwareTotal: number, dueAmount: number, servicesMonthly: number): string | null {
+  if (context.strategy === 'preorder-deposit-card-sepa' || context.strategy === 'preorder-deposit-invoice') {
+    if (dueAmount <= 0) return 'PREORDER_DEPOSIT';
+    if (context.paymentMethod === 'sepa' && isOverSepaLimit(dueAmount)) return 'SEPA_MAIN';
+    return null;
+  }
+
   if (context.financing === 'lease' && !isLeaseAllowed(hardwareTotal)) {
     // The caller has the exact MIN/MAX constants
     return 'LEASE_RANGE';

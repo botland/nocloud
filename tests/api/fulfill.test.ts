@@ -73,6 +73,22 @@ describe('api/fulfill', () => {
     expect(await res.json()).toMatchObject({ success: true })
   })
 
+  it('skips service sub creation for pre-order deposit sessions', async () => {
+    stripeMocks.checkout.sessions.retrieve.mockResolvedValue({
+      id: 'cs_preorder',
+      customer: 'cus_1',
+      metadata: {
+        order_type: 'preorder',
+        financing: 'full',
+        services: '[{"n":"Managed Care","p":0}]',
+      },
+    })
+
+    const res = await fulfillRequest('cs_preorder')
+    expect(mocks.createFullServiceSubscriptions).not.toHaveBeenCalled()
+    expect(await res.json()).toMatchObject({ message: 'No service subs needed for this order' })
+  })
+
   it('skips service sub creation for lease orders', async () => {
     stripeMocks.checkout.sessions.retrieve.mockResolvedValue({
       id: 'cs_lease',

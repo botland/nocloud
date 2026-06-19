@@ -38,6 +38,7 @@ function fakeSessionCompleted(meta: Record<string, any> = {}, overrides: any = {
         currency: 'eur',
         customer: 'cus_abc',
         customer_details: { email: 'buyer@example.com' },
+        payment_status: 'paid',
         metadata: {
           company_name: 'Acme',
           financing: 'full',

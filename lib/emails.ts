@@ -47,6 +47,10 @@ export interface OrderConfirmationParams {
   pricingVersion: string;
   locale?: string;
   isLeaseInvoicePaid?: boolean; // affects some labels
+  /** Pre-order deposit confirmation (commerce mode preorder). */
+  isPreorderDeposit?: boolean;
+  balanceDue?: string;
+  quotedHardwareTotal?: string;
   // VAT choice / treatment (for breakdown + legal text in emails)
   vatInclusive?: boolean;
   vatTreatment?: string;
@@ -77,7 +81,14 @@ export interface AdminNotificationParams {
   setupSessionId?: string;
   isHybrid?: boolean;
   recurringPaymentMethod?: string;
-  isPaidNotification?: boolean; // for paid vs registered
+  isPaidNotification?: boolean; // deprecated — detailed admin emails are sent only on successful payment
+  orderType?: string;
+  preorderStatus?: string;
+  depositAmount?: string;
+  balanceDue?: string;
+  quotedTotal?: string;
+  priceLockPolicy?: string;
+  fulfillmentAction?: string;
   // VAT choice / treatment (for breakdown + legal text in emails)
   vatInclusive?: boolean;
   vatTreatment?: string;
@@ -208,6 +219,9 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
     pricingVersion,
     locale = 'en',
     isLeaseInvoicePaid,
+    isPreorderDeposit,
+    balanceDue,
+    quotedHardwareTotal,
     vatInclusive,
     vatTreatment,
     vatRate,
@@ -219,11 +233,17 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
   const isFr = locale === 'fr';
   const shortId = orderId.slice(-8);
 
-  const thanksSubj = isFr
-    ? `Merci pour votre commande nocloud.ai #${shortId}`
-    : `Thank you for your nocloud.ai order #${shortId}`;
-  const thanksTitle = isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!';
-  const thanksBody = isFr ? 'Votre commande a été reçue et le paiement confirmé.' : 'Your order has been received and payment confirmed.';
+  const thanksSubj = isPreorderDeposit
+    ? (isFr ? `Précommande confirmée — ${BRAND_DISPLAY} #${shortId}` : `Pre-order confirmed — ${BRAND_DISPLAY} #${shortId}`)
+    : (isFr ? `Merci pour votre commande nocloud.ai #${shortId}` : `Thank you for your nocloud.ai order #${shortId}`);
+  const thanksTitle = isPreorderDeposit
+    ? (isFr ? 'Merci — votre précommande est confirmée' : 'Thank you — your pre-order is confirmed')
+    : (isFr ? 'Merci pour votre achat !' : 'Thank you for your purchase!');
+  const thanksBody = isPreorderDeposit
+    ? (isFr
+        ? `Votre acompte a été reçu. Le solde de ${balanceDue || '?'} € sera prélevé sur le même moyen de paiement lorsque votre appareil sera prêt à expédier.`
+        : `Your deposit has been received. The remaining balance of €${balanceDue || '?'} will be charged to the same payment method when your appliance is ready to ship.`)
+    : (isFr ? 'Votre commande a été reçue et le paiement confirmé.' : 'Your order has been received and payment confirmed.');
   const thanksSummary = isFr ? 'Récapitulatif de commande' : 'Order Summary';
   const thanksServices = isFr ? 'Services optionnels' : 'Optional Services';
   const thanksHardware = isFr ? 'Configuration matériel' : 'Hardware configuration';
@@ -249,8 +269,10 @@ export async function sendOrderConfirmationCustomerEmail(params: OrderConfirmati
         <h1 style="color: #0ea5e9;">${thanksTitle}</h1>
         <p>${thanksBody}</p>
         <h2>${thanksSummary}</h2>
-        <p><strong>Total:</strong> ${amount} ${currency}</p>
-        <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
+        <p><strong>${isPreorderDeposit ? (isFr ? 'Acompte payé' : 'Deposit paid') : 'Total'}:</strong> ${amount} ${currency}</p>
+        ${isPreorderDeposit && quotedHardwareTotal ? `<p><strong>${isFr ? 'Total matériel réservé' : 'Reserved hardware total'}:</strong> ${formatPrice(quotedHardwareTotal, locale)}</p>` : ''}
+        ${isPreorderDeposit && balanceDue ? `<p><strong>${isFr ? 'Solde à l\'expédition' : 'Balance due at ship'}:</strong> ${formatPrice(balanceDue, locale)}</p>` : ''}
+        ${!isPreorderDeposit ? `<p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>` : ''}
         ${upfrontNote}
         <p><strong>${thanksServices}:</strong> ${servicesStr}</p>
         ${hardwareStr ? `<p><strong>${thanksHardware}:</strong> ${hardwareStr}</p>` : ''}
@@ -305,36 +327,26 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
     setupSessionId,
     isHybrid,
     recurringPaymentMethod,
-    isPaidNotification,
+    isPaidNotification: _isPaidNotification,
+    orderType,
+    preorderStatus,
+    depositAmount,
+    balanceDue,
+    quotedTotal,
+    priceLockPolicy,
+    fulfillmentAction,
   } = params;
 
   const isFr = locale === 'fr';
   const shortId = orderId.slice(-8);
+  const isPreorder = orderType === 'preorder';
 
-  if (isPaidNotification) {
-    // Simpler paid notifications (used for invoice.paid non-lease and lease upfront paid)
-    const subj = isLeaseInvoicePaid
-      ? `Lease Upfront Invoice Paid (Net 30) - #${shortId}`
-      : `B2B Invoice Paid (Net 30) - #${shortId}`;
-    const vatNote = netTotal != null ? ` VAT net=${netTotal} vat=${vatAmount||0} gross=${grossTotal||netTotal}.` : '';
-    const html = `<p>${isLeaseInvoicePaid ? 'Lease upfront' : 'Net 30'} invoice ${invoiceId || orderId} has been paid by ${customerEmail || 'customer'}. ${isLeaseInvoicePaid ? 'Recurring sub created with trial.' : ''}${vatNote}</p>`;
-    try {
-      await resend.emails.send({
-        from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
-        to: adminEmail,
-        subject: subj,
-        html,
-      });
-    } catch (e) {
-      console.error('Failed to send admin invoice paid email', e);
-    }
-    return;
-  }
-
-  const adminSubj = isFr
-    ? `Nouvelle commande B2B sur ${BRAND_DISPLAY} - #${shortId}`
-    : `New Order Received - #${shortId}`;
-  const adminTitle = isFr ? `Nouvelle commande B2B sur ${BRAND_DISPLAY}` : `New B2B Order on ${BRAND_DISPLAY}`;
+  const adminSubj = isPreorder
+    ? (isFr ? `Précommande payée — ${BRAND_DISPLAY} #${shortId}` : `Pre-order paid — ${BRAND_DISPLAY} #${shortId}`)
+    : (isFr ? `Nouvelle commande B2B sur ${BRAND_DISPLAY} - #${shortId}` : `New Order Received - #${shortId}`);
+  const adminTitle = isPreorder
+    ? (isFr ? `Précommande confirmée sur ${BRAND_DISPLAY}` : `Pre-order confirmed on ${BRAND_DISPLAY}`)
+    : (isFr ? `Nouvelle commande B2B sur ${BRAND_DISPLAY}` : `New B2B Order on ${BRAND_DISPLAY}`);
   const adminCheck = isFr ? 'Vérifiez le tableau de bord Stripe pour tous les détails et pour exécuter la commande.' : 'Check Stripe dashboard for full details and fulfill the order.';
 
   let extra = '';
@@ -343,11 +355,21 @@ export async function sendAdminOrderNotificationEmail(params: AdminNotificationP
   }
 
   const adminHardwareLine = hardwareStr ? `<p><strong>Hardware:</strong> ${hardwareStr}</p>` : '';
+  const preorderLines = isPreorder ? `
+    <p><strong>Order type:</strong> pre-order</p>
+    ${preorderStatus ? `<p><strong>Pre-order status:</strong> ${preorderStatus}</p>` : ''}
+    ${depositAmount ? `<p><strong>Deposit paid:</strong> ${formatPrice(depositAmount, locale)}</p>` : ''}
+    ${balanceDue ? `<p><strong>Balance due at ship:</strong> ${formatPrice(balanceDue, locale)}</p>` : ''}
+    ${quotedTotal ? `<p><strong>Quoted hardware total:</strong> ${formatPrice(quotedTotal, locale)}</p>` : ''}
+    ${priceLockPolicy ? `<p><strong>Price lock:</strong> ${priceLockPolicy}</p>` : ''}
+    ${fulfillmentAction ? `<p><strong>Fulfillment action:</strong> ${fulfillmentAction}</p>` : ''}
+  ` : '';
 
   const html = `
     <h2>${adminTitle}</h2>
     <p><strong>Customer Email:</strong> ${customerEmail || 'N/A'}</p>
-    <p><strong>Total Paid:</strong> ${amount} ${currency}</p>
+    <p><strong>${isPreorder ? 'Deposit paid' : 'Total Paid'}:</strong> ${amount} ${currency}</p>
+    ${preorderLines}
     <p><strong>Financing:</strong> ${financing}${leaseMonths ? ` (${leaseMonths} months)` : ''}</p>
     ${(financing === 'lease' && upfrontAmount) || (isLeaseInvoicePaid && upfrontAmount) ? `<p><strong>Upfront payment:</strong> ${formatPrice(upfrontAmount, locale)}</p>` : ''}
     <p><strong>Services:</strong> ${servicesStr}</p>

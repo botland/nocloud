@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { calculateLease, isOverSepaLimit, isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX } from '@/lib/pricing';
+import { calculateLease, isOverSepaLimit, isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, computeTotalPreorderDeposit, computePreorderQuote } from '@/lib/pricing';
+import { isPreorderMode } from '@/lib/commerce-mode';
 import { CartItem, CheckoutFormDraft } from '@/lib/types';
 import { determineVatTreatment, computeVatAmounts } from '@/lib/vat';
 import {
@@ -86,7 +87,10 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const setEmailWithDraft = (v: string) => { setEmail(v); updateDraft({ email: v }); };
 
 
+  const preorderMode = isPreorderMode();
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
+  const preorderDeposit = preorderMode ? computeTotalPreorderDeposit(cart) : 0;
+  const preorderQuote = preorderMode ? computePreorderQuote(hardwareTotal, preorderDeposit) : null;
 
   const servicesMonthly = recurringServicesMonthly(cart);
   const cartHasRecurring = hasRecurringServices(cart);
@@ -100,7 +104,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const canLease = leaseDetails.isAllowed;
   const canPbi = isPbiAllowed(hardwareTotal);
   const canInvoicePolicy = isInvoiceAllowed(financing, servicesMonthly);
-  const canUseInvoice = canPbi && canInvoicePolicy;
+  const canUseInvoice = preorderMode ? true : (canPbi && canInvoicePolicy);
 
   // Current selection
   const isLease = financing === 'lease';
@@ -189,6 +193,18 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const leaseUpfrontVatDisplay = showVatBreakdown
     ? computeVatAmounts(leaseNetDetails.upfrontAmount, vatRateForDisplay, true).vatAmount
     : 0;
+
+  const preorderDepositNet = preorderQuote?.totalDeposit ?? 0;
+  const preorderDepositGross = showVatBreakdown
+    ? computeVatAmounts(preorderDepositNet, vatRateForDisplay, true).gross
+    : preorderDepositNet;
+  const preorderDepositVat = showVatBreakdown
+    ? computeVatAmounts(preorderDepositNet, vatRateForDisplay, true).vatAmount
+    : 0;
+  const preorderBalanceNet = preorderQuote?.balanceDue ?? 0;
+  const preorderBalanceGross = showVatBreakdown
+    ? computeVatAmounts(preorderBalanceNet, vatRateForDisplay, true).gross
+    : preorderBalanceNet;
 
   // Auto-uncheck (and persist) if the customer changes country or VAT such that the choice
   // is no longer legally offerable. Prevents sending an illegal choice on submit.
@@ -575,7 +591,27 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
           {step === 2 && (
           <>
-          {/* Financing / Payment Terms (new for direct / recurring / leasing) */}
+          {preorderMode && (
+            <div className="p-4 border border-amber-500/30 bg-amber-500/5 rounded-2xl text-sm text-slate-300 space-y-1">
+              <p className="font-medium text-amber-200/90">{t('preorderNoticeTitle')}</p>
+              <p>{t('preorderNoticeBody', {
+                deposit: showVatBreakdown ? preorderDepositGross : preorderDeposit,
+                balance: showVatBreakdown ? preorderBalanceGross : preorderBalanceNet,
+              })}</p>
+              {showVatBreakdown && (
+                <p className="text-xs text-slate-400">
+                  {t('preorderVatNote', {
+                    depositNet: preorderDeposit,
+                    depositVat: preorderDepositVat,
+                    rate: Math.round(vatRateForDisplay * 100),
+                  })}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Financing / Payment Terms (hidden in pre-order mode) */}
+          {!preorderMode && (
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
             <div className="space-y-3">
@@ -673,6 +709,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               </label>
             </div>
           </div>
+          )}
 
           {/* Payment Method */}
           <div>
@@ -694,13 +731,17 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   checked={paymentMethod === 'sepa'} 
                   onChange={() => setPaymentMethodWithDraft('sepa')} 
                   className="accent-cyan-400"
-                  disabled={ (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) }
+                  disabled={ preorderMode
+                    ? isOverSepaLimit(preorderDeposit)
+                    : (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) }
                 />
                 <div className="flex-1">
                   <div className="font-medium">{t('sepa')}</div>
                   <div className="text-xs text-slate-400">
                     {t('sepaDesc')}
-                    { ( (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) ) && (
+                    { ( preorderMode
+                      ? isOverSepaLimit(preorderDeposit)
+                      : (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) ) && (
                       <span className="text-amber-400 ml-1">(max {tc('common.price', { amount: 10000 })} — choose card or reduce order)</span>
                     )}
                   </div>
@@ -723,7 +764,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 <div className="flex-1">
                   <div className="font-medium">{t('invoice')}</div>
                   <div className="text-xs text-slate-400">{t('invoiceDesc')}</div>
-                  {!canPbi && (
+                  {!preorderMode && !canPbi && (
                     <div className="text-[10px] text-amber-400 mt-0.5">{t('invoiceRangeNote', { min: PBI_MIN, max: PBI_MAX })}</div>
                   )}
                   {canPbi && !canInvoicePolicy && (
@@ -809,13 +850,15 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               <>
                 <VatPriceLine
                   label={
-                    isLease
-                      ? t('monthlyTotalLabel', { months: leaseMonths })
-                      : t('totalToPay')
+                    preorderMode
+                      ? t('preorderDepositToday')
+                      : isLease
+                        ? t('monthlyTotalLabel', { months: leaseMonths })
+                        : t('totalToPay')
                   }
-                  amount={isLease ? leaseMonthlyDisplay : hwGross}
-                  net={isLease ? leaseNetDetails.monthlyTotal : hwNet}
-                  vat={isLease ? leaseMonthlyVatDisplay : hwVat}
+                  amount={preorderMode ? preorderDepositGross : (isLease ? leaseMonthlyDisplay : hwGross)}
+                  net={preorderMode ? preorderDepositNet : (isLease ? leaseNetDetails.monthlyTotal : hwNet)}
+                  vat={preorderMode ? preorderDepositVat : (isLease ? leaseMonthlyVatDisplay : hwVat)}
                   showBreakdown={showVatBreakdown}
                   variant="summary"
                 />
@@ -873,7 +916,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 disabled={isSubmitting || vatBlocksCheckout}
                 className="px-4 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {t('completeBtn')}
+                {preorderMode ? t('preorderCompleteBtn') : t('completeBtn')}
               </button>
             </div>
           )}

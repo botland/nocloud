@@ -19,6 +19,9 @@
     "title": "Choose your performance level",
     "from": "from",
     "configure": "Configure & Buy",
+    "preorder": "Pre-order",
+    "preorderDepositLabel": "Deposit",
+    "preorderDepositExclVat": "excl. VAT",
     "items": {
       "edge": {
         "name": "Edge",
@@ -151,6 +154,11 @@
     "invoice": "Pay by Invoice (B2B)",
     "invoiceDesc": "Net 30 • Common for European companies",
     "totalToPay": "Total to pay today",
+    "preorderDepositToday": "Deposit due today",
+    "preorderCompleteBtn": "Pay deposit",
+    "preorderNoticeTitle": "Pre-order — deposit only",
+    "preorderNoticeBody": "You pay a €{deposit} deposit today (credited toward your order). The remaining €{balance} will be charged when your appliance is ready to ship. Services billing starts at delivery.",
+    "preorderVatNote": "Includes VAT at {rate}% (net deposit €{depositNet} + €{depositVat} VAT). Totals match what you pay today if VAT-inclusive billing is selected.",
     "completeBtn": "Complete order",
     "validation": "Please fill in company name, email, address and city",
     "validationDelivery": "Please fill in the delivery address and city",
@@ -217,7 +225,8 @@
     "perMonthLong": " / month",
     "recurringSuffixShort": "/mo recurring",
     "recurringSuffix": "/mo recurring services",
-    "price": "€{amount}"
+    "price": "€{amount}",
+    "exclVat": "excl. VAT"
   },
   "promotions": {
     "badgePromo": "Promo",

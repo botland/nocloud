@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   buildPaymentContext,
   validatePaymentEligibility,
@@ -8,6 +8,9 @@ import * as pricing from '@/lib/pricing'
 import { LEASE_MIN, LEASE_MAX, PBI_MAX, SEPA_MAX } from '@/lib/pricing'
 
 describe('lib/payment-flow', () => {
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_COMMERCE_MODE = 'live';
+  });
   describe('buildPaymentContext', () => {
     it('maps full card and hybrid invoice strategies', () => {
       expect(

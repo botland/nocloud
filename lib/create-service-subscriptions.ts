@@ -28,6 +28,27 @@ export function servicesFromOrderMetadata(
   }
 }
 
+/** Days after balance/ship payment before first service invoice (matches full-order deferral). */
+export const PREORDER_SERVICE_DEFERRAL_SECONDS = 32 * 24 * 3600;
+
+/**
+ * When a pre-order balance is paid, service billing starts after ship + ~1 month,
+ * or later if a launch-free promo (e.g. Managed Care) still applies.
+ */
+export function resolvePreorderServiceTrialEnd(
+  service: ServiceInstance,
+  balancePaidAtUnix: number,
+): number {
+  const deferred = balancePaidAtUnix + PREORDER_SERVICE_DEFERRAL_SECONDS;
+  const launchActive =
+    !!service.launchFreeUntil &&
+    isBeforeUtcDate(service.launchFreeUntil, new Date(balancePaidAtUnix * 1000));
+  if (launchActive && service.launchFreeUntil) {
+    return Math.max(deferred, launchFreeUntilEpoch(service.launchFreeUntil));
+  }
+  return deferred;
+}
+
 export type CreateRecurringServiceSubOptions = {
   grossUnit?: (net: number) => number;
   collection_method?: 'charge_automatically' | 'send_invoice';
@@ -65,7 +86,8 @@ export async function createRecurringServiceSubscription(
 
   let trialEnd = options.trial_end;
   if (launchActive && service.launchFreeUntil) {
-    trialEnd = launchFreeUntilEpoch(service.launchFreeUntil);
+    const launchEnd = launchFreeUntilEpoch(service.launchFreeUntil);
+    trialEnd = trialEnd != null ? Math.max(trialEnd, launchEnd) : launchEnd;
   }
 
   const subMetadata = {
@@ -323,6 +345,110 @@ export async function createFullServiceSubscriptions(
       });
     } catch (custErr) {
       console.warn('Could not re-set default pm on customer after service subs (fulfill)', custErr);
+    }
+  }
+}
+
+export interface PreorderServiceSubscriptionInput {
+  customerId: string;
+  /** Deposit Checkout session id — idempotency + audit anchor. */
+  depositSessionId: string;
+  servicesJson: string;
+  pricingVersion: string;
+  balancePaidAtUnix: number;
+  defaultPaymentMethod?: string;
+}
+
+/**
+ * Create monthly service subscriptions after a pre-order balance is paid (ship-ready).
+ * Never called at deposit time. Billing is deferred (~1 month after balance payment,
+ * or later when a launch-free promo still applies).
+ */
+export async function createPreorderServiceSubscriptions(
+  stripe: Stripe,
+  input: PreorderServiceSubscriptionInput,
+) {
+  const {
+    customerId,
+    depositSessionId,
+    servicesJson,
+    pricingVersion,
+    balancePaidAtUnix,
+    defaultPaymentMethod,
+  } = input;
+
+  const servicesArray = servicesFromOrderMetadata(servicesJson, pricingVersion);
+  if (!customerId || servicesArray.length === 0) {
+    if (DEBUG_PAYMENTS) {
+      console.log('[PAYMENT DEBUG] createPreorderServiceSubscriptions: skip (no customer or services)');
+    }
+    return;
+  }
+
+  try {
+    const existingSubs = await stripe.subscriptions.list({ customer: customerId, limit: 50 });
+    const alreadyCreated = existingSubs.data.some((sub) => {
+      const subMeta = sub.metadata || {};
+      return (
+        subMeta.order_session === depositSessionId &&
+        subMeta.is_preorder_service === 'true'
+      );
+    });
+    if (alreadyCreated) {
+      console.log(`[PAYMENT DEBUG] preorder service subs already exist for deposit ${depositSessionId}, skipping`);
+      return;
+    }
+  } catch (e) {
+    console.warn('Could not check existing preorder service subs (will proceed)', e);
+  }
+
+  if (defaultPaymentMethod) {
+    await setDefaultPaymentMethodOnCustomerAndSubs(stripe, customerId, defaultPaymentMethod);
+  }
+
+  for (const svc of servicesArray) {
+    const trialEnd = resolvePreorderServiceTrialEnd(svc, balancePaidAtUnix);
+    try {
+      const createdSub = await createRecurringServiceSubscription(stripe, customerId, svc, {
+        collection_method: 'charge_automatically',
+        trial_end: trialEnd,
+        metadata: {
+          order_session: depositSessionId,
+          is_preorder_service: 'true',
+          preorder_balance_paid_at: String(balancePaidAtUnix),
+          service_billing_starts_after: 'preorder_ship_deferral',
+        },
+        ...(defaultPaymentMethod
+          ? { default_payment_method: defaultPaymentMethod }
+          : { payment_behavior: 'default_incomplete' }),
+        expand: ['latest_invoice'],
+      });
+
+      if (defaultPaymentMethod) {
+        try {
+          await stripe.subscriptions.update(createdSub.id, {
+            default_payment_method: defaultPaymentMethod,
+          });
+        } catch (reapplyErr) {
+          console.warn(`Could not re-apply PM to preorder service sub ${createdSub.id}`, reapplyErr);
+        }
+      }
+
+      console.log(
+        `Created preorder service sub ${createdSub.id} for "${svc.name}" (S/N ${svc.hostSerialNumber}); trial ends ${new Date(trialEnd * 1000).toISOString()}`,
+      );
+    } catch (subErr) {
+      console.error(`Failed to create preorder service sub for "${svc.name}"`, subErr);
+    }
+  }
+
+  if (defaultPaymentMethod) {
+    try {
+      await stripe.customers.update(customerId, {
+        invoice_settings: { default_payment_method: defaultPaymentMethod },
+      });
+    } catch (custErr) {
+      console.warn('Could not set default PM on customer after preorder service subs', custErr);
     }
   }
 }

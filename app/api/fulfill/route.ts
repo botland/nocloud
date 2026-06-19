@@ -43,7 +43,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (session.customer && financing !== 'lease' && hasServices) {
+    const isPreorder = metadata.order_type === 'preorder';
+
+    if (session.customer && financing !== 'lease' && !isPreorder && hasServices) {
       console.log(`[PAYMENT DEBUG] fulfill: triggering service sub creation for ${sessionId} (full + services)`);
       await createFullServiceSubscriptions(stripe, session, servicesJson!, pricingVersion);
       return NextResponse.json({ success: true, message: 'Service subscriptions ensured (or already existed)' });

@@ -80,6 +80,15 @@ export const INVOICE_ONLY_FULL_NO_SERVICES = false;
 // path is kept only as a fallback when the new field is not supplied (keeps existing tests working).
 // Lease + invoice remains disallowed in UI (safety rule).
 
+/** Fixed B2B pre-order deposit per hardware tier (EUR). Credited toward final price at ship time. */
+export const PREORDER_DEPOSITS: Record<HardwareSlug, number> = {
+  edge: 500,
+  studio: 1500,
+  forge: 5000,
+};
+
+export const PREORDER_PRICE_LOCK_POLICY = 'honor_quoted' as const;
+
 export const UPFRONT_PERCENT = 20;          // % of hardware charged as upfront payment (leasing+pay by invoice)
 // The upfrontAmount returned by calculateLease is both shown in the checkout popup
 // (via leaseDetails) *and* collected as a separate one-time charge (in addition to
@@ -88,6 +97,40 @@ export const UPFRONT_PERCENT = 20;          // % of hardware charged as upfront 
 export function getHardwarePrice(slug: string): number {
   const prices = HARDWARE_PRICES as Record<string, number>;
   return prices[slug] ?? 0;
+}
+
+export function getPreorderDeposit(slug: string): number {
+  if (slug in PREORDER_DEPOSITS) {
+    return PREORDER_DEPOSITS[slug as HardwareSlug];
+  }
+  return 0;
+}
+
+/** Sum deposit across cart line items (server-authoritative). */
+export function computeTotalPreorderDeposit(
+  items: Array<{ product?: { slug?: string }; quantity?: number }>,
+): number {
+  return (items || []).reduce((sum, item) => {
+    const slug = item.product?.slug;
+    const qty = item.quantity || 1;
+    if (!slug) return sum;
+    return sum + getPreorderDeposit(slug) * qty;
+  }, 0);
+}
+
+export interface PreorderQuote {
+  hardwareTotal: number;
+  totalDeposit: number;
+  balanceDue: number;
+}
+
+export function computePreorderQuote(hardwareTotal: number, totalDeposit: number): PreorderQuote {
+  const deposit = Math.min(totalDeposit, hardwareTotal);
+  return {
+    hardwareTotal,
+    totalDeposit: deposit,
+    balanceDue: Math.max(0, hardwareTotal - deposit),
+  };
 }
 
 export function getServicePrice(key: ServiceKey, hardwareSlug?: HardwareSlug | string): number {
