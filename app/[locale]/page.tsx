@@ -310,7 +310,7 @@ export default function LocaleHome() {
         <div className="max-w-4xl">
           <div className="inline-flex items-center gap-x-2 px-4 h-9 rounded-3xl bg-slate-900 border border-slate-800 text-sm mb-6">
             <div className="flex items-center gap-x-2">
-              <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+              <div className={`w-2 h-2 rounded-full animate-pulse ${preorderMode ? 'bg-amber-400' : 'bg-emerald-400'}`}></div>
               <span className="font-medium">{t(preorderMode ? 'hero.badgePreorder' : 'hero.badge')}</span>
             </div>
           </div>
