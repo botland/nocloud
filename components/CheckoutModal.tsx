@@ -42,7 +42,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const [deliveryCity, setDeliveryCity] = useState(initialData?.deliveryCity || '');
   const [deliveryPostal, setDeliveryPostal] = useState(initialData?.deliveryPostal || '');
   const [deliveryCountry, setDeliveryCountry] = useState(initialData?.deliveryCountry || initialData?.country || 'FR');
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'sepa' | 'invoice'>(initialData?.paymentMethod || 'stripe');
   const [financing, setFinancing] = useState<'full' | 'lease'>(initialData?.financing || 'full');
@@ -157,6 +157,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
     viesValidated: viesValidatedPreview,
   });
   const canOfferVatInclusive = vatTreatment.canOfferVatInclusive;
+  /** Step 2 is skipped when pre-order mode offers no VAT choice and no financing. */
+  const showTermsStep = canOfferVatInclusive || !preorderMode;
   const vatBlocksCheckout = !!vat.trim() && (viesStatus === 'invalid' || viesStatus === 'checking' || viesStatus === 'unavailable');
 
   const showVatBreakdown = !!vatInclusive && vatTreatment.vatRate > 0;
@@ -248,28 +250,52 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
     return true;
   };
 
+  const validateStep2 = () => {
+    if (vat.trim() && viesStatus === 'checking') {
+      alert(t('viesStillChecking'));
+      return false;
+    }
+    if (vat.trim() && viesStatus === 'invalid') {
+      alert(viesMessage || t('viesInvalid'));
+      return false;
+    }
+    if (vat.trim() && viesStatus === 'unavailable') {
+      alert(viesMessage || t('viesUnavailable'));
+      return false;
+    }
+    return true;
+  };
+
   const handleNextStep = () => {
     if (isSubmitting) return;
-    if (validateStep1()) setStep(2);
+    if (step === 1 && validateStep1()) setStep(showTermsStep ? 2 : 3);
+    else if (step === 2 && validateStep2()) setStep(3);
   };
 
   const handlePreviousStep = () => {
     if (isSubmitting) return;
-    setStep(1);
+    if (step === 3 && !showTermsStep) setStep(1);
+    else if (step > 1) setStep((step - 1) as 1 | 2 | 3);
   };
 
-  const goToStep = (target: 1 | 2) => {
+  const goToStep = (target: 1 | 2 | 3) => {
     if (isSubmitting) return;
     if (target === 1) {
       setStep(1);
       return;
     }
-    if (validateStep1()) setStep(2);
+    if (!validateStep1()) return;
+    if (target === 2) {
+      if (showTermsStep) setStep(2);
+      else if (validateStep2()) setStep(3);
+      return;
+    }
+    if (validateStep2()) setStep(3);
   };
 
   const handleCompleteOrder = async () => {
     if (isSubmitting) return;
-    if (!validateStep1()) return;
+    if (!validateStep1() || !validateStep2()) return;
 
     if (vat.trim() && viesStatus !== 'valid') {
       if (viesStatus === 'checking') {
@@ -448,7 +474,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
         <div className="px-7 py-5 border-b border-slate-800 flex justify-between items-start">
           <div>
             <div className="font-semibold text-xl">{t('completeOrder')}</div>
-            <div className="flex items-center gap-2 mt-2 text-xs">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-xs">
               <button
                 type="button"
                 onClick={() => goToStep(1)}
@@ -464,7 +490,16 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 disabled={isSubmitting}
                 className={`transition-colors hover:text-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed ${step === 2 ? 'text-cyan-400 font-medium' : 'text-slate-500'}`}
               >
-                2. {t('stepPayment')}
+                2. {t('stepTerms')}
+              </button>
+              <span className="text-slate-600">→</span>
+              <button
+                type="button"
+                onClick={() => goToStep(3)}
+                disabled={isSubmitting}
+                className={`transition-colors hover:text-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed ${step === 3 ? 'text-cyan-400 font-medium' : 'text-slate-500'}`}
+              >
+                3. {t('stepPayment')}
               </button>
             </div>
           </div>
@@ -565,6 +600,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
             </div>
           )}
 
+          </>
+          )}
+
+          {step === 2 && (
+          <>
           {/* VAT-inclusive choice for professional customers (spec: only when legally permitted,
               never when reverse charge is mandatory). Server validates authoritatively. */}
           {canOfferVatInclusive && (
@@ -589,31 +629,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               </label>
             </div>
           )}
-          </>
-          )}
 
-          {step === 2 && (
-          <>
-          {preorderMode && (
-            <div className="p-4 border border-amber-500/30 bg-amber-500/5 rounded-2xl text-sm text-slate-300 space-y-1">
-              <p className="font-medium text-amber-200/90">{t('preorderNoticeTitle')}</p>
-              <p>{t('preorderNoticeBody', {
-                deposit: showVatBreakdown ? preorderDepositGross : preorderDeposit,
-                balance: showVatBreakdown ? preorderBalanceGross : preorderBalanceNet,
-              })}</p>
-              {showVatBreakdown && (
-                <p className="text-xs text-slate-400">
-                  {t('preorderVatNote', {
-                    depositNet: preorderDeposit,
-                    depositVat: preorderDepositVat,
-                    rate: Math.round(vatRateForDisplay * 100),
-                  })}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Financing / Payment Terms (hidden in pre-order mode) */}
+          {/* Financing (hidden in pre-order mode) */}
           {!preorderMode && (
           <div>
             <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
@@ -630,7 +647,6 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                     setFinancingWithDraft('full');
                     if (paymentMethod === 'sepa' && isOverSepaLimit(hwGross)) setPaymentMethodWithDraft('stripe');
                     if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
-                    // Note: full + invoice + services is now supported (send_invoice service subs + first periods on the net30 invoice).
                   }} 
                   className="accent-cyan-400" 
                 />
@@ -638,7 +654,6 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   <div className="font-medium">{t('payFull')}</div>
                   <div className="text-xs text-slate-400">
                     {t('payFullDesc')} — {tc('common.price', { amount: hwGross })}
-                    {/*svcNet > 0 ? ` + €${svcGross}${tc('common.recurringSuffixShort')}` : ''*/}
                     {showVatBreakdown ? ` (${t('vatBreakdown', { net: hwNet, vat: hwVat })})` : ''}
                   </div>
                 </div>
@@ -657,11 +672,10 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                     if (canLease) {
                       setFinancingWithDraft('lease');
                       if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthlyDisplay)) setPaymentMethodWithDraft('stripe');
-                      if (paymentMethod === 'invoice') setPaymentMethodWithDraft('stripe'); // lease never allows invoice under policy
+                      if (paymentMethod === 'invoice') setPaymentMethodWithDraft('stripe');
                     } else {
                       setFinancingWithDraft('full');
                       if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
-                      // full + invoice + services now supported; no force needed here.
                     }
                   }} 
                   className="accent-cyan-400" 
@@ -687,8 +701,6 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                           t('monthlyPayment', { amount: leaseMonthlyDisplay, months: leaseMonths })
                         )}
                       </div>
-
-                      {/* Upfront inside the lease box (grand total area): shown after monthly, in a distinctive way (border + amber tone + "one-time" label), mirroring the bottom summary */}
                       <div className="text-[10px] mt-1 pt-1 border-t border-slate-700/70 text-amber-400">
                         {showVatBreakdown ? (
                           t('oneTimeUpfrontDueTodayWithVat', {
@@ -712,6 +724,29 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               </label>
             </div>
           </div>
+          )}
+          </>
+          )}
+
+          {step === 3 && (
+          <>
+          {preorderMode && (
+            <div className="p-4 border border-amber-500/30 bg-amber-500/5 rounded-2xl text-sm text-slate-300 space-y-1">
+              <p className="font-medium text-amber-200/90">{t('preorderNoticeTitle')}</p>
+              <p>{t('preorderNoticeBody', {
+                deposit: showVatBreakdown ? preorderDepositGross : preorderDeposit,
+                balance: showVatBreakdown ? preorderBalanceGross : preorderBalanceNet,
+              })}</p>
+              {showVatBreakdown && (
+                <p className="text-xs text-slate-400">
+                  {t('preorderVatNote', {
+                    depositNet: preorderDeposit,
+                    depositVat: preorderDepositVat,
+                    rate: Math.round(vatRateForDisplay * 100),
+                  })}
+                </p>
+              )}
+            </div>
           )}
 
           {/* Payment Method */}
@@ -833,17 +868,16 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               <>
                 <VatPriceLine
                   label={tcart('hardwareTotal')}
-                  amount={hwGross}
+                  amount={hwNet}
                   net={hwNet}
-                  vat={hwVat}
-                  showBreakdown={showVatBreakdown}
+                  vat={0}
+                  showBreakdown={false}
                   className="mb-1"
                 />
                 {cartHasRecurring && (
                   <RecurringServicesSummary
                     lines={recurringLines}
                     showPmNote
-                    grossAmount={grossRecurring}
                     className="mt-1"
                     nameClassName="text-slate-400"
                   />
@@ -930,14 +964,25 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               </>
             )}
           </div>
-          {step === 1 ? (
-            <button
-              onClick={handleNextStep}
-              disabled={isSubmitting}
-              className="shrink-0 px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {t('nextBtn')}
-            </button>
+          {step < 3 ? (
+            <div className={`shrink-0 flex flex-col items-stretch gap-2 ${step === 2 ? 'w-[148px]' : ''}`}>
+              {step === 2 && (
+                <button
+                  onClick={handlePreviousStep}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 border border-slate-600 text-slate-200 font-medium rounded-3xl text-xs hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {t('previousBtn')}
+                </button>
+              )}
+              <button
+                onClick={handleNextStep}
+                disabled={isSubmitting}
+                className="px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {t('nextBtn')}
+              </button>
+            </div>
           ) : (
             <div className="shrink-0 flex flex-col items-stretch gap-2 w-[148px]">
               <button

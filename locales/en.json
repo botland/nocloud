@@ -140,6 +140,7 @@
     "deliveryAddress": "DELIVERY ADDRESS",
     "deliveryDifferentLabel": "Delivery address is different from billing address",
     "stepInfo": "Information",
+    "stepTerms": "Order terms",
     "stepPayment": "Payment",
     "nextBtn": "Next",
     "previousBtn": "Previous",

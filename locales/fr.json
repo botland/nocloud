@@ -140,6 +140,7 @@
     "deliveryAddress": "ADRESSE DE LIVRAISON",
     "deliveryDifferentLabel": "L'adresse de livraison est différente de l'adresse de facturation",
     "stepInfo": "Informations",
+    "stepTerms": "Conditions",
     "stepPayment": "Paiement",
     "nextBtn": "Suivant",
     "previousBtn": "Précédent",
