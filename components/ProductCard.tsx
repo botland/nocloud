@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 import { Product } from '@/lib/types';
-import PromoBadge from '@/components/PromoBadge';
+import { PromoBadgeStack } from '@/components/PromoBadge';
 import { formatPromoDate } from '@/lib/promo-display';
 import { isPreorderMode } from '@/lib/commerce-mode';
 import { getPreorderDeposit } from '@/lib/pricing';
@@ -21,6 +21,14 @@ export default function ProductCard({ product, onConfigure }: Props) {
   const preorderMode = isPreorderMode();
   const deposit = getPreorderDeposit(product.slug);
 
+  const promoBadges =
+    product.promotionBadges?.length
+      ? product.promotionBadges
+      : product.promotionBadge
+        ? [product.promotionBadge]
+        : [];
+  const tierPromoUntil = promoBadges.find((b) => b.until)?.until;
+
   const hasPromo =
     product.listPrice != null && product.listPrice > product.price;
 
@@ -31,7 +39,7 @@ export default function ProductCard({ product, onConfigure }: Props) {
 
   return (
     <div className="product-card bg-slate-900 border border-slate-800 rounded-3xl p-7 flex flex-col relative transition-all duration-200 hover:-translate-y-1 hover:border-slate-700 hover:shadow-xl">
-      {product.promotionBadge && <PromoBadge badge={product.promotionBadge} />}
+      {promoBadges.length > 0 && <PromoBadgeStack badges={promoBadges} />}
 
       <div className="flex justify-between items-start mb-4">
         <div>
@@ -50,10 +58,10 @@ export default function ProductCard({ product, onConfigure }: Props) {
               <div className="text-3xl font-semibold tabular-nums tracking-tight text-white mt-0.5">
                 {tc('price', { amount: product.price })}
               </div>
-              {product.promotionBadge?.until && (
+              {tierPromoUntil && (
                 <div className="text-xs text-slate-400 tabular-nums mt-0.5">
                   {tp('hardwarePromoUntil', {
-                    date: formatPromoDate(product.promotionBadge.until, locale),
+                    date: formatPromoDate(tierPromoUntil, locale),
                   })}
                 </div>
               )}

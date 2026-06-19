@@ -44,7 +44,10 @@ function PromoBadgePill({
     ? 'bg-emerald-400 text-slate-950'
     : 'bg-amber-400 text-slate-950';
 
-  const label = tp(labelKey);
+  const label =
+    badge.percent != null
+      ? tp(labelKey, { percent: badge.percent })
+      : tp(labelKey);
   const until = badge.until
     ? isLaunch
       ? tp('managedCareLaunchFreeUntil', { date: formatUntilDate(badge.until, locale) })
@@ -93,7 +96,7 @@ export default function PromoBadge({
   );
 }
 
-/** Stack multiple corner badges vertically at the same anchor (e.g. overlapping promos). */
+/** Row of promo pills along the top edge of a card (e.g. pre-order + tier launch). */
 export function PromoBadgeStack({
   badges,
   className = '',
@@ -104,16 +107,18 @@ export function PromoBadgeStack({
   const visible = badges.filter(Boolean);
   if (visible.length === 0) return null;
 
-  if (visible.length === 1) {
-    return <PromoBadge badge={visible[0]} className={className} />;
-  }
-
   return (
     <div
-      className={`absolute -top-2 right-4 z-10 flex flex-col items-end gap-1 max-w-[calc(100%-2rem)] pointer-events-none ${className}`}
+      className={`absolute -top-3 left-3 right-3 z-10 flex flex-row flex-nowrap items-center justify-center gap-1 pointer-events-none ${className}`}
     >
       {visible.map((badge, idx) => (
-        <PromoBadge key={`${badge.labelKey}-${idx}`} badge={badge} floating={false} />
+        <PromoBadge
+          key={`${badge.labelKey}-${idx}`}
+          badge={badge}
+          variant="inline"
+          floating={false}
+          className="shrink-0"
+        />
       ))}
     </div>
   );

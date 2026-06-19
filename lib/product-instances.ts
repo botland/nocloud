@@ -1,8 +1,7 @@
 import { randomBytes } from 'crypto';
 import {
-  calculateHardwarePrice,
+  getHardwareUpgradeExtra,
   formatHardwareCustomization,
-  getHardwarePrice,
   type HardwareCustomization,
   type HardwareSlug,
   type ServiceKey,
@@ -80,8 +79,10 @@ export function resolveOrderLineInstances(items: any[] = [], pricingVersion: str
       item.customization as HardwareCustomization | undefined,
     );
     const unitNet = hwResolved.net;
-    const base = getHardwarePrice(slug);
-    const extraCost = Math.max(0, unitNet - base);
+    const extraCost = getHardwareUpgradeExtra(
+      slug,
+      item.customization as HardwareCustomization | undefined,
+    );
     const config = formatHardwareCustomization(item.customization as HardwareCustomization | undefined) || 'Standard';
     const name = item.product?.name || slug;
     const productLineId = buildProductLineId(name, pricingVersion);

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   resolveHardwarePrice,
   resolveServicePrice,
@@ -6,18 +6,39 @@ import {
   isManagedCareLaunchFree,
   MANAGED_CARE_LAUNCH_OFFER,
 } from '@/lib/promotions'
-import { HARDWARE_PRICES, SERVICE_PRICES_BY_TIER } from '@/lib/pricing'
+import {
+  aggregateHardwarePromoNet,
+  applyHardwareDiscount,
+  HARDWARE_PRICES,
+  hardwareNetWithBaseDiscount,
+  PREORDER_HARDWARE_DISCOUNT_PERCENT,
+  SERVICE_PRICES_BY_TIER,
+} from '@/lib/pricing'
 
 describe('lib/promotions', () => {
   const june2026 = new Date('2026-06-15T12:00:00.000Z')
   const beforeLaunch = new Date('2026-01-01T00:00:00.000Z')
   const afterLaunch = new Date('2027-06-01T00:00:00.000Z')
+  const originalCommerceMode = process.env.NEXT_PUBLIC_COMMERCE_MODE
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_COMMERCE_MODE = 'live'
+  })
+
+  afterEach(() => {
+    if (originalCommerceMode === undefined) {
+      delete process.env.NEXT_PUBLIC_COMMERCE_MODE
+    } else {
+      process.env.NEXT_PUBLIC_COMMERCE_MODE = originalCommerceMode
+    }
+  })
 
   it('applies active hardware tier promotion (edge 10% in Jun 2026)', () => {
     const r = resolveHardwarePrice('edge', undefined, june2026)
     expect(r.list).toBe(HARDWARE_PRICES.edge)
     expect(r.net).toBe(Math.round(HARDWARE_PRICES.edge * 0.9))
     expect(r.badge?.labelKey).toBe('launchEdge')
+    expect(r.badges).toEqual([expect.objectContaining({ labelKey: 'launchEdge' })])
   })
 
   it('does not apply hardware promo outside date window', () => {
@@ -81,5 +102,59 @@ describe('lib/promotions', () => {
     expect(r.net).toBe(49)
     expect(r.list).toBe(49)
     expect(r.promoEndsAt).toBeUndefined()
+  })
+
+  it('applies pre-order hardware discount on all tiers when commerce mode is preorder', () => {
+    process.env.NEXT_PUBLIC_COMMERCE_MODE = 'preorder'
+    for (const slug of ['edge', 'studio', 'forge'] as const) {
+      const r = resolveHardwarePrice(slug, undefined, new Date('2025-01-01T00:00:00.000Z'))
+      expect(r.list).toBe(HARDWARE_PRICES[slug])
+      expect(r.net).toBe(applyHardwareDiscount(HARDWARE_PRICES[slug], PREORDER_HARDWARE_DISCOUNT_PERCENT))
+      expect(r.badge?.labelKey).toBe('preorderHardwareDiscount')
+      expect(r.badge?.percent).toBe(PREORDER_HARDWARE_DISCOUNT_PERCENT)
+    }
+  })
+
+  it('pre-order discount applies to base price only, not customization upgrades', () => {
+    process.env.NEXT_PUBLIC_COMMERCE_MODE = 'preorder'
+    const customization = { vram: { value: 24, label: '24 GB GDDR6' } }
+    const r = resolveHardwarePrice('edge', customization, new Date('2025-01-01T00:00:00.000Z'))
+    const listWithVram = HARDWARE_PRICES.edge + 2690
+    expect(r.list).toBe(listWithVram)
+    expect(r.net).toBe(
+      hardwareNetWithBaseDiscount('edge', PREORDER_HARDWARE_DISCOUNT_PERCENT, customization),
+    )
+    expect(r.net).toBe(applyHardwareDiscount(HARDWARE_PRICES.edge, PREORDER_HARDWARE_DISCOUNT_PERCENT) + 2690)
+    expect(r.badge?.percent).toBe(PREORDER_HARDWARE_DISCOUNT_PERCENT)
+  })
+
+  it('does not apply pre-order hardware discount in live commerce mode', () => {
+    process.env.NEXT_PUBLIC_COMMERCE_MODE = 'live'
+    const r = resolveHardwarePrice('studio', undefined, new Date('2025-01-01T00:00:00.000Z'))
+    expect(r.net).toBe(HARDWARE_PRICES.studio)
+    expect(r.badge).toBeUndefined()
+  })
+
+  it('shows both pre-order and tier badges on edge when both apply', () => {
+    process.env.NEXT_PUBLIC_COMMERCE_MODE = 'preorder'
+    const r = resolveHardwarePrice('edge', undefined, june2026)
+    expect(r.badges).toHaveLength(2)
+    expect(r.badges![0].labelKey).toBe('preorderHardwareDiscount')
+    expect(r.badges![1].labelKey).toBe('launchEdge')
+    expect(r.net).toBe(
+      aggregateHardwarePromoNet('edge', PREORDER_HARDWARE_DISCOUNT_PERCENT, 10),
+    )
+    expect(r.promotionIds).toEqual(['preorder-hardware-discount', 'edge-launch-2026'])
+  })
+
+  it('aggregates both promos with customization (pre-order on base, tier on base + upgrades)', () => {
+    process.env.NEXT_PUBLIC_COMMERCE_MODE = 'preorder'
+    const customization = { vram: { value: 24, label: '24 GB GDDR6' } }
+    const r = resolveHardwarePrice('edge', customization, june2026)
+    expect(r.badges).toHaveLength(2)
+    expect(r.net).toBe(
+      aggregateHardwarePromoNet('edge', PREORDER_HARDWARE_DISCOUNT_PERCENT, 10, customization),
+    )
+    expect(r.promotionIds).toEqual(['preorder-hardware-discount', 'edge-launch-2026'])
   })
 })

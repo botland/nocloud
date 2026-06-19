@@ -1,8 +1,12 @@
+import { isPreorderMode } from './commerce-mode';
 import {
+  aggregateHardwarePromoNet,
+  applyHardwareDiscount,
   calculateHardwarePrice,
   getHardwarePrice,
   getServicePrice as getBaseServicePrice,
   HARDWARE_PRICES,
+  PREORDER_HARDWARE_DISCOUNT_PERCENT,
   SERVICE_PRICES_BY_TIER,
   type HardwareCustomization,
   type HardwareSlug,
@@ -16,12 +20,16 @@ export interface PriceBadge {
   labelKey: string;
   /** ISO date YYYY-MM-DD for UI copy (e.g. free-until). */
   until?: string;
+  /** Discount percent for badge copy (e.g. pre-order hardware). */
+  percent?: number;
 }
 
 export interface ResolvedPrice {
   net: number;
   list: number;
   badge?: PriceBadge;
+  /** All applicable hardware promo badges (e.g. pre-order + tier launch). */
+  badges?: PriceBadge[];
   promotionIds?: string[];
   /** When set, service is complimentary until this date (exclusive midnight UTC). */
   launchFreeUntil?: string;
@@ -124,6 +132,11 @@ export function getActiveHardwarePromotion(
   );
 }
 
+function getPreorderHardwareDiscountPercent(slug: HardwareSlug): number {
+  if (!isPreorderMode() || !(slug in HARDWARE_PRICES)) return 0;
+  return PREORDER_HARDWARE_DISCOUNT_PERCENT;
+}
+
 export function getActiveServicePromotion(
   key: ServiceKey,
   slug: HardwareSlug,
@@ -152,19 +165,52 @@ export function resolveHardwarePrice(
     ? calculateHardwarePrice(tier, customization)
     : getHardwarePrice(tier);
 
-  const promo = tier in HARDWARE_PRICES
-    ? getActiveHardwarePromotion(tier as HardwareSlug, at)
-    : undefined;
-
-  if (!promo) {
+  if (!(tier in HARDWARE_PRICES)) {
     return { net: list, list };
   }
 
+  const knownTier = tier as HardwareSlug;
+  const preorderPercent = getPreorderHardwareDiscountPercent(knownTier);
+  const promo = getActiveHardwarePromotion(knownTier, at);
+
+  const badges: PriceBadge[] = [];
+  if (preorderPercent > 0) {
+    badges.push({
+      kind: 'promotion',
+      labelKey: 'preorderHardwareDiscount',
+      percent: preorderPercent,
+    });
+  }
+  if (promo && promo.discountPercent > 0) {
+    badges.push({
+      kind: 'promotion',
+      labelKey: promo.labelKey,
+      until: promo.endDate,
+    });
+  }
+
+  const tierPercent = promo?.discountPercent ?? 0;
+  if (preorderPercent <= 0 && tierPercent <= 0) {
+    return { net: list, list };
+  }
+
+  const promotionIds: string[] = [];
+  if (preorderPercent > 0) promotionIds.push('preorder-hardware-discount');
+  if (promo) promotionIds.push(promo.id);
+
+  const net = aggregateHardwarePromoNet(
+    knownTier,
+    preorderPercent,
+    tierPercent,
+    customization,
+  );
+
   return {
-    net: applyPercentOff(list, promo.discountPercent),
+    net,
     list,
-    badge: { kind: 'promotion', labelKey: promo.labelKey, until: promo.endDate },
-    promotionIds: [promo.id],
+    badge: badges[0],
+    badges,
+    promotionIds,
   };
 }
 

@@ -1,6 +1,7 @@
 {
   "hero": {
     "badge": "Livraison en Europe • Garantie 3 ans • Mode B2B",
+    "badgePreorder": "Précommandes ouvertes en Europe • Garantie 3 ans • Mode B2B",
     "title1": "IA Générative Privée.",
     "title2": "Votre infrastructure. Vos règles.",
     "subtitle": "Appareils haute performance pour les organisations européennes. Entièrement privé. Pas de cloud. Conçu pour le B2B.",
@@ -89,6 +90,7 @@
   "canceledMessage": "Votre commande a été annulée. Votre panier est toujours là — n'hésitez pas à réessayer.",
   "configurator": {
     "baseAppliance": "Appareil de base",
+    "hardwareUpgrades": "options matériel",
     "keySpecs": "CARACTÉRISTIQUES CLÉS",
     "quantity": "QUANTITÉ",
     "appliance": "appareil",
@@ -155,6 +157,8 @@
     "invoiceDesc": "Net 30 • Courant pour les entreprises européennes",
     "totalToPay": "Total à payer aujourd'hui",
     "preorderDepositToday": "Acompte dû aujourd'hui",
+    "preorderDueLaterTitle": "Dû à la livraison",
+    "preorderBalanceAtShip": "Solde matériel",
     "preorderCompleteBtn": "Payer l'acompte",
     "preorderNoticeTitle": "Précommande — acompte uniquement",
     "preorderNoticeBody": "Vous payez un acompte de {deposit} € aujourd'hui (crédité sur votre commande). Le solde de {balance} € sera prélevé lorsque votre appareil sera prêt à expédier. La facturation des services commence à la livraison.",
@@ -234,6 +238,7 @@
     "freePrice": "Gratuit",
     "managedCareLaunchFree": "Offre de lancement",
     "managedCareLaunchFreeUntil": "Gratuit jusqu'au {date}",
+    "preorderHardwareDiscount": "-{percent} % précommande",
     "launchEdge": "Tarif lancement",
     "vaultStudio": "Promo Vault",
     "recurringPromoUntil": "{promo}{suffix} jusqu'au {date}",

@@ -26,6 +26,13 @@ describe('lib/commerce-mode', () => {
     expect(isPreorderMode()).toBe(false);
   });
 
+  it('returns live when NEXT_PUBLIC_COMMERCE_MODE is LIVE (case-insensitive)', () => {
+    process.env.NEXT_PUBLIC_COMMERCE_MODE = 'LIVE';
+    expect(getCommerceMode()).toBe('live');
+    expect(isLiveMode()).toBe(true);
+    expect(isPreorderMode()).toBe(false);
+  });
+
   it('treats any non-live value as preorder', () => {
     process.env.NEXT_PUBLIC_COMMERCE_MODE = 'something-else';
     expect(getCommerceMode()).toBe('preorder');

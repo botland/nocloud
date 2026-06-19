@@ -1,6 +1,7 @@
 {
   "hero": {
     "badge": "Now shipping across Europe • 3-year warranty • B2B focused",
+    "badgePreorder": "Pre-orders open across Europe • 3-year warranty • B2B focused",
     "title1": "Private Generative AI.",
     "title2": "Your infrastructure. Your rules.",
     "subtitle": "High-performance appliances for European organizations. Fully private. No cloud. Built for B2B.",
@@ -89,6 +90,7 @@
   "canceledMessage": "Your checkout was canceled. Your cart is still here — feel free to try again.",
   "configurator": {
     "baseAppliance": "Base appliance",
+    "hardwareUpgrades": "hardware upgrades",
     "keySpecs": "KEY SPECIFICATIONS",
     "quantity": "QUANTITY",
     "appliance": "appliance",
@@ -155,6 +157,8 @@
     "invoiceDesc": "Net 30 • Common for European companies",
     "totalToPay": "Total to pay today",
     "preorderDepositToday": "Deposit due today",
+    "preorderDueLaterTitle": "Due at delivery",
+    "preorderBalanceAtShip": "Hardware balance",
     "preorderCompleteBtn": "Pay deposit",
     "preorderNoticeTitle": "Pre-order — deposit only",
     "preorderNoticeBody": "You pay a €{deposit} deposit today (credited toward your order). The remaining €{balance} will be charged when your appliance is ready to ship. Services billing starts at delivery.",
@@ -234,6 +238,7 @@
     "freePrice": "Free",
     "managedCareLaunchFree": "Launch offer",
     "managedCareLaunchFreeUntil": "Free until {date}",
+    "preorderHardwareDiscount": "-{percent}% pre-order",
     "launchEdge": "Launch pricing",
     "vaultStudio": "Vault promo",
     "recurringPromoUntil": "{promo}{suffix} until {date}",

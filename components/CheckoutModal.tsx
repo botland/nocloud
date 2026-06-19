@@ -205,6 +205,9 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const preorderBalanceGross = showVatBreakdown
     ? computeVatAmounts(preorderBalanceNet, vatRateForDisplay, true).gross
     : preorderBalanceNet;
+  const preorderBalanceVat = showVatBreakdown
+    ? computeVatAmounts(preorderBalanceNet, vatRateForDisplay, true).vatAmount
+    : 0;
 
   // Auto-uncheck (and persist) if the customer changes country or VAT such that the choice
   // is no longer legally offerable. Prevents sending an illegal choice on submit.
@@ -846,19 +849,52 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   />
                 )}
               </>
+            ) : preorderMode ? (
+              <>
+                <VatPriceLine
+                  label={t('preorderDepositToday')}
+                  amount={preorderDepositGross}
+                  net={preorderDepositNet}
+                  vat={preorderDepositVat}
+                  showBreakdown={showVatBreakdown}
+                  variant="summary"
+                />
+                <div className="mt-2.5 pt-2 border-t border-slate-700/70">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
+                    {t('preorderDueLaterTitle')}
+                  </div>
+                  <VatPriceLine
+                    label={t('preorderBalanceAtShip')}
+                    amount={preorderBalanceGross}
+                    net={preorderBalanceNet}
+                    vat={preorderBalanceVat}
+                    showBreakdown={showVatBreakdown}
+                    variant="row"
+                    className="text-xs"
+                  />
+                  {cartHasRecurring && (
+                    <RecurringServicesSummary
+                      lines={recurringLines}
+                      variant="both"
+                      showPmNote
+                      grossAmount={grossRecurring}
+                      className="mt-2"
+                      nameClassName="text-slate-400"
+                    />
+                  )}
+                </div>
+              </>
             ) : (
               <>
                 <VatPriceLine
                   label={
-                    preorderMode
-                      ? t('preorderDepositToday')
-                      : isLease
-                        ? t('monthlyTotalLabel', { months: leaseMonths })
-                        : t('totalToPay')
+                    isLease
+                      ? t('monthlyTotalLabel', { months: leaseMonths })
+                      : t('totalToPay')
                   }
-                  amount={preorderMode ? preorderDepositGross : (isLease ? leaseMonthlyDisplay : hwGross)}
-                  net={preorderMode ? preorderDepositNet : (isLease ? leaseNetDetails.monthlyTotal : hwNet)}
-                  vat={preorderMode ? preorderDepositVat : (isLease ? leaseMonthlyVatDisplay : hwVat)}
+                  amount={isLease ? leaseMonthlyDisplay : hwGross}
+                  net={isLease ? leaseNetDetails.monthlyTotal : hwNet}
+                  vat={isLease ? leaseMonthlyVatDisplay : hwVat}
                   showBreakdown={showVatBreakdown}
                   variant="summary"
                 />

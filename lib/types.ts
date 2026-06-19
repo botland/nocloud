@@ -10,6 +10,7 @@ export interface Product {
   listPrice?: number;
   description: string;
   promotionBadge?: PriceBadge;
+  promotionBadges?: PriceBadge[];
 }
 
 export interface CartService {

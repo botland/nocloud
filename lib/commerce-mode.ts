@@ -8,7 +8,8 @@ export type CommerceMode = 'preorder' | 'live';
  * Defaults to preorder when unset (safe for pre-launch).
  */
 export function getCommerceMode(): CommerceMode {
-  return process.env.NEXT_PUBLIC_COMMERCE_MODE === 'live' ? 'live' : 'preorder';
+  const raw = process.env.NEXT_PUBLIC_COMMERCE_MODE?.trim().toLowerCase();
+  return raw === 'live' ? 'live' : 'preorder';
 }
 
 export function isPreorderMode(): boolean {

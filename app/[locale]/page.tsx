@@ -9,6 +9,7 @@ import CheckoutModal from '@/components/CheckoutModal';
 import Container from '@/components/Container';
 import { Product, CartItem, CheckoutFormDraft } from '@/lib/types';
 import { HARDWARE_PRICES, calculateHardwarePrice } from '@/lib/pricing';
+import { isPreorderMode } from '@/lib/commerce-mode';
 import { resolveHardwarePrice, resolveMinServicePrice } from '@/lib/promotions';
 import PromoBadge from '@/components/PromoBadge';
 import PromoPrice from '@/components/PromoPrice';
@@ -23,6 +24,7 @@ const baseProducts = [
 
 export default function LocaleHome() {
   const t = useTranslations();
+  const preorderMode = isPreorderMode();
 
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -125,6 +127,7 @@ export default function LocaleHome() {
       price: resolved.net,
       listPrice: resolved.list > resolved.net ? resolved.list : undefined,
       promotionBadge: resolved.badge,
+      promotionBadges: resolved.badges,
       name: t(`products.items.${base.slug}.name`),
       tier: t(`products.items.${base.slug}.tier`),
       description: t(`products.items.${base.slug}.description`),
@@ -308,7 +311,7 @@ export default function LocaleHome() {
           <div className="inline-flex items-center gap-x-2 px-4 h-9 rounded-3xl bg-slate-900 border border-slate-800 text-sm mb-6">
             <div className="flex items-center gap-x-2">
               <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-              <span className="font-medium">{t('hero.badge')}</span>
+              <span className="font-medium">{t(preorderMode ? 'hero.badgePreorder' : 'hero.badge')}</span>
             </div>
           </div>
           

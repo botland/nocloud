@@ -6,10 +6,11 @@ import { Product, CartItem } from '@/lib/types';
 import {
   getSpecOptions,
   getDefaultOption,
+  getHardwareUpgradeExtra,
   type HardwareCustomization,
 } from '@/lib/pricing';
 import { resolveHardwarePrice, resolveServicePrice } from '@/lib/promotions';
-import PromoBadge from '@/components/PromoBadge';
+import PromoBadge, { PromoBadgeStack } from '@/components/PromoBadge';
 import PromoPrice from '@/components/PromoPrice';
 import RecurringServicesSummary from '@/components/RecurringServicesSummary';
 
@@ -91,9 +92,16 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
   // Live authoritative hardware unit price (base + chosen option prices).
   // This is the single logical component call — same fn used by server.
   const hwResolved = resolveHardwarePrice(slug, customization);
+  const baseResolved = resolveHardwarePrice(slug);
+  const promoBadges =
+    hwResolved.badges?.length
+      ? hwResolved.badges
+      : hwResolved.badge
+        ? [hwResolved.badge]
+        : [];
+  const tierPromoUntil = promoBadges.find((b) => b.until)?.until;
   const hardwareUnit = hwResolved.net;
-  const hardwareListUnit = hwResolved.list;
-  const hardwareExtra = Math.max(0, hardwareUnit - (product.listPrice ?? product.price));
+  const hardwareUpgradeExtra = getHardwareUpgradeExtra(slug, customization);
 
   const managedResolved = resolveServicePrice('managedCare', slug);
   const backupResolved = resolveServicePrice('secureVaultBackup', slug);
@@ -144,7 +152,7 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur z-[100] flex items-center justify-center p-4" onClick={onClose}>
       <div className="relative bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl flex flex-col max-h-[92vh] overflow-visible" onClick={e => e.stopPropagation()}>
-        {hwResolved.badge && <PromoBadge badge={hwResolved.badge} />}
+        {promoBadges.length > 0 && <PromoBadgeStack badges={promoBadges} />}
         <div className="px-7 pt-6 pb-5 border-b border-slate-800 flex justify-between items-start flex-shrink-0">
           <div>
             <div className="font-semibold text-2xl tracking-tight">{product.name}</div>
@@ -157,9 +165,9 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
           <div className="flex justify-between items-baseline mb-6">
             <div className="text-sm text-slate-400">{t('baseAppliance')}</div>
             <PromoPrice
-              amount={hardwareUnit}
-              listAmount={hardwareListUnit > hardwareUnit ? hardwareListUnit : undefined}
-              untilDate={hwResolved.badge?.until}
+              amount={baseResolved.net}
+              listAmount={baseResolved.list > baseResolved.net ? baseResolved.list : undefined}
+              untilDate={tierPromoUntil}
               mode="oneTime"
               size="lg"
             />
@@ -216,9 +224,9 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
                 );
               })}
             </div>
-            {hardwareExtra > 0 && (
+            {hardwareUpgradeExtra > 0 && (
               <div className="mt-2 text-xs text-emerald-400 text-right">
-                + {tc('common.price', { amount: hardwareExtra })} hardware upgrades
+                + {tc('common.price', { amount: hardwareUpgradeExtra })} {t('hardwareUpgrades')}
               </div>
             )}
           </div>

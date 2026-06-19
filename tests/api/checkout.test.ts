@@ -4,9 +4,11 @@ import { NextRequest } from 'next/server'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
 import {
+  applyHardwareDiscount,
   calculateLease,
   HARDWARE_PRICES,
   PREORDER_DEPOSITS,
+  PREORDER_HARDWARE_DISCOUNT_PERCENT,
   getServicePrice,
   SERVICE_PRICES_BY_TIER,
   LEASE_MIN,
@@ -761,7 +763,7 @@ describe('api/checkout (functional contract tests - black box over payload + Str
 
     it('card: charges deposit only with preorder metadata and saves PM', async () => {
       const payload = basePayload({ paymentMethod: 'stripe', financing: 'full' })
-      const hw = HARDWARE_PRICES.studio
+      const hw = applyHardwareDiscount(HARDWARE_PRICES.studio, PREORDER_HARDWARE_DISCOUNT_PERCENT)
       const res = await POST(makeRequest(payload))
       expect(res.status).toBe(200)
       const json = await res.json()

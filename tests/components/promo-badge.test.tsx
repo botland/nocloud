@@ -12,7 +12,7 @@ vi.mock('next-intl', () => ({
   useLocale: () => 'en',
 }))
 
-import PromoBadge from '@/components/PromoBadge'
+import PromoBadge, { PromoBadgeStack } from '@/components/PromoBadge'
 
 describe('PromoBadge', () => {
   it('renders launch-free corner badge with until date', () => {
@@ -38,5 +38,31 @@ describe('PromoBadge', () => {
       />,
     )
     expect(screen.getByText('promotions.vaultStudio')).toBeTruthy()
+  })
+
+  it('renders pre-order badge with percent interpolation', () => {
+    render(
+      <PromoBadge
+        badge={{ kind: 'promotion', labelKey: 'preorderHardwareDiscount', percent: 10 }}
+        variant="corner"
+      />,
+    )
+    expect(screen.getByText('promotions.preorderHardwareDiscount:10')).toBeTruthy()
+  })
+
+  it('renders PromoBadgeStack as a horizontal row', () => {
+    const { container } = render(
+      <PromoBadgeStack
+        badges={[
+          { kind: 'promotion', labelKey: 'preorderHardwareDiscount', percent: 10 },
+          { kind: 'promotion', labelKey: 'launchEdge', until: '2026-09-30' },
+        ]}
+      />,
+    )
+    const row = container.firstChild as HTMLElement
+    expect(row.className).toMatch(/flex-row/)
+    expect(row.className).toMatch(/flex-nowrap/)
+    expect(screen.getByText('promotions.preorderHardwareDiscount:10')).toBeTruthy()
+    expect(screen.getByText('promotions.launchEdge')).toBeTruthy()
   })
 })

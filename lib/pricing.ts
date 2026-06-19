@@ -29,7 +29,7 @@
  * (ensures consistency and eliminates duplication).
  */
 
-export const PRICING_VERSION = '2026-06-15-promotions-launch';
+export const PRICING_VERSION = '2026-06-19-preorder-hardware-discount';
 // Bump this (and document the change) whenever any price, threshold, lease rule, or invoice policy changes.
 // It is passed through to Stripe session metadata and surfaced in order emails.
 
@@ -89,6 +89,9 @@ export const PREORDER_DEPOSITS: Record<HardwareSlug, number> = {
 
 export const PREORDER_PRICE_LOCK_POLICY = 'honor_quoted' as const;
 
+/** Percent off catalog hardware (all tiers) while the site is in pre-order commerce mode. */
+export const PREORDER_HARDWARE_DISCOUNT_PERCENT = 10;
+
 export const UPFRONT_PERCENT = 20;          // % of hardware charged as upfront payment (leasing+pay by invoice)
 // The upfrontAmount returned by calculateLease is both shown in the checkout popup
 // (via leaseDetails) *and* collected as a separate one-time charge (in addition to
@@ -97,6 +100,58 @@ export const UPFRONT_PERCENT = 20;          // % of hardware charged as upfront 
 export function getHardwarePrice(slug: string): number {
   const prices = HARDWARE_PRICES as Record<string, number>;
   return prices[slug] ?? 0;
+}
+
+export function applyHardwareDiscount(list: number, percent: number): number {
+  if (percent <= 0) return list;
+  return Math.max(0, Math.round(list * (1 - percent / 100)));
+}
+
+/** Additive option surcharges at list price (RAM / VRAM / disk) — excludes base tier price. */
+export function getHardwareUpgradeExtra(
+  slug: string,
+  customization?: HardwareCustomization,
+): number {
+  const list = customization ? calculateHardwarePrice(slug, customization) : getHardwarePrice(slug);
+  return Math.max(0, list - getHardwarePrice(slug));
+}
+
+/** Pre-order discount applies to base tier price only; customization upgrades stay at list. */
+export function hardwareNetWithBaseDiscount(
+  slug: string,
+  percent: number,
+  customization?: HardwareCustomization,
+): number {
+  const base = getHardwarePrice(slug);
+  const upgradeExtra = getHardwareUpgradeExtra(slug, customization);
+  return applyHardwareDiscount(base, percent) + upgradeExtra;
+}
+
+/**
+ * Stack hardware promotions: pre-order % on base only, then tier % on base + upgrades.
+ * When only one applies, behaves like that promo alone.
+ */
+export function aggregateHardwarePromoNet(
+  slug: string,
+  preorderPercent: number,
+  tierPercent: number,
+  customization?: HardwareCustomization,
+): number {
+  const base = getHardwarePrice(slug);
+  const upgradeExtra = getHardwareUpgradeExtra(slug, customization);
+
+  let netBase = base;
+  let netUpgrades = upgradeExtra;
+
+  if (preorderPercent > 0) {
+    netBase = applyHardwareDiscount(netBase, preorderPercent);
+  }
+  if (tierPercent > 0) {
+    netBase = applyHardwareDiscount(netBase, tierPercent);
+    netUpgrades = applyHardwareDiscount(netUpgrades, tierPercent);
+  }
+
+  return netBase + netUpgrades;
 }
 
 export function getPreorderDeposit(slug: string): number {
