@@ -2,6 +2,7 @@
 
 import { useLocale } from 'next-intl';
 import Link from 'next/link';
+import Container from '@/components/Container';
 import { BRAND_DISPLAY } from '@/lib/brand';
 
 export default function AboutPage() {
