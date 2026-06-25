@@ -79,7 +79,7 @@
   "footer": {
     "copyright": "© {year} {brand} — Infrastructure IA générative privée pour l'Europe",
     "legal": "Mentions légales",
-    "privacy": "Confidentialité (RGPD)",
+    "privacy": "Confidentialité",
     "support": "Support"
   },
   "canceledTitle": "Paiement annulé",
@@ -113,7 +113,7 @@
   },
   "cart": {
     "yourOrder": "Votre commande",
-    "empty": "Votre panier est vide",
+    "empty": "Votre panier is empty",
     "itemLabel": "{brand} {name} × {qty}",
     "hardwareTotal": "Total matériel",
     "exclVatNote": "HT",
@@ -232,7 +232,7 @@
     "recurringThenList": "puis {list}{suffix}",
     "hardwareFromList": "à partir de",
     "hardwarePromoUntil": "jusqu'au {date}",
-    "recurringPmRequired": "Un moyen de paiement est requis pour les services récurrents — la facturation débute après la période promotionnelle.",
+    "recurringPmRequired": "Un moyen de paiement is requis pour recurring services — la facturation débute après la période promotionnelle.",
     "recurringScheduleTitle": "Services récurrents (estimation)",
     "recurringScheduleUntil": "{price}{suffix} jusqu'au {date}",
     "recurringScheduleThenUntil": "puis {price}{suffix} jusqu'au {date}",
@@ -240,5 +240,78 @@
     "recurringScheduleThenFreeUntil": "puis gratuit jusqu'au {date}",
     "recurringScheduleThenOngoing": "puis {price}{suffix}",
     "recurringScheduleNote": "Total mensuel indicatif. Les périodes promotionnelles et tarifs standards sont affichés avant le paiement ; les conditions définitives figurent sur votre confirmation de commande."
+  },
+  "legal": {
+    "title": "Mentions légales",
+    "updated": "Dernière mise à jour : Juin 2026",
+    "back": "← Retour à l'accueil",
+    "companyInfoTitle": "Informations sur l'entreprise",
+    "companyName": "OwnEdge OÜ (en cours d'incorporation)",
+    "regNumber": "Numéro d'enregistrement : [À compléter — Registre des sociétés d'Estonie]",
+    "address": "Siège social : Tallinn, Estonie",
+    "director": "Directeur / Conseil de direction : Alexandre Bureau",
+    "contactLabel": "Contact",
+    "operatorTitle": "Opérateur du site",
+    "operatorText": "Ce site est exploité par OwnEdge OÜ, une société en cours d'incorporation en République d'Estonie. OwnEdge fournit des appareils haute performance pour l'inférence d'IA générative privée sur site. Tous les matériels sont conçus pour les organisations européennes qui exigent une souveraineté totale des données, une faible latence et des coûts prévisibles.",
+    "liabilityTitle": "Responsabilité et exclusions",
+    "liabilityText1": "Les informations sur ce site sont fournies à titre informatif général uniquement. Bien que nous nous efforcions d'être précis, OwnEdge ne fait aucune représentation ou garantie de quelque nature que ce soit, expresse ou implicite, concernant l'exhaustivité, l'exactitude, la fiabilité, l'adéquation ou la disponibilité des produits, services ou graphiques associés.",
+    "liabilityText2": "En aucun cas OwnEdge ne sera responsable de toute perte ou dommage, y compris sans limitation, perte ou dommage indirect ou consécutif, ou toute perte ou dommage quelle qu'en soit la cause, découlant de la perte de données ou de profits découlant de, ou en relation avec, l'utilisation de ce site ou des produits décrits ici.",
+    "governingLawTitle": "Droit applicable",
+    "governingLawText": "Ces conditions et tout litige en découlant sont régis et interprétés conformément aux lois de la République d'Estonie.",
+    "contactTitle": "Contact",
+    "contactText": "Pour toute question juridique, veuillez nous contacter à {{email}}.",
+    "copyright": "© {year} {brand} — Infrastructure IA générative privée pour l'Europe"
+  },
+  "privacy": {
+    "title": "Politique de confidentialité",
+    "updated": "Dernière mise à jour : Juin 2026 • Conforme au RGPD",
+    "back": "← Retour à l'accueil",
+    "commitmentTitle": "Notre engagement en matière de confidentialité",
+    "commitmentText": "Chez OwnEdge, la confidentialité n'est pas une fonctionnalité — c'est le fondement de tout ce que nous construisons. Nos appareils fonctionnent entièrement sur site. Vos données, modèles et charges de travail d'inférence ne quittent jamais votre infrastructure. Nous collectons les informations minimales nécessaires pour traiter votre commande et fournir du support.",
+    "dataTitle": "Données que nous collectons",
+    "dataList": [
+      "<strong>Informations de commande</strong> : Nom de l'entreprise, adresse e-mail, numéro de TVA (pour la conformité UE et la facturation), adresses de facturation et de livraison.",
+      "<strong>Informations de paiement</strong> : Gérées de manière sécurisée par Stripe. Nous ne stockons jamais les détails complets de la carte.",
+      "<strong>Données techniques</strong> : Journaux de serveur de base pour la sécurité et la prévention de la fraude (adresse IP, user agent). Aucun profilage ni suivi marketing."
+    ],
+    "useTitle": "Comment nous utilisons vos données",
+    "useIntro": "Nous utilisons vos informations uniquement pour :",
+    "useList": [
+      "Traiter et exécuter votre commande de matériel",
+      "Émettre des factures et gérer la TVA / reverse charge",
+      "Fournir le support client et les abonnements de services (Managed Care, SecureVault Backup)",
+      "Respecter les obligations légales (fiscalité, anti-fraude)"
+    ],
+    "useOutro": "Nous ne vendons, ne louons ni ne partageons vos données avec des tiers à des fins de marketing.",
+    "storageTitle": "Stockage et sécurité des données",
+    "storageText": "Toutes les données clients sont stockées au sein de l'Union européenne. Le traitement des paiements est géré par Stripe (conforme PCI-DSS). Nous mettons en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos informations.",
+    "rightsTitle": "Vos droits (RGPD)",
+    "rightsText": "Vous avez le droit d'accéder, de rectifier, d'effacer, de limiter le traitement et de porter vos données personnelles. Pour exercer ces droits, contactez-nous à {{email}}.",
+    "cookiesTitle": "Cookies et suivi",
+    "cookiesText": "Ce site utilise uniquement des cookies techniques essentiels pour la persistance du panier et le flux de paiement. Aucun cookie d'analyse ou de publicité tiers n'est utilisé.",
+    "changesTitle": "Modifications de cette politique",
+    "changesText": "Nous pouvons mettre à jour cette politique de temps à autre. La dernière version sera toujours disponible sur cette page.",
+    "copyright": "© {year} {brand} — Infrastructure IA générative privée pour l'Europe"
+  },
+  "about": {
+    "title": "À propos d'OwnEdge",
+    "subtitle": "Infrastructure d'IA générative privée, conçue pour les organisations européennes qui exigent le contrôle.",
+    "back": "← Retour à l'accueil",
+    "missionTitle": "Notre mission",
+    "missionText": "OwnEdge existe pour donner aux équipes et organisations européennes la pleine propriété de leurs charges de travail d'IA générative. Pas de cloud. Pas d'exfiltration de données. Pas de coûts imprévisibles par token. Juste des appareils puissants sur site qui exécutent les derniers modèles open-source en périphérie ou dans votre datacenter — avec une souveraineté complète.",
+    "founderTitle": "Le fondateur",
+    "founderP1": "OwnEdge a été fondée par Alexandre Bureau, un ingénieur avec une expertise approfondie en informatique haute performance (HPC).",
+    "founderP2": "Il possède une vaste expérience dans la conception, la construction et l'exploitation de très grands clusters HPC pour les charges de travail d'IA et scientifiques les plus exigeantes. Son parcours couvre les systèmes industriels avancés et l'infrastructure énergétique (précédemment chez GE) et il contribue actuellement à un nom de premier plan dans l'industrie du HPC.",
+    "founderP3": "Cette combinaison unique d'expérience des systèmes à grande échelle et de focus sur la souveraineté des données européennes a conduit à OwnEdge : des appareils conçus pour offrir des performances d'IA générative de niveau entreprise sans compromettre la confidentialité ou le contrôle.",
+    "whyTitle": "Pourquoi les appareils OwnEdge ?",
+    "whyText": "Chaque système que nous livrons — du bureau compact Edge au rack d'entreprise full-scale Forge — est conçu dans un seul but : exécuter de l'inférence privée et haute performance selon vos conditions.",
+    "whyList": [
+      "Préconfiguré avec les principaux modèles open-source",
+      "Services gérés optionnels et sauvegarde chiffrée",
+      "Résidence complète des données en Europe et support",
+      "Coût matériel unique prévisible + services récurrents optionnels"
+    ],
+    "cta": "Explorer les appareils",
+    "copyright": "© {year} {brand} — Infrastructure IA générative privée pour l'Europe"
   }
 }
