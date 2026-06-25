@@ -1,12 +1,15 @@
 'use client';
 
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Container from '@/components/Container';
 import { BRAND_DISPLAY } from '@/lib/brand';
 
 export default function AboutPage() {
   const locale = useLocale();
+  const t = useTranslations('about');
+
+  const whyList = t.raw('whyList') as string[];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
@@ -19,49 +22,33 @@ export default function AboutPage() {
             href={`/${locale}`}
             className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
           >
-            ← Back to home
+            {t('back')}
           </Link>
         </Container>
       </div>
 
       <Container className="max-w-3xl py-16">
-        <h1 className="text-4xl font-semibold tracking-tight mb-4">About OwnEdge</h1>
-        <p className="text-xl text-slate-400 mb-10">Private generative AI infrastructure, built for European organizations that demand control.</p>
+        <h1 className="text-4xl font-semibold tracking-tight mb-4">{t('title')}</h1>
+        <p className="text-xl text-slate-400 mb-10">{t('subtitle')}</p>
 
         <div className="prose prose-invert max-w-none text-slate-300 space-y-8">
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">Our Mission</h2>
-            <p>
-              OwnEdge exists to give European teams and organizations full ownership of their generative AI workloads.
-              No cloud. No data exfiltration. No unpredictable token costs. Just powerful, on-premise appliances that run the latest open-source models at the edge or in your datacenter — with complete sovereignty.
-            </p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('missionTitle')}</h2>
+            <p>{t('missionText')}</p>
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">The Founder</h2>
-            <p>
-              OwnEdge was founded by Alexandre Bureau, an engineer with deep expertise in high-performance computing.
-            </p>
-            <p className="mt-4">
-              He has extensive experience designing, building, and operating very large HPC clusters for the most demanding AI and scientific workloads.
-              His background spans advanced industrial systems and energy infrastructure (previously at GE) and he currently contributes to a leading name in the high-performance computing industry.
-            </p>
-            <p className="mt-4">
-              This unique combination of large-scale systems experience and focus on European data sovereignty led to OwnEdge: purpose-built appliances that deliver enterprise-grade generative AI performance without compromising privacy or control.
-            </p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('founderTitle')}</h2>
+            <p>{t('founderP1')}</p>
+            <p className="mt-4">{t('founderP2')}</p>
+            <p className="mt-4">{t('founderP3')}</p>
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">Why OwnEdge Appliances?</h2>
-            <p>
-              Every system we ship — from the compact Edge desktop to the full-scale Forge enterprise rack — is engineered for one purpose:
-              running private, high-performance inference on your terms.
-            </p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('whyTitle')}</h2>
+            <p>{t('whyText')}</p>
             <ul className="list-disc pl-6 mt-4 space-y-2">
-              <li>Pre-configured with leading open-source models</li>
-              <li>Optional managed services and encrypted backup</li>
-              <li>Full European data residency and support</li>
-              <li>Predictable one-time hardware cost + optional recurring services</li>
+              {whyList.map((item, i) => <li key={i}>{item}</li>)}
             </ul>
           </section>
         </div>
@@ -71,12 +58,12 @@ export default function AboutPage() {
             href={`/${locale}#products`}
             className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-950 font-bold rounded-3xl hover:bg-slate-100 transition-all"
           >
-            Explore the appliances
+            {t('cta')}
           </Link>
         </div>
 
         <div className="mt-16 pt-8 border-t border-slate-800 text-xs text-slate-500">
-          © {new Date().getFullYear()} {BRAND_DISPLAY} — Private generative AI infrastructure for Europe
+          {t('copyright', { year: new Date().getFullYear(), brand: BRAND_DISPLAY })}
         </div>
       </div>
     </div>
