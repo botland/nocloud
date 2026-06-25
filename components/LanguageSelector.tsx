@@ -7,10 +7,9 @@ interface Language {
   code: string;
   name: string;
   flag: string;
-  region?: string;
 }
 
-const allLanguages: Language[] = [
+const languages: Language[] = [
   { code: 'en', name: 'English', flag: '🇬🇧' },
   { code: 'fr', name: 'Français', flag: '🇫🇷' },
   { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
@@ -21,46 +20,48 @@ const allLanguages: Language[] = [
   { code: 'sv', name: 'Svenska', flag: '🇸🇪' },
 ];
 
-interface LanguageSelectorProps {
-  variant?: 'bottom' | 'top-suggestion';
+interface Props {
+  variant?: 'bottom' | 'top';
 }
 
-export default function LanguageSelector({ variant = 'bottom' }: LanguageSelectorProps) {
-  const locale = useLocale();
+export default function LanguageSelector({ variant = 'bottom' }: Props) {
+  const currentLocale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
 
-  const switchLocale = (newLocale: string) => {
-    // Replace the current locale segment in the path
-    const newPath = pathname.replace(`/${locale}`, `/${newLocale}`);
+  const switchTo = (newLocale: string) => {
+    if (newLocale === currentLocale) return;
+    const newPath = pathname.replace(`/${currentLocale}`, `/${newLocale}`);
     router.push(newPath);
   };
 
-  if (variant === 'top-suggestion') {
-    // Only show if browser suggests a non-English primary language
-    const browserLang = typeof navigator !== 'undefined' ? navigator.language.toLowerCase() : 'en';
-    const suggested = allLanguages.filter(l => 
-      browserLang.startsWith(l.code) || 
-      (l.code === 'en' && browserLang.startsWith('en'))
-    );
+  // Top suggestion bar (only show if browser language suggests something different)
+  if (variant === 'top') {
+    if (typeof window === 'undefined') return null;
 
-    if (suggested.length === 0 || suggested[0].code === locale) return null;
+    const browserLang = navigator.language.toLowerCase().split('-')[0];
+    const suggestedLang = languages.find(l => l.code === browserLang);
+
+    if (!suggestedLang || suggestedLang.code === currentLocale || suggestedLang.code === 'en') {
+      return null;
+    }
 
     return (
       <div className="bg-slate-900 border-b border-slate-800 py-2 text-xs">
-        <div className="max-w-7xl mx-auto px-6 flex items-center gap-x-3 text-slate-400">
-          <span className="font-medium">Suggested for your region:</span>
-          <div className="flex gap-x-2">
-            {suggested.slice(0, 3).map((lang) => (
-              <button
-                key={lang.code}
-                onClick={() => switchLocale(lang.code)}
-                className={`px-3 py-1 rounded-full border transition-colors ${locale === lang.code ? 'bg-cyan-400 text-slate-950 border-cyan-400' : 'border-slate-700 hover:bg-slate-800'}`}
-              >
-                {lang.flag} {lang.name}
-              </button>
-            ))}
-          </div>
+        <div className="max-w-7xl mx-auto px-6 flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-400">
+          <span className="font-medium">Language for your region:</span>
+          <button
+            onClick={() => switchTo(suggestedLang.code)}
+            className="px-4 py-1 rounded-full border border-cyan-400 text-cyan-400 hover:bg-cyan-400 hover:text-slate-950 transition-colors"
+          >
+            {suggestedLang.flag} {suggestedLang.name}
+          </button>
+          <button
+            onClick={() => switchTo('en')}
+            className="px-3 py-1 text-xs text-slate-500 hover:text-slate-300"
+          >
+            Use English instead
+          </button>
         </div>
       </div>
     );
@@ -68,23 +69,23 @@ export default function LanguageSelector({ variant = 'bottom' }: LanguageSelecto
 
   // Bottom full selector
   return (
-    <div className="pt-8 border-t border-slate-800 mt-8">
-      <div className="text-xs text-slate-500 mb-3 font-medium tracking-wider">LANGUAGE / LANGUE</div>
-      <div className="flex flex-wrap gap-x-2 gap-y-2 text-sm">
-        {allLanguages.map((lang) => (
+    <div className="mt-10 pt-8 border-t border-slate-800">
+      <div className="text-xs tracking-[2px] text-slate-500 mb-4 font-medium">CHOOSE LANGUAGE</div>
+      <div className="flex flex-wrap gap-2">
+        {languages.map((lang) => (
           <button
             key={lang.code}
-            onClick={() => switchLocale(lang.code)}
-            className={`px-4 py-1.5 rounded-2xl border transition-all flex items-center gap-x-2 ${locale === lang.code 
-              ? 'bg-white text-slate-950 border-white font-semibold' 
-              : 'border-slate-700 hover:bg-slate-900 hover:border-slate-600 text-slate-300'}`}
+            onClick={() => switchTo(lang.code)}
+            className={`px-5 py-2 rounded-2xl border text-sm flex items-center gap-x-2 transition-all
+              ${currentLocale === lang.code 
+                ? 'bg-white text-slate-950 border-white font-semibold' 
+                : 'border-slate-700 hover:bg-slate-900 text-slate-300 hover:border-slate-500'}`}
           >
-            <span>{lang.flag}</span>
+            <span className="text-base">{lang.flag}</span>
             <span>{lang.name}</span>
           </button>
         ))}
       </div>
-      <p className="text-[10px] text-slate-600 mt-3">More languages coming soon. Current selection updates the entire site.</p>
     </div>
   );
 }
