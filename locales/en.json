@@ -79,11 +79,11 @@
   "footer": {
     "copyright": "© {year} {brand} — Private generative AI infrastructure for Europe",
     "legal": "Legal",
-    "privacy": "Privacy (RGPD)",
+    "privacy": "Privacy",
     "support": "Support"
   },
   "canceledTitle": "Payment canceled",
-  "canceledMessage": "Your checkout was canceled. Your cart is still here — feel free to try again.",
+    "canceledMessage": "Your checkout was canceled. Your cart is still here — feel free to try again.",
   "configurator": {
     "baseAppliance": "Base appliance",
     "keySpecs": "KEY SPECIFICATIONS",
@@ -240,5 +240,78 @@
     "recurringScheduleThenFreeUntil": "then free until {date}",
     "recurringScheduleThenOngoing": "then {price}{suffix}",
     "recurringScheduleNote": "Indicative monthly total. Promotional periods and standard rates are shown before payment; final terms appear on your order confirmation."
+  },
+  "legal": {
+    "title": "Legal Notice",
+    "updated": "Last updated: June 2026",
+    "back": "← Back to home",
+    "companyInfoTitle": "Company Information",
+    "companyName": "OwnEdge OÜ (to be incorporated)",
+    "regNumber": "Registration number: [To be completed — Estonia company registry]",
+    "address": "Registered office: Tallinn, Estonia",
+    "director": "Director / Management Board: Alexandre Bureau",
+    "contactLabel": "Contact",
+    "operatorTitle": "Website Operator",
+    "operatorText": "This website is operated by OwnEdge OÜ, a company to be incorporated in the Republic of Estonia. OwnEdge provides high-performance, on-premise appliances for private generative AI inference. All hardware is designed for European organizations that require full data sovereignty, low latency, and predictable costs.",
+    "liabilityTitle": "Liability & Disclaimers",
+    "liabilityText1": "The information on this website is provided for general informational purposes only. While we strive for accuracy, OwnEdge makes no representations or warranties of any kind, express or implied, about the completeness, accuracy, reliability, suitability or availability of the products, services, or related graphics.",
+    "liabilityText2": "In no event will OwnEdge be liable for any loss or damage including without limitation, indirect or consequential loss or damage, or any loss or damage whatsoever arising from loss of data or profits arising out of, or in connection with, the use of this website or the products described herein.",
+    "governingLawTitle": "Governing Law",
+    "governingLawText": "These terms and any dispute arising out of or in connection with them shall be governed by and construed in accordance with the laws of the Republic of Estonia.",
+    "contactTitle": "Contact",
+    "contactText": "For any legal inquiries, please contact us at {{email}}.",
+    "copyright": "© {year} {brand} — Private generative AI infrastructure for Europe"
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "updated": "Last updated: June 2026 • Compliant with GDPR",
+    "back": "← Back to home",
+    "commitmentTitle": "Our Commitment to Privacy",
+    "commitmentText": "At OwnEdge, privacy is not a feature — it is the foundation of everything we build. Our appliances run entirely on-premise. Your data, models, and inference workloads never leave your infrastructure. We collect the minimum information necessary to process your order and provide support.",
+    "dataTitle": "Data We Collect",
+    "dataList": [
+      "<strong>Order information</strong>: Company name, email address, VAT number (for EU compliance and invoicing), billing and shipping addresses.",
+      "<strong>Payment information</strong>: Handled securely by Stripe. We never store full card details.",
+      "<strong>Technical data</strong>: Basic server logs for security and fraud prevention (IP address, user agent). No profiling or marketing tracking."
+    ],
+    "useTitle": "How We Use Your Data",
+    "useIntro": "We use your information solely to:",
+    "useList": [
+      "Process and fulfill your hardware order",
+      "Issue invoices and manage VAT / reverse charge",
+      "Provide customer support and service subscriptions (Managed Care, SecureVault Backup)",
+      "Comply with legal obligations (tax, anti-fraud)"
+    ],
+    "useOutro": "We do not sell, rent, or share your data with third parties for marketing purposes.",
+    "storageTitle": "Data Storage & Security",
+    "storageText": "All customer data is stored within the European Union. Payment processing is handled by Stripe (PCI-DSS compliant). We implement appropriate technical and organizational measures to protect your information.",
+    "rightsTitle": "Your Rights (GDPR)",
+    "rightsText": "You have the right to access, rectify, erase, restrict processing, and port your personal data. To exercise these rights, contact us at {{email}}.",
+    "cookiesTitle": "Cookies & Tracking",
+    "cookiesText": "This site uses only essential technical cookies for cart persistence and checkout flow. No third-party analytics or advertising cookies are used.",
+    "changesTitle": "Changes to This Policy",
+    "changesText": "We may update this policy from time to time. The latest version will always be available on this page.",
+    "copyright": "© {year} {brand} — Private generative AI infrastructure for Europe"
+  },
+  "about": {
+    "title": "About OwnEdge",
+    "subtitle": "Private generative AI infrastructure, built for European organizations that demand control.",
+    "back": "← Back to home",
+    "missionTitle": "Our Mission",
+    "missionText": "OwnEdge exists to give European teams and organizations full ownership of their generative AI workloads. No cloud. No data exfiltration. No unpredictable token costs. Just powerful, on-premise appliances that run the latest open-source models at the edge or in your datacenter — with complete sovereignty.",
+    "founderTitle": "The Founder",
+    "founderP1": "OwnEdge was founded by Alexandre Bureau, an engineer with deep expertise in high-performance computing.",
+    "founderP2": "He has extensive experience designing, building, and operating very large HPC clusters for the most demanding AI and scientific workloads. His background spans advanced industrial systems and energy infrastructure (previously at GE) and he currently contributes to a leading name in the high-performance computing industry.",
+    "founderP3": "This unique combination of large-scale systems experience and focus on European data sovereignty led to OwnEdge: purpose-built appliances that deliver enterprise-grade generative AI performance without compromising privacy or control.",
+    "whyTitle": "Why OwnEdge Appliances?",
+    "whyText": "Every system we ship — from the compact Edge desktop to the full-scale Forge enterprise rack — is engineered for one purpose: running private, high-performance inference on your terms.",
+    "whyList": [
+      "Pre-configured with leading open-source models",
+      "Optional managed services and encrypted backup",
+      "Full European data residency and support",
+      "Predictable one-time hardware cost + optional recurring services"
+    ],
+    "cta": "Explore the appliances",
+    "copyright": "© {year} {brand} — Private generative AI infrastructure for Europe"
   }
 }
