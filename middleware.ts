@@ -1,18 +1,7 @@
 import createMiddleware from 'next-intl/middleware';
 
-// NOTE: Next.js 16 emits a build warning:
-//   "The 'middleware' file convention is deprecated. Please use 'proxy' instead."
-// See: https://nextjs.org/docs/messages/middleware-to-proxy
-// We keep the conventional middleware.ts + next-intl createMiddleware because:
-// - next-intl (v4) routing docs still recommend this exact pattern.
-// - The matcher + locale detection / redirects work correctly for /en /fr.
-// - Renaming to proxy.ts would require non-trivial next-intl + Next config changes
-//   and risks breaking the existing [locale] layout + middleware-driven routing.
-// If the warning becomes a hard error in a future release, we will migrate then.
-// For now this is the lowest-risk approach (functionality > warning suppression).
-
 export default createMiddleware({
-  locales: ['en', 'fr'],
+  locales: ['en', 'fr', 'de', 'es', 'it', 'nl', 'pl', 'sv'],
   defaultLocale: 'en'
 });
 
