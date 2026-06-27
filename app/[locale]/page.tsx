@@ -144,7 +144,7 @@ export default function LocaleHome() {
         }
         return item;
       })
-    });
+    );
   };
 
   const openCheckout = () => {
@@ -284,7 +284,6 @@ export default function LocaleHome() {
             <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">{t('services.title1')}<br />{t('services.title2')}</h2>
           </div>
           <div className="grid md:grid-cols-2 gap-6 max-w-4xl">
-            {/* Managed Care & SecureVault cards - kept short for readability */}
             <div className="bg-slate-950 border border-slate-700 p-7 rounded-3xl relative">
               <div className="flex gap-x-4">
                 <div className="w-11 h-11 rounded-2xl bg-emerald-900/30 text-emerald-400 flex items-center justify-center flex-shrink-0">
@@ -366,7 +365,7 @@ export default function LocaleHome() {
         </Container>
       </div>
 
-      {/* Footer with LanguageSelector at bottom */}
+      {/* Footer */}
       <footer className="border-t border-slate-800 py-9 text-sm">
         <Container className="flex flex-col md:flex-row justify-between items-center gap-y-4 text-slate-400">
           <div>{t('footer.copyright', { year: new Date().getFullYear(), brand: BRAND_DISPLAY })}</div>
