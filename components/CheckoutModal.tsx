@@ -45,7 +45,6 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
   const updateDraft = (partial: Partial<CheckoutFormDraft>) => onDraftChange?.(partial);
 
-  // Wrapped setters
   const setCompanyWithDraft = (v: string) => { setCompany(v); updateDraft({ company: v }); };
   const setEmailWithDraft = (v: string) => { setEmail(v); updateDraft({ email: v }); };
   const setVatWithDraft = (v: string) => { setVat(v); updateDraft({ vatNumber: v }); };
@@ -76,7 +75,6 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
   const isLease = financing === 'lease';
 
-  // VIES validation
   useEffect(() => {
     const trimmed = vat.trim();
     if (!trimmed) { setViesStatus('idle'); setViesMessage(''); return; }
@@ -101,7 +99,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
   const vatTreatment = determineVatTreatment({ customerCountry: country, vatNumber: vat, viesValidated: viesStatus === 'valid' });
   const canOfferVatInclusive = vatTreatment.canOfferVatInclusive;
-  const vatBlocksCheckout = !!vat.trim() && ['invalid', 'checking', 'unavailable'].includes(viesStatus);
+  const vatBlocksCheckout = !!vat.trim() && ['invalid','checking','unavailable'].includes(viesStatus);
 
   const showVatBreakdown = vatInclusive && vatTreatment.vatRate > 0;
   const vatPreview = computeVatAmounts(hardwareTotal, vatTreatment.vatRate, vatInclusive);
@@ -121,9 +119,12 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const locale = useLocale();
 
   const countryOptions = [
-    { value: 'FR', label: t('countries.FR') }, { value: 'DE', label: t('countries.DE') },
-    { value: 'NL', label: t('countries.NL') }, { value: 'BE', label: t('countries.BE') },
-    { value: 'ES', label: t('countries.ES') }, { value: 'IT', label: t('countries.IT') },
+    { value: 'FR', label: t('countries.FR') },
+    { value: 'DE', label: t('countries.DE') },
+    { value: 'NL', label: t('countries.NL') },
+    { value: 'BE', label: t('countries.BE') },
+    { value: 'ES', label: t('countries.ES') },
+    { value: 'IT', label: t('countries.IT') },
     { value: 'other', label: t('countries.other') },
   ];
 
@@ -133,168 +134,288 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
     return true;
   };
 
-  const handleNext = () => { if (validateStep1()) setStep(2); };
-  const handleBack = () => setStep(1);
+  const goToStep = (targetStep: 1 | 2) => {
+    if (targetStep === 1) {
+      setStep(1);
+      return;
+    }
+    if (validateStep1()) setStep(2);
+  };
 
-  const handleComplete = async () => {
+  const handleCompleteOrder = async () => {
     if (!validateStep1()) return;
-    if (vat.trim() && viesStatus !== 'valid') { alert(viesMessage || t('viesInvalid')); return; }
-    if ((financing === 'lease' && !canLease) || (paymentMethod === 'invoice' && !canUseInvoice)) { alert(t('validation')); return; }
+    if (vat.trim() && viesStatus !== 'valid') {
+      alert(viesMessage || t('viesInvalid'));
+      return;
+    }
+    if ((financing === 'lease' && !canLease) || (paymentMethod === 'invoice' && !canUseInvoice)) {
+      alert(t('validation'));
+      return;
+    }
 
     setIsSubmitting(true);
+
     try {
-      const payload: any = { items: cart, email, company, vatNumber: vat, poNumber: po, address, city, postal, country, deliveryDifferent, paymentMethod, financing, locale, vatInclusive };
-      if (deliveryDifferent) { payload.deliveryAddress = deliveryAddress; payload.deliveryCity = deliveryCity; payload.deliveryPostal = deliveryPostal; payload.deliveryCountry = deliveryCountry; }
-      if (paymentMethod === 'invoice' && cartHasRecurring) payload.recurringPaymentMethod = recurringPaymentMethod;
+      const payload: any = {
+        items: cart,
+        email,
+        company,
+        vatNumber: vat,
+        poNumber: po,
+        address,
+        city,
+        postal,
+        country,
+        deliveryDifferent,
+        paymentMethod,
+        financing,
+        locale,
+        vatInclusive,
+      };
 
-      const res = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (deliveryDifferent) {
+        payload.deliveryAddress = deliveryAddress;
+        payload.deliveryCity = deliveryCity;
+        payload.deliveryPostal = deliveryPostal;
+        payload.deliveryCountry = deliveryCountry;
+      }
+      if (paymentMethod === 'invoice' && cartHasRecurring) {
+        payload.recurringPaymentMethod = recurringPaymentMethod;
+      }
+
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to create checkout session');
+      }
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Checkout failed');
 
-      if (data.url) { window.location.href = data.url; return; }
-      if (data.success) { onOrderComplete(); return; }
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+
+      if (data.success) {
+        onOrderComplete();
+        return;
+      }
+
+      throw new Error('No checkout URL returned');
     } catch (e: any) {
-      alert(e.message || 'Unable to start payment');
-    } finally {
+      alert(`Unable to start payment: ${e.message || 'Please try again'}`);
       setIsSubmitting(false);
     }
   };
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl flex flex-col max-h-[92vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-7 py-5 border-b border-slate-800 flex justify-between items-start flex-shrink-0">
-          <div>
-            <div className="font-semibold text-xl">{t('completeOrder')}</div>
-            <div className="flex items-center gap-2 mt-2 text-xs">
-              <button onClick={() => setStep(1)} className={step === 1 ? 'text-cyan-400 font-medium' : 'text-slate-500'}>1. {t('stepInfo')}</button>
-              <span className="text-slate-600">→</span>
-              <button onClick={() => setStep(2)} className={step === 2 ? 'text-cyan-400 font-medium' : 'text-slate-500'}>2. {t('stepPayment')}</button>
+      <div 
+        className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl flex flex-col max-h-[92vh] overflow-hidden" 
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Single scrollable container for header + content + bottom */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Header */}
+          <div className="px-7 py-5 border-b border-slate-800 sticky top-0 bg-slate-900 z-10 flex justify-between items-start">
+            <div>
+              <div className="font-semibold text-xl">{t('completeOrder')}</div>
+              <div className="flex items-center gap-2 mt-2 text-xs">
+                <button 
+                  type="button" 
+                  onClick={() => goToStep(1)} 
+                  className={`transition-colors ${step === 1 ? 'text-cyan-400 font-medium' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  1. {t('stepInfo')}
+                </button>
+                <span className="text-slate-600">→</span>
+                <button 
+                  type="button" 
+                  onClick={() => goToStep(2)} 
+                  className={`transition-colors ${step === 2 ? 'text-cyan-400 font-medium' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  2. {t('stepPayment')}
+                </button>
+              </div>
             </div>
+            <button onClick={onClose} className="text-2xl text-slate-400 hover:text-slate-200">×</button>
           </div>
-          <button onClick={onClose} className="text-2xl text-slate-400">×</button>
-        </div>
 
-        {/* SINGLE scroll container for everything */}
-        <div className="flex-1 overflow-y-auto p-7 space-y-6">
-          {step === 1 && (
-            <>
-              <div>
-                <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('companyInfo')}</div>
-                <div className="space-y-3">
-                  <input value={company} onChange={e => setCompanyWithDraft(e.target.value)} placeholder={t('companyPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                  <input value={email} onChange={e => setEmailWithDraft(e.target.value)} type="email" placeholder={t('emailPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                  <div className="grid grid-cols-2 gap-3">
-                    <input value={vat} onChange={e => setVatWithDraft(e.target.value)} placeholder={t('vatPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                    <input value={po} onChange={e => setPoWithDraft(e.target.value)} placeholder={t('poPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+          {/* Form Content */}
+          <div className="p-7 space-y-6">
+            {step === 1 && (
+              <>
+                <div>
+                  <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('companyInfo')}</div>
+                  <div className="space-y-3">
+                    <input value={company} onChange={e => setCompanyWithDraft(e.target.value)} placeholder={t('companyPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" />
+                    <input value={email} onChange={e => setEmailWithDraft(e.target.value)} type="email" placeholder={t('emailPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <input value={vat} onChange={e => setVatWithDraft(e.target.value)} placeholder={t('vatPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                        {vat.trim() && (
+                          <div className={`text-[10px] mt-1 ${viesStatus === 'valid' ? 'text-emerald-400' : viesStatus === 'checking' ? 'text-slate-400' : 'text-amber-400'}`}>
+                            {viesStatus === 'checking' && t('viesChecking')}
+                            {viesStatus === 'valid' && (viesMessage || t('viesValid'))}
+                            {viesStatus === 'invalid' && (viesMessage || t('viesInvalid'))}
+                            {viesStatus === 'unavailable' && t('viesUnavailable')}
+                          </div>
+                        )}
+                      </div>
+                      <input value={po} onChange={e => setPoWithDraft(e.target.value)} placeholder={t('poPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('billingAddress')}</div>
-                <div className="space-y-3">
-                  <input value={address} onChange={e => setAddressWithDraft(e.target.value)} placeholder={t('streetPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                  <div className="grid grid-cols-2 gap-3">
-                    <input value={city} onChange={e => setCityWithDraft(e.target.value)} placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                    <input value={postal} onChange={e => setPostalWithDraft(e.target.value)} placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                <div>
+                  <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('billingAddress')}</div>
+                  <div className="space-y-3">
+                    <input value={address} onChange={e => setAddressWithDraft(e.target.value)} placeholder={t('streetPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input value={city} onChange={e => setCityWithDraft(e.target.value)} placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                      <input value={postal} onChange={e => setPostalWithDraft(e.target.value)} placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                    </div>
+                    <select value={country} onChange={e => setCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
+                      {countryOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
                   </div>
-                  <select value={country} onChange={e => setCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
-                    {countryOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
                 </div>
-              </div>
 
-              <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer">
-                <input type="checkbox" checked={deliveryDifferent} onChange={e => setDeliveryDifferentWithDraft(e.target.checked)} className="accent-cyan-400 mt-1" />
-                <div className="font-medium text-sm">{t('deliveryDifferentLabel')}</div>
-              </label>
-
-              {deliveryDifferent && (
-                <div className="space-y-3">
-                  <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('deliveryAddress')}</div>
-                  <input value={deliveryAddress} onChange={e => setDeliveryAddressWithDraft(e.target.value)} placeholder={t('streetPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                  <div className="grid grid-cols-2 gap-3">
-                    <input value={deliveryCity} onChange={e => setDeliveryCityWithDraft(e.target.value)} placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                    <input value={deliveryPostal} onChange={e => setDeliveryPostalWithDraft(e.target.value)} placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                  </div>
-                  <select value={deliveryCountry} onChange={e => setDeliveryCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
-                    {countryOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {canOfferVatInclusive && (
-                <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer">
-                  <input type="checkbox" checked={vatInclusive} onChange={e => setVatInclusiveWithDraft(e.target.checked)} className="accent-cyan-400 mt-1" />
-                  <div>
-                    <div className="font-medium">{t('vatInclusiveLabel')}</div>
-                    <div className="text-xs text-slate-400">{t('vatInclusiveExplanation')}</div>
-                  </div>
+                <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                  <input type="checkbox" checked={deliveryDifferent} onChange={e => setDeliveryDifferentWithDraft(e.target.checked)} className="accent-cyan-400 mt-1" />
+                  <div className="font-medium text-sm">{t('deliveryDifferentLabel')}</div>
                 </label>
-              )}
-            </>
-          )}
 
-          {step === 2 && (
-            <>
-              <div>
-                <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
-                <div className="space-y-3">
-                  <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer">
-                    <input type="radio" checked={financing === 'full'} onChange={() => setFinancingWithDraft('full')} className="accent-cyan-400" />
-                    <div><div className="font-medium">{t('payFull')}</div><div className="text-xs text-slate-400">{t('payFullDesc')}</div></div>
+                {deliveryDifferent && (
+                  <div>
+                    <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('deliveryAddress')}</div>
+                    <div className="space-y-3">
+                      <input value={deliveryAddress} onChange={e => setDeliveryAddressWithDraft(e.target.value)} placeholder={t('streetPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                      <div className="grid grid-cols-2 gap-3">
+                        <input value={deliveryCity} onChange={e => setDeliveryCityWithDraft(e.target.value)} placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                        <input value={deliveryPostal} onChange={e => setDeliveryPostalWithDraft(e.target.value)} placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                      </div>
+                      <select value={deliveryCountry} onChange={e => setDeliveryCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
+                        {countryOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {canOfferVatInclusive && (
+                  <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                    <input type="checkbox" checked={vatInclusive} onChange={e => setVatInclusiveWithDraft(e.target.checked)} className="accent-cyan-400 mt-1" />
+                    <div className="flex-1">
+                      <div className="font-medium">{t('vatInclusiveLabel')}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{t('vatInclusiveExplanation')}</div>
+                      {vatInclusive && vatTreatment.vatRate > 0 && (
+                        <div className="text-[10px] text-amber-400 mt-1">{t('vatInclusiveWarning', { rate: Math.round(vatTreatment.vatRate * 100) })}</div>
+                      )}
+                    </div>
                   </label>
-                  <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer">
-                    <input type="radio" checked={financing === 'lease'} disabled={!canLease} onChange={() => setFinancingWithDraft('lease')} className="accent-cyan-400" />
-                    <div><div className="font-medium">{t('lease')}</div><div className="text-xs text-slate-400">{t('leaseDesc', { months: leaseMonths })}</div></div>
-                  </label>
+                )}
+              </>
+            )}
+
+            {step === 2 && (
+              <>
+                <div>
+                  <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                      <input type="radio" name="financing" checked={financing === 'full'} onChange={() => setFinancingWithDraft('full')} className="accent-cyan-400" />
+                      <div className="flex-1">
+                        <div className="font-medium">{t('payFull')}</div>
+                        <div className="text-xs text-slate-400">{t('payFullDesc')}</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                      <input type="radio" name="financing" checked={financing === 'lease'} disabled={!canLease} onChange={() => setFinancingWithDraft('lease')} className="accent-cyan-400" />
+                      <div className="flex-1">
+                        <div className="font-medium">{t('lease')}</div>
+                        <div className="text-xs text-slate-400">{t('leaseDesc', { months: leaseMonths })}</div>
+                      </div>
+                    </label>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('paymentMethod')}</div>
-                <div className="space-y-3">
-                  <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer">
-                    <input type="radio" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethodWithDraft('stripe')} className="accent-cyan-400" />
-                    <div><div className="font-medium">{t('card')}</div><div className="text-xs text-slate-400">{t('cardDesc')}</div></div>
-                  </label>
-                  <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer">
-                    <input type="radio" checked={paymentMethod === 'sepa'} onChange={() => setPaymentMethodWithDraft('sepa')} className="accent-cyan-400" disabled={isOverSepaLimit(leaseMonthlyDisplay)} />
-                    <div><div className="font-medium">{t('sepa')}</div><div className="text-xs text-slate-400">{t('sepaDesc')}</div></div>
-                  </label>
-                  <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer">
-                    <input type="radio" checked={paymentMethod === 'invoice'} disabled={!canUseInvoice} onChange={() => setPaymentMethodWithDraft('invoice')} className="accent-cyan-400" />
-                    <div><div className="font-medium">{t('invoice')}</div><div className="text-xs text-slate-400">{t('invoiceDesc')}</div></div>
-                  </label>
+                <div>
+                  <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('paymentMethod')}</div>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                      <input type="radio" name="payment" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethodWithDraft('stripe')} className="accent-cyan-400" />
+                      <div className="flex-1">
+                        <div className="font-medium flex items-center gap-x-2">{t('card')} <span className="text-[10px] px-2 py-px bg-slate-800 rounded">{t('cardTag')}</span></div>
+                        <div className="text-xs text-slate-400">{t('cardDesc')}</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                      <input type="radio" name="payment" checked={paymentMethod === 'sepa'} onChange={() => setPaymentMethodWithDraft('sepa')} className="accent-cyan-400" disabled={(financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross))} />
+                      <div className="flex-1">
+                        <div className="font-medium">{t('sepa')}</div>
+                        <div className="text-xs text-slate-400">{t('sepaDesc')}</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                      <input type="radio" name="payment" checked={paymentMethod === 'invoice'} disabled={!canUseInvoice} onChange={() => setPaymentMethodWithDraft('invoice')} className="accent-cyan-400" />
+                      <div className="flex-1">
+                        <div className="font-medium">{t('invoice')}</div>
+                        <div className="text-xs text-slate-400">{t('invoiceDesc')}</div>
+                      </div>
+                    </label>
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Bottom actions */}
-        <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex justify-between items-center flex-shrink-0">
-          <div className="flex-1 pr-4">
-            {step === 1 ? (
-              <VatPriceLine label={tc('cart.hardwareTotal')} amount={hwGross} showBreakdown={showVatBreakdown} />
-            ) : (
-              <div>
-                <VatPriceLine label={isLease ? t('monthlyTotalLabel', { months: leaseMonths }) : t('totalToPay')} amount={isLease ? leaseMonthlyDisplay : hwGross} showBreakdown={showVatBreakdown} variant="summary" />
-                {isLease && <div className="text-[10px] text-slate-500 mt-1">{t('firstMonthNote')}</div>}
-              </div>
+              </>
             )}
           </div>
 
-          {step === 1 ? (
-            <button onClick={handleNext} className="px-8 py-3 bg-white text-slate-950 font-bold rounded-3xl">{t('nextBtn')}</button>
-          ) : (
-            <div className="flex gap-2">
-              <button onClick={handleBack} className="px-6 py-3 border border-slate-600 rounded-3xl text-sm">{t('previousBtn')}</button>
-              <button onClick={handleComplete} disabled={isSubmitting || vatBlocksCheckout} className="px-8 py-3 bg-white text-slate-950 font-bold rounded-3xl">{t('completeBtn')}</button>
+          {/* Bottom summary + actions (now inside the scroll container) */}
+          <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 sticky bottom-0">
+            <div className="flex justify-between items-center">
+              <div className="min-w-0 flex-1 pr-4">
+                {step === 1 ? (
+                  <VatPriceLine label={tc('cart.hardwareTotal')} amount={hwGross} showBreakdown={showVatBreakdown} />
+                ) : (
+                  <div>
+                    <VatPriceLine 
+                      label={isLease ? t('monthlyTotalLabel', { months: leaseMonths }) : t('totalToPay')} 
+                      amount={isLease ? leaseMonthlyDisplay : hwGross} 
+                      showBreakdown={showVatBreakdown} 
+                      variant="summary" 
+                    />
+                    {isLease && <div className="text-[10px] text-slate-500 mt-1">{t('firstMonthNote')}</div>}
+                  </div>
+                )}
+              </div>
+
+              {step === 1 ? (
+                <button onClick={() => goToStep(2)} className="shrink-0 px-8 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100">
+                  {t('nextBtn')}
+                </button>
+              ) : (
+                <div className="shrink-0 flex flex-col items-stretch gap-2 w-[148px]">
+                  <button onClick={() => setStep(1)} className="px-4 py-2 border border-slate-600 text-slate-200 font-medium rounded-3xl text-xs hover:bg-slate-800">
+                    {t('previousBtn')}
+                  </button>
+                  <button 
+                    onClick={handleCompleteOrder} 
+                    disabled={isSubmitting || vatBlocksCheckout} 
+                    className="px-4 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {t('completeBtn')}
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
