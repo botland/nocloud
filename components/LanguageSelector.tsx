@@ -34,37 +34,12 @@ export default function LanguageSelector({ variant = 'bottom' }: Props) {
     router.push(newPath);
   };
 
+  // Top bar disabled for now - only show when we have reliable country detection (IP geolocation)
   if (variant === 'top') {
-    // Only show for countries that speak multiple languages (basic client-side heuristic for now)
-    // Proper country detection should be done server-side with IP geolocation.
-    if (typeof window === 'undefined') return null;
-
-    const lang = navigator.language.toLowerCase();
-    const isMultiLangCountry = lang.startsWith('fr-be') || lang.startsWith('nl-be') || lang.startsWith('de-be');
-
-    if (!isMultiLangCountry) return null;
-
-    return (
-      <div className="bg-slate-900 border-b border-slate-800 py-2 text-xs">
-        <div className="max-w-7xl mx-auto px-6 flex items-center gap-x-3 text-slate-400">
-          <span className="font-medium">Language:</span>
-          <select
-            value={currentLocale}
-            onChange={(e) => switchTo(e.target.value)}
-            className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1 text-sm focus:outline-none focus:border-cyan-500"
-          >
-            {languages.map((lang) => (
-              <option key={lang.code} value={lang.code}>
-                {lang.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-    );
+    return null;
   }
 
-  // Bottom: clean select box (no flags, as requested)
+  // Bottom: clean select
   return (
     <div className="mt-8 pt-6 border-t border-slate-800">
       <label className="block text-xs tracking-[1.5px] text-slate-500 mb-2 font-medium">LANGUAGE</label>
