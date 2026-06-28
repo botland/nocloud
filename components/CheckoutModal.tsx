@@ -28,6 +28,10 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const tcart = useTranslations('cart');
   const tc = useTranslations();
 
+  // VIES retry configuration (can be overridden via .env)
+  const VIES_RETRY_INTERVAL_MS =
+    Number(process.env.NEXT_PUBLIC_VIES_RETRY_INTERVAL_MS) || 30000;
+
   // Initialize from persisted draft if present (e.g. user filled form, went to Stripe, canceled).
   const [company, setCompany] = useState(initialData?.company || '');
   const [vat, setVat] = useState(initialData?.vatNumber || '');
@@ -86,6 +90,16 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const setEmailWithDraft = (v: string) => { setEmail(v); updateDraft({ email: v }); };
 
   const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Refs to always have the latest VAT/country values inside the retry interval
+  // (prevents stale closures even if React batches updates)
+  const latestVatRef = useRef(vat);
+  const latestCountryRef = useRef(country);
+
+  useEffect(() => {
+    latestVatRef.current = vat;
+    latestCountryRef.current = country;
+  }, [vat, country]);
 
   const runViesValidation = async (currentVat: string, currentCountry: string) => {
     const trimmed = currentVat.trim();
@@ -167,8 +181,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
     return () => clearTimeout(timer);
   }, [vat, country, t]);
 
-  // Auto-retry every 30s specifically for MS_MAX_CONCURRENT_REQ / GLOBAL_MAX_CONCURRENT_REQ
-  // (VIES overload, frequent on FR VATs). Stops automatically on success, invalid input, or when user edits VAT.
+  // Auto-retry every VIES_RETRY_INTERVAL_MS for MS_MAX_CONCURRENT_REQ / GLOBAL_MAX_CONCURRENT_REQ
+  // Uses refs for latest values to avoid any stale closure issues.
   useEffect(() => {
     if (retryIntervalRef.current) {
       clearInterval(retryIntervalRef.current);
@@ -184,11 +198,12 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
     }
 
     retryIntervalRef.current = setInterval(() => {
-      const trimmed = vat.trim();
+      const trimmed = latestVatRef.current.trim();
+      const currentCountry = latestCountryRef.current;
       if (trimmed) {
-        runViesValidation(trimmed, country);
+        runViesValidation(trimmed, currentCountry);
       }
-    }, 30000);
+    }, VIES_RETRY_INTERVAL_MS);
 
     return () => {
       if (retryIntervalRef.current) {
