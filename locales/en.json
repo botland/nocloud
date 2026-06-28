@@ -99,6 +99,7 @@
   },
   "footer": {
     "copyright": "© {year} {brand} — Private generative AI infrastructure for Europe",
+    "about": "About",
     "legal": "Legal",
     "privacy": "Privacy (RGPD)",
     "support": "Support"
@@ -274,7 +275,7 @@
   "title": "Legal Notice",
   "updated": "Last updated: June 2026",
   "back": "Back to homepage",
-  "companyInfoTitle": "{companyName}",
+  "companyInfoTitle": "Company Information",
   "companyName": "{companyName}",
   "regNumber": "Registry number: {regNumber}",
   "vatNumber": "VAT number: {vatNumber}",
