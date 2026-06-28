@@ -91,11 +91,14 @@ export default function LocaleHome() {
 
   const products: Product[] = baseProducts.map((base) => {
     const resolved = resolveHardwarePrice(base.slug);
+    const minService = resolveMinServicePrice(base.slug);
+
     return {
       ...base,
       price: resolved.net,
       listPrice: resolved.list > resolved.net ? resolved.list : undefined,
       promotionBadge: resolved.badge,
+      minServicePrice: minService,
       name: t(`products.items.${base.slug}.name`),
       tier: t(`products.items.${base.slug}.tier`),
       description: t(`products.items.${base.slug}.description`),
@@ -144,7 +147,7 @@ export default function LocaleHome() {
         }
         return item;
       })
-    });
+    );
   };
 
   const openCheckout = () => {
@@ -204,8 +207,6 @@ export default function LocaleHome() {
             </div>
 
             <div className="flex items-center gap-x-3">
-              {/* Top language switcher removed as requested */}
-
               <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-x-2 px-5 py-2 text-sm font-medium border border-slate-700 hover:bg-slate-900 rounded-3xl transition-colors">
                 <i className="fa-solid fa-shopping-cart"></i>
                 <span className="font-mono text-xs bg-slate-800 px-1.5 rounded">{cart.length}</span>
