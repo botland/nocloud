@@ -17,6 +17,13 @@
     "title": "Choose your performance tier",
     "blurb": "All appliances come with full remote management, automatic updates, and enterprise-grade support.",
     "from": "from",
+    "bestForLabel": "Best for",
+    "bestFor": {
+      "0": "Small teams & edge inference",
+      "1": "Most teams & medium workloads",
+      "2": "Large models & heavy batch jobs"
+    },
+    "configure": "Configure & Add to cart",
     "items": {
       "edge": {
         "name": "Edge",
@@ -34,6 +41,10 @@
         "description": "Maximum throughput for large models and heavy batch workloads."
       }
     }
+  },
+  "promotions": {
+    "launch_free": "Launch offer",
+    "best_value": "Best value"
   },
   "services": {
     "tag": "OPTIONAL SERVICES",
@@ -74,7 +85,7 @@
     "support": "Support"
   },
   "canceledTitle": "Payment canceled",
-  "canceledMessage": "Your order was not completed.",
+    "canceledMessage": "Your order was not completed.",
   "checkout": {
     "completeOrder": "Complete your order",
     "stepInfo": "Information",
