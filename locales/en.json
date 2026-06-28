@@ -15,7 +15,8 @@
   "error": {
     "canceledTitle": "Payment canceled",
     "canceledMessage": "Your checkout was canceled. Your cart is still here — feel free to try again.",
-    "unableToStartPayment": "Unable to start payment: {message}"
+    "unableToStartPayment": "Unable to start payment: {message}",
+    "unableToStartPaymentFallback": "Please try again or contact support."
   },
   "alert": {
     "viesUnavailable": "VIES verification is temporarily unavailable — try again shortly",
