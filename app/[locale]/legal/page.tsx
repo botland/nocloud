@@ -3,12 +3,11 @@
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Container from '@/components/Container';
-import { BRAND_DISPLAY, getBrandEmail } from '@/lib/brand';
+import { BRAND_DISPLAY } from '@/lib/brand';
 
 export default function LegalPage() {
   const locale = useLocale();
   const t = useTranslations('legal');
-  const email = getBrandEmail('sales');
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
@@ -34,9 +33,10 @@ export default function LegalPage() {
             <h2 className="text-xl font-semibold text-white mb-3">{t('companyInfoTitle')}</h2>
             <p><strong>{t('companyName')}</strong></p>
             <p>{t('regNumber')}</p>
+            <p>{t('vatNumber')}</p>
             <p>{t('address')}</p>
             <p>{t('director')}</p>
-            <p>{t('contactLabel')}: <a href={`mailto:${email}`} className="text-cyan-400 hover:underline">{email}</a></p>
+            <p>{t('contactLabel')}: <a href={`mailto:${t('contactEmail')}`} className="text-cyan-400 hover:underline">{t('contactEmail')}</a></p>
           </section>
 
           <section>
@@ -48,6 +48,12 @@ export default function LegalPage() {
             <h2 className="text-xl font-semibold text-white mb-3">{t('liabilityTitle')}</h2>
             <p>{t('liabilityText1')}</p>
             <p className="mt-4">{t('liabilityText2')}</p>
+            <p className="mt-4">{t('liabilityText3')}</p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('intellectualPropertyTitle')}</h2>
+            <p>{t('intellectualPropertyText')}</p>
           </section>
 
           <section>
@@ -56,8 +62,8 @@ export default function LegalPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">{t('contactTitle')}</h2>
-            <p>{t('contactText', { email })}</p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('disputeResolutionTitle')}</h2>
+            <p>{t('disputeResolutionText')}</p>
           </section>
         </div>
 
