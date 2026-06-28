@@ -147,7 +147,7 @@ export default function LocaleHome() {
         }
         return item;
       })
-    );
+    });
   };
 
   const openCheckout = () => {
@@ -174,11 +174,7 @@ export default function LocaleHome() {
   const handleOrderComplete = () => {
     setCart([]);
     setCheckoutDraft(null);
-    try {
-      localStorage.removeItem(`${BRAND_SLUG}_cart`);
-      localStorage.removeItem(`${BRAND_SLUG}_checkout_draft`);
-    } catch {}
-    closeCheckout();
+    setIsCheckoutOpen(false);
   };
 
   return (
@@ -241,7 +237,8 @@ export default function LocaleHome() {
             </button>
           </Container>
         </div>
-      )}
+      )
+      }
 
       {/* Hero */}
       <Container className="pt-16 pb-14">
@@ -426,6 +423,7 @@ export default function LocaleHome() {
         <Container className="flex flex-col md:flex-row justify-between items-center gap-y-4 text-slate-400">
           <div>{t('footer.copyright', { year: new Date().getFullYear(), brand: BRAND_DISPLAY })}</div>
           <div className="flex gap-x-6 text-xs">
+            <a href={`/${locale}/about`} className="hover:text-slate-300">{t('footer.about')}</a>
             <a href={`/${locale}/legal`} className="hover:text-slate-300">{t('footer.legal')}</a>
             <a href={`/${locale}/privacy`} className="hover:text-slate-300">{t('footer.privacy')}</a>
             <a href={`mailto:${getBrandEmail('support')}`} className="hover:text-slate-300">{t('footer.support')}</a>
@@ -457,7 +455,7 @@ export default function LocaleHome() {
       {isCartOpen && (
         <CartSidebar
           cart={cart}
-          onClose={() => setIsCartOpen(false)}
+          onClose={() => setIsCartOpen(false);
           onCheckout={openCheckout}
           onRemoveItem={removeFromCart}
           onUpdateQuantity={updateCartQuantity}
