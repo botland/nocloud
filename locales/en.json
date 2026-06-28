@@ -1,9 +1,5 @@
 {
-  "nav": {
-    "products": "Products",
-    "services": "Services",
-    "why": "Why {brand}"
-  },
+  "nav": { "products": "Products", "services": "Services", "why": "Why {brand}" },
   "hero": {
     "badge": "Private Generative AI Appliances",
     "title1": "Own your AI.",
@@ -25,26 +21,19 @@
     },
     "configure": "Configure & Add to cart",
     "items": {
-      "edge": {
-        "name": "Edge",
-        "tier": "Entry-level",
-        "description": "Compact appliance for small teams and edge inference."
-      },
-      "studio": {
-        "name": "Studio",
-        "tier": "Professional",
-        "description": "Balanced performance for most teams and medium workloads."
-      },
-      "forge": {
-        "name": "Forge",
-        "tier": "High-performance",
-        "description": "Maximum throughput for large models and heavy batch workloads."
-      }
+      "edge": { "name": "Edge", "tier": "Entry-level", "description": "Compact appliance for small teams and edge inference." },
+      "studio": { "name": "Studio", "tier": "Professional", "description": "Balanced performance for most teams and medium workloads." },
+      "forge": { "name": "Forge", "tier": "High-performance", "description": "Maximum throughput for large models and heavy batch workloads." }
     }
   },
   "promotions": {
     "launch_free": "Launch offer",
-    "best_value": "Best value"
+    "best_value": "Best value",
+    "hardwarePromoUntil": "Promo ends {date}",
+    "launchEdge": "Launch",
+    "managedCareLaunchFree": "Free for launch",
+    "managedCareLaunchFreeUntil": "Free until {date}",
+    "freePrice": "Free"
   },
   "services": {
     "tag": "OPTIONAL SERVICES",
@@ -85,7 +74,7 @@
     "support": "Support"
   },
   "canceledTitle": "Payment canceled",
-    "canceledMessage": "Your order was not completed.",
+  "canceledMessage": "Your order was not completed.",
   "checkout": {
     "completeOrder": "Complete your order",
     "stepInfo": "Information",
@@ -136,13 +125,7 @@
     "validation": "Please fill in all required fields correctly.",
     "validationDelivery": "Please fill in the delivery address.",
     "countries": {
-      "FR": "France",
-      "DE": "Germany",
-      "NL": "Netherlands",
-      "BE": "Belgium",
-      "ES": "Spain",
-      "IT": "Italy",
-      "other": "Other country"
+      "FR": "France", "DE": "Germany", "NL": "Netherlands", "BE": "Belgium", "ES": "Spain", "IT": "Italy", "other": "Other country"
     },
     "totalToPay": "Total due today",
     "monthlyTotalLabel": "Monthly total ({months} months)",
@@ -201,12 +184,6 @@
     "changesText": "We may update this policy from time to time. The latest version will always be available on this page.",
     "copyright": "© {year} {brand}. All rights reserved."
   },
-  "cart": {
-    "hardwareTotal": "Hardware total"
-  },
-  "common": {
-    "price": "€{amount}",
-    "perMonthLong": "/month",
-    "recurringSuffixShort": "/mo"
-  }
+  "cart": { "hardwareTotal": "Hardware total" },
+  "common": { "price": "€{amount}", "perMonthLong": "/month", "recurringSuffixShort": "/mo" }
 }
