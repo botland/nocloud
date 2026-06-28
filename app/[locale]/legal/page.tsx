@@ -3,7 +3,15 @@
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Container from '@/components/Container';
-import { BRAND_DISPLAY } from '@/lib/brand';
+import {
+  BRAND_DISPLAY,
+  COMPANY_LEGAL_NAME,
+  REGISTRY_NUMBER,
+  VAT_NUMBER,
+  COMPANY_ADDRESS,
+  MANAGING_DIRECTOR,
+  LEGAL_CONTACT_EMAIL,
+} from '@/lib/brand';
 
 export default function LegalPage() {
   const locale = useLocale();
@@ -31,29 +39,36 @@ export default function LegalPage() {
         <div className="prose prose-invert max-w-none text-slate-300 space-y-8">
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('companyInfoTitle')}</h2>
-            <p><strong>{t('companyName')}</strong></p>
-            <p>{t('regNumber')}</p>
-            <p>{t('vatNumber')}</p>
-            <p>{t('address')}</p>
-            <p>{t('director')}</p>
-            <p>{t('contactLabel')}: <a href={`mailto:${t('contactEmail')}`} className="text-cyan-400 hover:underline">{t('contactEmail')}</a></p>
+            <p><strong>{t('companyName', { companyName: COMPANY_LEGAL_NAME })}</strong></p>
+            <p>{t('regNumber', { regNumber: REGISTRY_NUMBER })}</p>
+            <p>{t('vatNumber', { vatNumber: VAT_NUMBER })}</p>
+            <p>{t('address', { address: COMPANY_ADDRESS })}</p>
+            <p>{t('director', { director: MANAGING_DIRECTOR })}</p>
+            <p>
+              {t('contactLabel')}: <a
+                href={`mailto:${LEGAL_CONTACT_EMAIL}`}
+                className="text-cyan-400 hover:underline"
+              >
+                {t('contactEmail', { contactEmail: LEGAL_CONTACT_EMAIL })}
+              </a>
+            </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('operatorTitle')}</h2>
-            <p>{t('operatorText')}</p>
+            <p>{t('operatorText', { companyName: COMPANY_LEGAL_NAME })}</p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('liabilityTitle')}</h2>
             <p>{t('liabilityText1')}</p>
-            <p className="mt-4">{t('liabilityText2')}</p>
+            <p className="mt-4">{t('liabilityText2', { companyName: COMPANY_LEGAL_NAME })}</p>
             <p className="mt-4">{t('liabilityText3')}</p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('intellectualPropertyTitle')}</h2>
-            <p>{t('intellectualPropertyText')}</p>
+            <p>{t('intellectualPropertyText', { companyName: COMPANY_LEGAL_NAME })}</p>
           </section>
 
           <section>
