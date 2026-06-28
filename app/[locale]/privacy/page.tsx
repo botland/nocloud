@@ -10,14 +10,6 @@ export default function PrivacyPage() {
   const t = useTranslations('privacy');
   const email = getBrandEmail('support');
 
-  // Helper to render list items safely (simple approach for now)
-  const renderList = (key: string) => {
-    const items = t.raw(key) as string[];
-    return items.map((item, i) => (
-      <li key={i} dangerouslySetInnerHTML={{ __html: item }} />
-    ));
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       <div className="border-b border-slate-800">
@@ -25,10 +17,7 @@ export default function PrivacyPage() {
           <Link href={`/${locale}`} className="flex items-center gap-x-3">
             <span className="text-2xl font-bold tracking-tighter">{BRAND_DISPLAY}</span>
           </Link>
-          <Link 
-            href={`/${locale}`}
-            className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
-          >
+          <Link href={`/${locale}`} className="text-sm text-slate-400 hover:text-slate-200 transition-colors">
             {t('back')}
           </Link>
         </Container>
@@ -46,18 +35,12 @@ export default function PrivacyPage() {
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('dataTitle')}</h2>
-            <ul className="list-disc pl-6 space-y-2">
-              {renderList('dataList')}
-            </ul>
+            <p>{t('dataText')}</p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('useTitle')}</h2>
-            <p>{t('useIntro')}</p>
-            <ul className="list-disc pl-6 space-y-2 mt-2">
-              {(t.raw('useList') as string[]).map((item, i) => <li key={i}>{item}</li>)}
-            </ul>
-            <p className="mt-4">{t('useOutro')}</p>
+            <p>{t('useText')}</p>
           </section>
 
           <section>
@@ -84,7 +67,7 @@ export default function PrivacyPage() {
         <div className="mt-16 pt-8 border-t border-slate-800 text-xs text-slate-500">
           {t('copyright', { year: new Date().getFullYear(), brand: BRAND_DISPLAY })}
         </div>
-      </div>
+      </Container>
     </div>
   );
 }
