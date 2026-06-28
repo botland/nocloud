@@ -3,12 +3,11 @@
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Container from '@/components/Container';
-import { BRAND_DISPLAY } from '@/lib/brand';
+import { BRAND_DISPLAY, COMPANY_LEGAL_NAME, LEGAL_CONTACT_EMAIL } from '@/lib/brand';
 
 export default function PrivacyPage() {
   const locale = useLocale();
   const t = useTranslations('privacy');
-  const contactEmail = t('contactEmail');
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
@@ -30,12 +29,12 @@ export default function PrivacyPage() {
         <div className="prose prose-invert max-w-none text-slate-300 space-y-8">
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('introductionTitle')}</h2>
-            <p>{t('introductionText')}</p>
+            <p>{t('introductionText', { companyName: COMPANY_LEGAL_NAME })}</p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('dataControllerTitle')}</h2>
-            <p>{t('dataControllerText')}</p>
+            <p>{t('dataControllerText', { companyName: COMPANY_LEGAL_NAME, contactEmail: LEGAL_CONTACT_EMAIL })}</p>
           </section>
 
           <section>
@@ -92,7 +91,7 @@ export default function PrivacyPage() {
                 <li key={index}>{item}</li>
               ))}
             </ul>
-            <p className="mt-3">{t('yourRightsContact')}</p>
+            <p className="mt-3">{t('yourRightsContact', { contactEmail: LEGAL_CONTACT_EMAIL })}</p>
           </section>
 
           <section>
@@ -118,7 +117,14 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('contactTitle')}</h2>
             <p>{t('contactText')}</p>
-            <p className="mt-2"><a href={`mailto:${contactEmail}`} className="text-cyan-400 hover:underline">{contactEmail}</a></p>
+            <p className="mt-2">
+              <a
+                href={`mailto:${LEGAL_CONTACT_EMAIL}`}
+                className="text-cyan-400 hover:underline"
+              >
+                {t('contactEmail', { contactEmail: LEGAL_CONTACT_EMAIL })}
+              </a>
+            </p>
           </section>
         </div>
 
