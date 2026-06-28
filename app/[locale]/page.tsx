@@ -454,7 +454,7 @@ export default function LocaleHome() {
       {isCartOpen && (
         <CartSidebar
           cart={cart}
-          onClose={() => setIsCartOpen(false);
+          onClose={() => setIsCartOpen(false)}
           onCheckout={openCheckout}
           onRemoveItem={removeFromCart}
           onUpdateQuantity={updateCartQuantity}
