@@ -591,7 +591,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   {countryOptions.map((c) => (
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
-              </select>
+                </select>
+              </div>
             </div>
           )}
 
