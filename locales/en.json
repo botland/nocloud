@@ -76,6 +76,27 @@
     "subtitle": "Contact our team for tailored enterprise quotes and volume pricing.",
     "cta": "Contact sales"
   },
+  "about": {
+    "title": "Our story",
+    "subtitle": "High-performance private AI appliances, built by engineers who have spent their careers scaling some of the largest computing systems in the world.",
+    "back": "Back to homepage",
+    "missionTitle": "Why we exist",
+    "missionText": "Generative AI will change everything. But the most important models and the most sensitive data should not have to live in someone else's cloud. We build appliances that give serious European organizations the power of giant HPC clusters with complete ownership, privacy, and control.",
+    "founderTitle": "Built by Alexandre Bureau",
+    "founderP1": "With more than twenty years building complex distributed systems — from large-scale Java platforms and team leadership to architecting a new distributed web search engine and high-frequency trading systems using C++ and machine learning — performance at scale has always been central to the work.",
+    "founderP2": "He currently helps design and operate some of the largest HPC clusters on the planet for a major industry player. At the same time, he is convinced that generative AI will fundamentally reshape every industry — and that the most important models and data should not have to live in someone else's cloud.",
+    "founderP3": "That conviction is why we built these appliances. Our Edge, Studio and Forge models bring HPC-grade inference performance into turnkey systems you can deploy in your own infrastructure in minutes. Optional Managed Care and SecureVault Backup services let your team focus on models and results instead of operations.",
+    "whyTitle": "What we believe",
+    "whyText": "Cloud convenience comes at a cost: data leaves your control, latency kills real-time use cases, costs become unpredictable, and true European sovereignty is hard to achieve.",
+    "whyList": [
+      "Complete data sovereignty — your models and data never leave your premises",
+      "Predictable costs — one-time hardware purchase, no token or usage bills",
+      "Ultra-low latency — inference at the edge or in your data center",
+      "European data residency by design",
+      "HPC performance made simple — the power of giant clusters in appliances you own"
+    ],
+    "cta": "Explore appliances"
+  },
   "footer": {
     "copyright": "© {year} {brand} — Private generative AI infrastructure for Europe",
     "legal": "Legal",
@@ -253,7 +274,7 @@
   "title": "Legal Notice",
   "updated": "Last updated: June 2026",
   "back": "Back to homepage",
-  "companyInfoTitle": "Company Information",
+  "companyInfoTitle": "{companyName}",
   "companyName": "{companyName}",
   "regNumber": "Registry number: {regNumber}",
   "vatNumber": "VAT number: {vatNumber}",
