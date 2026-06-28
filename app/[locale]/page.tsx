@@ -144,7 +144,7 @@ export default function LocaleHome() {
         }
         return item;
       })
-    );
+    });
   };
 
   const openCheckout = () => {
@@ -204,10 +204,7 @@ export default function LocaleHome() {
             </div>
 
             <div className="flex items-center gap-x-3">
-              <div className="flex border border-slate-700 rounded-3xl overflow-hidden text-sm">
-                <a href="/en" className="px-4 py-1.5 text-xs font-semibold hover:bg-slate-900">EN</a>
-                <a href="/fr" className="px-4 py-1.5 text-xs font-semibold border-l border-slate-700 hover:bg-slate-900">FR</a>
-              </div>
+              {/* Top language switcher removed as requested */}
 
               <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-x-2 px-5 py-2 text-sm font-medium border border-slate-700 hover:bg-slate-900 rounded-3xl transition-colors">
                 <i className="fa-solid fa-shopping-cart"></i>
@@ -218,9 +215,6 @@ export default function LocaleHome() {
         </Container>
       </nav>
 
-      {/* Conditional top language suggestion */}
-      <LanguageSelector variant="top" />
-
       {/* Canceled payment banner */}
       {showCanceled && (
         <div className="border-b border-amber-900/50 bg-amber-950/60">
@@ -228,8 +222,22 @@ export default function LocaleHome() {
             <i className="fa-solid fa-exclamation-triangle"></i>
             <span className="font-medium">{t('canceledTitle')}</span>
             <span className="text-amber-400/80">{t('canceledMessage')}</span>
-            <button onClick={() => { setIsCartOpen(true); setShowCanceled(false); }} className="ml-auto text-xs px-3 py-1 border border-amber-700 hover:bg-amber-900/40 rounded-full transition-colors">View cart</button>
-            <button onClick={() => setShowCanceled(false)} className="text-amber-400 hover:text-amber-200 text-lg leading-none" aria-label="Dismiss">×</button>
+            <button
+              onClick={() => {
+                setIsCartOpen(true);
+                setShowCanceled(false);
+              }}
+              className="ml-auto text-xs px-3 py-1 border border-amber-700 hover:bg-amber-900/40 rounded-full transition-colors"
+            >
+              View cart
+            </button>
+            <button
+              onClick={() => setShowCanceled(false)}
+              className="text-amber-400 hover:text-amber-200 text-lg leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
           </Container>
         </div>
       )}
@@ -243,19 +251,26 @@ export default function LocaleHome() {
               <span className="font-medium">{t('hero.badge')}</span>
             </div>
           </div>
+          
           <h1 className="text-6xl md:text-7xl font-semibold tracking-tighter leading-[1.05] mb-5">
-            {t('hero.title1')}<br /><span className="text-white">{t('hero.title2')}</span>
+            {t('hero.title1')}<br />
+            <span className="text-white">{t('hero.title2')}</span>
           </h1>
-          <p className="max-w-lg text-xl text-slate-400 mb-9">{t('hero.subtitle')}</p>
+          
+          <p className="max-w-lg text-xl text-slate-400 mb-9">
+            {t('hero.subtitle')}
+          </p>
+          
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <button onClick={() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })} className="px-8 h-14 bg-white text-slate-950 font-semibold rounded-3xl flex items-center justify-center gap-x-3 text-base hover:bg-slate-100 transition-all shadow-lg">
               {t('hero.cta1')} <i className="fa-solid fa-arrow-right ml-1"></i>
             </button>
           </div>
+          
           <div className="mt-8 flex items-center gap-x-8 text-sm">
             <div className="text-slate-400">{t('hero.trusted')}</div>
           </div>
-        </div>
+        </Container>
       </Container>
 
       {/* Products */}
@@ -266,8 +281,11 @@ export default function LocaleHome() {
               <div className="text-cyan-400 text-xs font-bold tracking-[3px] mb-1">{t('products.tag')}</div>
               <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">{t('products.title')}</h2>
             </div>
-            <div className="hidden lg:block text-sm text-slate-400 max-w-xs text-right">{t('products.blurb')}</div>
+            <div className="hidden lg:block text-sm text-slate-400 max-w-xs text-right">
+              {t('products.blurb')}
+            </div>
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {products.map((product) => (
               <ProductCard key={product.id} product={product} onConfigure={() => openConfigurator(product)} />
@@ -283,6 +301,7 @@ export default function LocaleHome() {
             <div className="text-cyan-400 text-xs font-bold tracking-[2.5px] mb-2">{t('services.tag')}</div>
             <h2 className="text-[2.1rem] leading-[2.4rem] font-semibold tracking-tighter">{t('services.title1')}<br />{t('services.title2')}</h2>
           </div>
+          
           <div className="grid md:grid-cols-2 gap-6 max-w-4xl">
             <div className="bg-slate-950 border border-slate-700 p-7 rounded-3xl relative">
               <div className="flex gap-x-4">
