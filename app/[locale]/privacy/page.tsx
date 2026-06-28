@@ -3,12 +3,12 @@
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Container from '@/components/Container';
-import { BRAND_DISPLAY, getBrandEmail } from '@/lib/brand';
+import { BRAND_DISPLAY } from '@/lib/brand';
 
 export default function PrivacyPage() {
   const locale = useLocale();
   const t = useTranslations('privacy');
-  const email = getBrandEmail('support');
+  const contactEmail = t('contactEmail');
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
@@ -29,28 +29,70 @@ export default function PrivacyPage() {
 
         <div className="prose prose-invert max-w-none text-slate-300 space-y-8">
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">{t('commitmentTitle')}</h2>
-            <p>{t('commitmentText')}</p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('introductionTitle')}</h2>
+            <p>{t('introductionText')}</p>
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">{t('dataTitle')}</h2>
-            <p>{t('dataText')}</p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('dataControllerTitle')}</h2>
+            <p>{t('dataControllerText')}</p>
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">{t('useTitle')}</h2>
-            <p>{t('useText')}</p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('dataWeCollectTitle')}</h2>
+            <p>{t('dataWeCollectText')}</p>
+            <ul className="list-disc pl-6 mt-3 space-y-1 text-slate-300">
+              {(t.raw('dataWeCollectList') as string[] || []).map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">{t('storageTitle')}</h2>
-            <p>{t('storageText')}</p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('howWeUseDataTitle')}</h2>
+            <p>{t('howWeUseDataText')}</p>
+            <ul className="list-disc pl-6 mt-3 space-y-1 text-slate-300">
+              {(t.raw('howWeUseDataList') as string[] || []).map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">{t('rightsTitle')}</h2>
-            <p>{t('rightsText', { email })}</p>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('legalBasisTitle')}</h2>
+            <p>{t('legalBasisText')}</p>
+            <ul className="list-disc pl-6 mt-3 space-y-1 text-slate-300">
+              {(t.raw('legalBasisList') as string[] || []).map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('dataSharingTitle')}</h2>
+            <p>{t('dataSharingText')}</p>
+            <ul className="list-disc pl-6 mt-3 space-y-1 text-slate-300">
+              {(t.raw('dataSharingList') as string[] || []).map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+            <p className="mt-3 text-sm italic">{t('dataSharingNote')}</p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('dataRetentionTitle')}</h2>
+            <p>{t('dataRetentionText')}</p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('yourRightsTitle')}</h2>
+            <p>{t('yourRightsText')}</p>
+            <ul className="list-disc pl-6 mt-3 space-y-1 text-slate-300">
+              {(t.raw('yourRightsList') as string[] || []).map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+            <p className="mt-3">{t('yourRightsContact')}</p>
           </section>
 
           <section>
@@ -59,8 +101,24 @@ export default function PrivacyPage() {
           </section>
 
           <section>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('dataSecurityTitle')}</h2>
+            <p>{t('dataSecurityText')}</p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('internationalTransfersTitle')}</h2>
+            <p>{t('internationalTransfersText')}</p>
+          </section>
+
+          <section>
             <h2 className="text-xl font-semibold text-white mb-3">{t('changesTitle')}</h2>
             <p>{t('changesText')}</p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('contactTitle')}</h2>
+            <p>{t('contactText')}</p>
+            <p className="mt-2"><a href={`mailto:${contactEmail}`} className="text-cyan-400 hover:underline">{contactEmail}</a></p>
           </section>
         </div>
 
