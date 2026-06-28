@@ -12,20 +12,19 @@ export default function LegalPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
+      {/* Top bar */}
       <div className="border-b border-slate-800">
         <Container className="py-6 flex items-center justify-between">
           <Link href={`/${locale}`} className="flex items-center gap-x-3">
             <span className="text-2xl font-bold tracking-tighter">{BRAND_DISPLAY}</span>
           </Link>
-          <Link 
-            href={`/${locale}`}
-            className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
-          >
+          <Link href={`/${locale}`} className="text-sm text-slate-400 hover:text-slate-200 transition-colors">
             {t('back')}
           </Link>
         </Container>
       </div>
 
+      {/* Main content */}
       <Container className="max-w-3xl py-16">
         <h1 className="text-4xl font-semibold tracking-tight mb-4">{t('title')}</h1>
         <p className="text-slate-400 mb-10">{t('updated')}</p>
@@ -65,7 +64,7 @@ export default function LegalPage() {
         <div className="mt-16 pt-8 border-t border-slate-800 text-xs text-slate-500">
           {t('copyright', { year: new Date().getFullYear(), brand: BRAND_DISPLAY })}
         </div>
-      </div>
+      </Container>
     </div>
   );
 }
