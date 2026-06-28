@@ -3,16 +3,23 @@ import Stripe from 'stripe';
 import { BRAND_NAME } from '@/lib/brand';
 import { extractPaymentMethodFromSession } from '@/lib/stripe-pm';
 
-function requireAdmin(request: NextRequest): boolean {
+function requireAdmin(request: NextRequest): { authorized: boolean; error?: string } {
   const key = process.env.ADMIN_API_KEY;
-  if (!key) return false;
+  if (!key) {
+    return { authorized: false, error: 'ADMIN_API_KEY not configured on server' };
+  }
   const auth = request.headers.get('authorization') || '';
-  return auth === `Bearer ${key}` || request.headers.get('x-admin-api-key') === key;
+  const xKey = request.headers.get('x-admin-api-key');
+  if (auth === `Bearer ${key}` || xKey === key) {
+    return { authorized: true };
+  }
+  return { authorized: false, error: 'Invalid admin credentials' };
 }
 
 export async function POST(request: NextRequest) {
-  if (!requireAdmin(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const adminCheck = requireAdmin(request);
+  if (!adminCheck.authorized) {
+    return NextResponse.json({ error: adminCheck.error || 'Unauthorized' }, { status: 401 });
   }
 
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -43,9 +50,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not a pre-order session' }, { status: 400 });
     }
 
+    // Idempotency: check if balance already processed
+    const currentStatus = meta.preorder_status || '';
+    if (currentStatus.includes('balance_charge') || currentStatus.includes('balance_invoice') || currentStatus.includes('fulfilled')) {
+      return NextResponse.json({
+        success: true,
+        alreadyFulfilled: true,
+        message: 'Balance already processed for this pre-order',
+        preorderStatus: currentStatus,
+      });
+    }
+
     const balanceNet = parseFloat(meta.quoted_balance_due || '0');
     if (!balanceNet || balanceNet <= 0) {
       return NextResponse.json({ error: 'No balance due on this pre-order' }, { status: 400 });
+    }
+
+    // Basic validation that deposit was paid
+    if (session.payment_status !== 'paid') {
+      return NextResponse.json({ error: 'Deposit session not paid yet' }, { status: 400 });
     }
 
     const customerId = typeof session.customer === 'string'
@@ -116,6 +139,8 @@ export async function POST(request: NextRequest) {
         confirm: true,
         metadata: balanceMeta,
         description: `${BRAND_NAME} pre-order balance`,
+        // Idempotency key helps prevent duplicate charges
+        idempotency_key: `preorder-balance-${depositSessionId}`,
       });
 
       return NextResponse.json({
