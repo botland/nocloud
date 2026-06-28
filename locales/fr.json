@@ -15,7 +15,8 @@
   "error": {
     "canceledTitle": "Paiement annulé",
     "canceledMessage": "Votre commande a été annulée. Votre panier est toujours disponible — n'hésitez pas à réessayer.",
-    "unableToStartPayment": "Impossible de démarrer le paiement : {message}"
+    "unableToStartPayment": "Impossible de démarrer le paiement : {message}",
+    "unableToStartPaymentFallback": "Veuillez réessayer ou contacter le support."
   },
   "alert": {
     "viesUnavailable": "La vérification VIES est temporairement indisponible — veuillez réessayer sous peu",
