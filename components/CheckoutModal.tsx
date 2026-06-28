@@ -109,7 +109,11 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
         }
       } else if (res.status === 503 || data.unavailable) {
         setViesStatus('unavailable');
-        setViesMessage(data.reason || t('viesUnavailable'));
+        if (data.reason && /MS_MAX_CONCURRENT_REQ|GLOBAL_MAX_CONCURRENT_REQ/i.test(data.reason)) {
+          setViesMessage(t('vies.concurrentReq'));
+        } else {
+          setViesMessage(data.reason || t('viesUnavailable'));
+        }
       } else {
         setViesStatus('invalid');
         setViesMessage(data.reason || t('viesInvalid'));
@@ -456,8 +460,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
       throw new Error('No checkout URL returned');
     } catch (e: any) {
       console.error('Checkout error', e);
-      const msg = e?.message || 'Please try again or contact support.';
-      alert(`Unable to start payment: ${msg}`);
+      const msg = e?.message || t('error.unableToStartPaymentFallback');
+      alert(t('error.unableToStartPayment', { message: msg }));
       setIsSubmitting(false);
     }
   };
