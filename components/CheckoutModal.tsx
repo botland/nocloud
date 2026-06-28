@@ -418,7 +418,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4" onClick={handleClose}>
-      <div className="relative bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="relative bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl flex flex-col max-h-[92vh] overflow-hidden" onClick={e => e.stopPropagation()}>
         {isSubmitting && (
           <div className="absolute inset-0 z-20 bg-slate-950/85 flex flex-col items-center justify-center px-6">
             <div className="w-9 h-9 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
@@ -426,7 +426,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
           </div>
         )}
         
-        <div className="px-7 py-5 border-b border-slate-800 flex justify-between items-start">
+        <div className="px-7 py-5 border-b border-slate-800 flex justify-between items-start flex-shrink-0">
           <div>
             <div className="font-semibold text-xl">{t('completeOrder')}</div>
             <div className="flex items-center gap-2 mt-2 text-xs">
@@ -452,431 +452,433 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
           <button onClick={handleClose} disabled={isSubmitting} className="text-2xl text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed">×</button>
         </div>
 
-        <div className={`p-7 space-y-6 max-h-[68vh] overflow-y-auto ${isSubmitting ? 'pointer-events-none opacity-50' : ''}`}>
-          {step === 1 && (
-          <>
-          {/* Company Info */}
-          <div>
-            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('companyInfo')}</div>
-            <div className="space-y-3">
-              <input value={company} onChange={e => setCompanyWithDraft(e.target.value)} type="text" placeholder={t('companyPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" />
-              {/* Email collected as part of our checkout (kept + transmitted to Stripe for customer ownership). */}
-              <input
-                value={email}
-                onChange={e => setEmailWithDraft(e.target.value)}
-                type="email"
-                placeholder={t('emailPlaceholder')}
-                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <input value={vat} onChange={e => setVatWithDraft(e.target.value)} type="text" placeholder={t('vatPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                  {vat.trim() && (
-                    <div className={`text-[10px] mt-1 ${
-                      viesStatus === 'valid' ? 'text-emerald-400'
-                        : viesStatus === 'checking' ? 'text-slate-400'
-                          : viesStatus === 'idle' ? 'text-slate-500'
-                            : 'text-amber-400'
-                    }`}>
-                      {viesStatus === 'checking' && t('viesChecking')}
-                      {viesStatus === 'valid' && (viesMessage || t('viesValid'))}
-                      {viesStatus === 'invalid' && (viesMessage || t('viesInvalid'))}
-                      {viesStatus === 'unavailable' && (viesMessage || t('viesUnavailable'))}
-                    </div>
-                  )}
-                </div>
-                <input value={po} onChange={e => setPoWithDraft(e.target.value)} type="text" placeholder={t('poPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-              </div>
-            </div>
-          </div>
-
-          {/* Billing Address - Added as requested */}
-          <div>
-            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('billingAddress')}</div>
-            <div className="space-y-3">
-              <input 
-                value={address} 
-                onChange={e => setAddressWithDraft(e.target.value)}
-                type="text" placeholder={t('streetPlaceholder')} 
-                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" 
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <input value={city} onChange={e => setCityWithDraft(e.target.value)} type="text" placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                <input value={postal} onChange={e => setPostalWithDraft(e.target.value)} type="text" placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-              </div>
-              <select value={country} onChange={e => setCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
-                {countryOptions.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-            <input
-              type="checkbox"
-              checked={deliveryDifferent}
-              onChange={(e) => setDeliveryDifferentWithDraft(e.target.checked)}
-              className="accent-cyan-400 mt-1"
-            />
-            <div className="font-medium text-sm">{t('deliveryDifferentLabel')}</div>
-          </label>
-
-          {deliveryDifferent && (
+        <div className="flex-1 overflow-y-auto">
+          <div className={`p-7 space-y-6 ${isSubmitting ? 'pointer-events-none opacity-50' : ''}`}>
+            {step === 1 && (
+            <>
+            {/* Company Info */}
             <div>
-              <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('deliveryAddress')}</div>
+              <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('companyInfo')}</div>
               <div className="space-y-3">
+                <input value={company} onChange={e => setCompanyWithDraft(e.target.value)} type="text" placeholder={t('companyPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500" />
+                {/* Email collected as part of our checkout (kept + transmitted to Stripe for customer ownership). */}
                 <input
-                  value={deliveryAddress}
-                  onChange={e => setDeliveryAddressWithDraft(e.target.value)}
-                  type="text"
-                  placeholder={t('streetPlaceholder')}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm"
+                  value={email}
+                  onChange={e => setEmailWithDraft(e.target.value)}
+                  type="email"
+                  placeholder={t('emailPlaceholder')}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500"
                 />
                 <div className="grid grid-cols-2 gap-3">
-                  <input value={deliveryCity} onChange={e => setDeliveryCityWithDraft(e.target.value)} type="text" placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
-                  <input value={deliveryPostal} onChange={e => setDeliveryPostalWithDraft(e.target.value)} type="text" placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                  <div>
+                    <input value={vat} onChange={e => setVatWithDraft(e.target.value)} type="text" placeholder={t('vatPlaceholder')} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                    {vat.trim() && (
+                      <div className={`text-[10px] mt-1 ${
+                        viesStatus === 'valid' ? 'text-emerald-400'
+                          : viesStatus === 'checking' ? 'text-slate-400'
+                            : viesStatus === 'idle' ? 'text-slate-500'
+                              : 'text-amber-400'
+                      }`}>
+                        {viesStatus === 'checking' && t('viesChecking')}
+                        {viesStatus === 'valid' && (viesMessage || t('viesValid'))}
+                        {viesStatus === 'invalid' && (viesMessage || t('viesInvalid'))}
+                        {viesStatus === 'unavailable' && (viesMessage || t('viesUnavailable'))}
+                      </div>
+                    )}
+                  </div>
+                  <input value={po} onChange={e => setPoWithDraft(e.target.value)} type="text" placeholder={t('poPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
                 </div>
-                <select value={deliveryCountry} onChange={e => setDeliveryCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
+              </div>
+            </div>
+
+            {/* Billing Address - Added as requested */}
+            <div>
+              <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('billingAddress')}</div>
+              <div className="space-y-3">
+                <input 
+                  value={address} 
+                  onChange={e => setAddressWithDraft(e.target.value)}
+                  type="text" placeholder={t('streetPlaceholder')} 
+                  className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" 
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input value={city} onChange={e => setCityWithDraft(e.target.value)} type="text" placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                  <input value={postal} onChange={e => setPostalWithDraft(e.target.value)} type="text" placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                </div>
+                <select value={country} onChange={e => setCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
                   {countryOptions.map((c) => (
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
                 </select>
               </div>
             </div>
-          )}
 
-          {/* VAT-inclusive choice for professional customers (spec: only when legally permitted,
-              never when reverse charge is mandatory). Server validates authoritatively. */}
-          {canOfferVatInclusive && (
+            <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+              <input
+                type="checkbox"
+                checked={deliveryDifferent}
+                onChange={(e) => setDeliveryDifferentWithDraft(e.target.checked)}
+                className="accent-cyan-400 mt-1"
+              />
+              <div className="font-medium text-sm">{t('deliveryDifferentLabel')}</div>
+            </label>
+
+            {deliveryDifferent && (
+              <div>
+                <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('deliveryAddress')}</div>
+                <div className="space-y-3">
+                  <input
+                    value={deliveryAddress}
+                    onChange={e => setDeliveryAddressWithDraft(e.target.value)}
+                    type="text"
+                    placeholder={t('streetPlaceholder')}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm"
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input value={deliveryCity} onChange={e => setDeliveryCityWithDraft(e.target.value)} type="text" placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                    <input value={deliveryPostal} onChange={e => setDeliveryPostalWithDraft(e.target.value)} type="text" placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
+                  </div>
+                  <select value={deliveryCountry} onChange={e => setDeliveryCountryWithDraft(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm">
+                    {countryOptions.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* VAT-inclusive choice for professional customers (spec: only when legally permitted,
+                never when reverse charge is mandatory). Server validates authoritatively. */}
+            {canOfferVatInclusive && (
+              <div>
+                <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('vatTreatment')}</div>
+                <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                  <input
+                    type="checkbox"
+                    checked={vatInclusive}
+                    onChange={(e) => setVatInclusiveWithDraft(e.target.checked)}
+                    className="accent-cyan-400 mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium">{t('vatInclusiveLabel')}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{t('vatInclusiveExplanation')}</div>
+                    {vatInclusive && vatTreatment.vatRate > 0 && (
+                      <div className="text-[10px] text-amber-400 mt-1">
+                        {t('vatInclusiveWarning', { rate: Math.round(vatTreatment.vatRate * 100) })}
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+            )}
+            </>
+            )}
+
+            {step === 2 && (
+            <>
+            {/* Financing / Payment Terms (new for direct / recurring / leasing) */}
             <div>
-              <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('vatTreatment')}</div>
-              <label className="flex items-start gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-                <input
-                  type="checkbox"
-                  checked={vatInclusive}
-                  onChange={(e) => setVatInclusiveWithDraft(e.target.checked)}
-                  className="accent-cyan-400 mt-1"
-                />
-                <div className="flex-1">
-                  <div className="font-medium">{t('vatInclusiveLabel')}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">{t('vatInclusiveExplanation')}</div>
-                  {vatInclusive && vatTreatment.vatRate > 0 && (
-                    <div className="text-[10px] text-amber-400 mt-1">
-                      {t('vatInclusiveWarning', { rate: Math.round(vatTreatment.vatRate * 100) })}
-                    </div>
-                  )}
-                </div>
-              </label>
-            </div>
-          )}
-          </>
-          )}
-
-          {step === 2 && (
-          <>
-          {/* Financing / Payment Terms (new for direct / recurring / leasing) */}
-          <div>
-            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
-            <div className="space-y-3">
-              <label 
-                className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950"
-              >
-                <input 
-                  type="radio" 
-                  name="financing" 
-                  value="full" 
-                  checked={financing === 'full'} 
-                  onChange={() => {
-                    setFinancingWithDraft('full');
-                    if (paymentMethod === 'sepa' && isOverSepaLimit(hwGross)) setPaymentMethodWithDraft('stripe');
-                    if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
-                    // Note: full + invoice + services is now supported (send_invoice service subs + first periods on the net30 invoice).
-                  }} 
-                  className="accent-cyan-400" 
-                />
-                <div className="flex-1">
-                  <div className="font-medium">{t('payFull')}</div>
-                  <div className="text-xs text-slate-400">
-                    {t('payFullDesc')} — {tc('common.price', { amount: hwGross })}
-                    {/*svcNet > 0 ? ` + €${svcGross}${tc('common.recurringSuffixShort')}` : ''*/}
-                    {showVatBreakdown ? ` (${t('vatBreakdown', { net: hwNet, vat: hwVat })})` : ''}
-                  </div>
-                </div>
-              </label>
-
-              <label 
-                className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950"
-              >
-                <input 
-                  type="radio" 
-                  name="financing" 
-                  value="lease" 
-                  checked={financing === 'lease'} 
-                  disabled={!canLease}
-                  onChange={() => {
-                    if (canLease) {
-                      setFinancingWithDraft('lease');
-                      if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthlyDisplay)) setPaymentMethodWithDraft('stripe');
-                      if (paymentMethod === 'invoice') setPaymentMethodWithDraft('stripe'); // lease never allows invoice under policy
-                    } else {
+              <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('financingLabel')}</div>
+              <div className="space-y-3">
+                <label 
+                  className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950"
+                >
+                  <input 
+                    type="radio" 
+                    name="financing" 
+                    value="full" 
+                    checked={financing === 'full'} 
+                    onChange={() => {
                       setFinancingWithDraft('full');
+                      if (paymentMethod === 'sepa' && isOverSepaLimit(hwGross)) setPaymentMethodWithDraft('stripe');
                       if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
-                      // full + invoice + services now supported; no force needed here.
-                    }
-                  }} 
-                  className="accent-cyan-400" 
-                />
-                <div className="flex-1">
-                  <div className="font-medium">{t('lease')}</div>
-                  <div className="text-xs text-slate-400">
-                    {t('leaseDesc', { months: leaseMonths })}
-                  </div>
-                  {canLease && (
-                    <>
-                      <div className="text-xs text-emerald-400 mt-0.5">
-                        {showVatBreakdown ? (
-                          t('monthlyPaymentWithVat', {
-                            amount: leaseMonthlyDisplay,
-                            months: leaseMonths,
-                            breakdown: t('vatBreakdown', {
-                              net: leaseNetDetails.monthlyTotal,
-                              vat: leaseMonthlyVatDisplay
-                            })
-                          })
-                        ) : (
-                          t('monthlyPayment', { amount: leaseMonthlyDisplay, months: leaseMonths })
-                        )}
-                      </div>
-
-                      {/* Upfront inside the lease box (grand total area): shown after monthly, in a distinctive way (border + amber tone + "one-time" label), mirroring the bottom summary */}
-                      <div className="text-[10px] mt-1 pt-1 border-t border-slate-700/70 text-amber-400">
-                        {showVatBreakdown ? (
-                          t('oneTimeUpfrontDueTodayWithVat', {
-                            amount: leaseUpfrontDisplay,
-                            breakdown: t('vatBreakdown', {
-                              net: leaseNetDetails.upfrontAmount,
-                              vat: leaseUpfrontVatDisplay
-                            })
-                          })
-                        ) : (
-                          t('upfrontDueToday', { amount: leaseUpfrontDisplay })
-                        )}
-                      </div>
-                    </>
-                  )}
-                  <div className="text-[10px] text-slate-500 mt-0.5">{t('firstMonthNote')}</div>
-                  {!canLease && (
-                    <div className="text-[10px] text-amber-400 mt-0.5">{t('leaseRangeNote', { min: LEASE_MIN, max: LEASE_MAX })}</div>
-                  )}
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Payment Method */}
-          <div>
-            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('paymentMethod')}</div>
-            <div className="space-y-3">
-              <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-                <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethodWithDraft('stripe')} className="accent-cyan-400" />
-                <div className="flex-1">
-                  <div className="font-medium flex items-center gap-x-2">{t('card')} <span className="text-[10px] px-2 py-px bg-slate-800 rounded">{t('cardTag')}</span></div>
-                  <div className="text-xs text-slate-400">{t('cardDesc')}</div>
-                </div>
-              </label>
-
-              <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-                <input 
-                  type="radio" 
-                  name="payment" 
-                  value="sepa" 
-                  checked={paymentMethod === 'sepa'} 
-                  onChange={() => setPaymentMethodWithDraft('sepa')} 
-                  className="accent-cyan-400"
-                  disabled={ (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) }
-                />
-                <div className="flex-1">
-                  <div className="font-medium">{t('sepa')}</div>
-                  <div className="text-xs text-slate-400">
-                    {t('sepaDesc')}
-                    { ( (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) ) && (
-                      <span className="text-amber-400 ml-1">(max {tc('common.price', { amount: 10000 })} — choose card or reduce order)</span>
-                    )}
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
-                <input 
-                  type="radio" 
-                  name="payment" 
-                  value="invoice" 
-                  checked={paymentMethod === 'invoice'} 
-                  disabled={!canUseInvoice}
-                  onChange={() => {
-                    if (canUseInvoice) setPaymentMethodWithDraft('invoice');
-                    else setPaymentMethodWithDraft('stripe');
-                  }} 
-                  className="accent-cyan-400" 
-                />
-                <div className="flex-1">
-                  <div className="font-medium">{t('invoice')}</div>
-                  <div className="text-xs text-slate-400">{t('invoiceDesc')}</div>
-                  {!canPbi && (
-                    <div className="text-[10px] text-amber-400 mt-0.5">{t('invoiceRangeNote', { min: PBI_MIN, max: PBI_MAX })}</div>
-                  )}
-                  {canPbi && !canInvoicePolicy && (
-                    <div className="text-[10px] text-amber-400 mt-0.5">{t('invoicePolicyNote')}</div>
-                  )}
-
-                  {/* When the user chooses Pay by Invoice for the hardware/upfront but the order has recurring services,
-                      they must pick (inside this box) how the *recurring* part is paid: card or SEPA.
-                      The backend will create the Net-30 invoice for hardware and a mode:'setup' Checkout for the
-                      recurring PM so that service subs are automatic (charge_automatically) instead of send_invoice. */}
-                  {cartHasRecurring && paymentMethod === 'invoice' && (
-                    <div className="mt-3 rounded-xl bg-slate-950 p-3 border border-slate-700/60">
-                      <div className="text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-medium">
-                        {t('recurringPaymentForServices')}
-                      </div>
-                      <div className="space-y-2">
-                        <label className="flex items-start gap-x-2.5 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="recurringPayment"
-                            value="stripe"
-                            checked={recurringPaymentMethod === 'stripe'}
-                            onChange={() => setRecurringPaymentMethodWithDraft('stripe')}
-                            className="accent-cyan-400 mt-0.5"
-                          />
-                          <div className="text-sm leading-tight">
-                            <span className="font-medium">{t('recurringCard')}</span>{' '}
-                            <span className="text-[10px] px-1.5 py-px bg-slate-800 rounded align-baseline">{t('recurringCardTag')}</span>
-                          </div>
-                        </label>
-                        <label className="flex items-start gap-x-2.5 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="recurringPayment"
-                            value="sepa"
-                            checked={recurringPaymentMethod === 'sepa'}
-                            onChange={() => setRecurringPaymentMethodWithDraft('sepa')}
-                            disabled={isOverSepaLimit(svcGross)}
-                            className="accent-cyan-400 mt-0.5"
-                          />
-                          <div className="text-sm leading-tight">
-                            <div className="font-medium">{t('recurringSepa')}</div>
-                            <div className="text-xs text-slate-400 mt-0.5">{t('recurringSepaDesc')}</div>
-                            {isOverSepaLimit(svcGross) && (
-                              <div className="text-amber-400 text-[10px] mt-0.5">(max {tc('common.price', { amount: 10000 })} — choose card)</div>
-                            )}
-                          </div>
-                        </label>
-                      </div>
+                      // Note: full + invoice + services is now supported (send_invoice service subs + first periods on the net30 invoice).
+                    }} 
+                    className="accent-cyan-400" 
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium">{t('payFull')}</div>
+                    <div className="text-xs text-slate-400">
+                      {t('payFullDesc')} — {tc('common.price', { amount: hwGross })}
+                      {/*svcNet > 0 ? ` + €${svcGross}${tc('common.recurringSuffixShort')}` : ''*/}
+                      {showVatBreakdown ? ` (${t('vatBreakdown', { net: hwNet, vat: hwVat })})` : ''}
                     </div>
-                  )}
-                </div>
-              </label>
-            </div>
-          </div>
-          </>
-          )}
-        </div>
+                  </div>
+                </label>
 
-        <div className={`bg-slate-950 px-7 py-5 border-t border-slate-800 flex justify-between items-center ${isSubmitting ? 'pointer-events-none' : ''}`}>
-          <div className="min-w-0 flex-1 pr-4">
-            {step === 1 ? (
-              <>
-                <VatPriceLine
-                  label={tcart('hardwareTotal')}
-                  amount={hwGross}
-                  net={hwNet}
-                  vat={hwVat}
-                  showBreakdown={showVatBreakdown}
-                  className="mb-1"
-                />
-                {cartHasRecurring && (
-                  <RecurringServicesSummary
-                    lines={recurringLines}
-                    showPmNote
-                    grossAmount={grossRecurring}
-                    className="mt-1"
-                    nameClassName="text-slate-400"
+                <label 
+                  className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950"
+                >
+                  <input 
+                    type="radio" 
+                    name="financing" 
+                    value="lease" 
+                    checked={financing === 'lease'} 
+                    disabled={!canLease}
+                    onChange={() => {
+                      if (canLease) {
+                        setFinancingWithDraft('lease');
+                        if (paymentMethod === 'sepa' && isOverSepaLimit(leaseMonthlyDisplay)) setPaymentMethodWithDraft('stripe');
+                        if (paymentMethod === 'invoice') setPaymentMethodWithDraft('stripe'); // lease never allows invoice under policy
+                      } else {
+                        setFinancingWithDraft('full');
+                        if (paymentMethod === 'invoice' && !canPbi) setPaymentMethodWithDraft('stripe');
+                        // full + invoice + services now supported; no force needed here.
+                      }
+                    }} 
+                    className="accent-cyan-400" 
                   />
-                )}
-              </>
-            ) : (
-              <>
-                <VatPriceLine
-                  label={
-                    isLease
-                      ? t('monthlyTotalLabel', { months: leaseMonths })
-                      : t('totalToPay')
-                  }
-                  amount={isLease ? leaseMonthlyDisplay : hwGross}
-                  net={isLease ? leaseNetDetails.monthlyTotal : hwNet}
-                  vat={isLease ? leaseMonthlyVatDisplay : hwVat}
-                  showBreakdown={showVatBreakdown}
-                  variant="summary"
-                />
+                  <div className="flex-1">
+                    <div className="font-medium">{t('lease')}</div>
+                    <div className="text-xs text-slate-400">
+                      {t('leaseDesc', { months: leaseMonths })}
+                    </div>
+                    {canLease && (
+                      <>
+                        <div className="text-xs text-emerald-400 mt-0.5">
+                          {showVatBreakdown ? (
+                            t('monthlyPaymentWithVat', {
+                              amount: leaseMonthlyDisplay,
+                              months: leaseMonths,
+                              breakdown: t('vatBreakdown', {
+                                net: leaseNetDetails.monthlyTotal,
+                                vat: leaseMonthlyVatDisplay
+                              })
+                            })
+                          ) : (
+                            t('monthlyPayment', { amount: leaseMonthlyDisplay, months: leaseMonths })
+                          )}
+                        </div>
 
-                {cartHasRecurring && (
-                  <RecurringServicesSummary
-                    lines={recurringLines}
-                    variant="schedule"
-                    showPmNote
-                    grossAmount={grossRecurring}
-                    className="text-[10px] text-emerald-400 mt-0.5"
-                    nameClassName="text-emerald-400/90"
-                  />
-                )}
-
-                {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}
-
-                {isLease && (
-                  <div className="mt-1.5 pt-1.5 border-t border-slate-700/70 text-[10px] text-amber-400">
-                    {showVatBreakdown ? (
-                      t('oneTimeUpfrontDueTodayWithVat', {
-                        amount: leaseUpfrontDisplay,
-                        breakdown: t('vatBreakdown', {
-                          net: leaseNetDetails.upfrontAmount,
-                          vat: leaseUpfrontVatDisplay
-                        })
-                      })
-                    ) : (
-                      t('upfrontDueToday', { amount: leaseUpfrontDisplay })
+                        {/* Upfront inside the lease box (grand total area): shown after monthly, in a distinctive way (border + amber tone + "one-time" label), mirroring the bottom summary */}
+                        <div className="text-[10px] mt-1 pt-1 border-t border-slate-700/70 text-amber-400">
+                          {showVatBreakdown ? (
+                            t('oneTimeUpfrontDueTodayWithVat', {
+                              amount: leaseUpfrontDisplay,
+                              breakdown: t('vatBreakdown', {
+                                net: leaseNetDetails.upfrontAmount,
+                                vat: leaseUpfrontVatDisplay
+                              })
+                            })
+                          ) : (
+                            t('upfrontDueToday', { amount: leaseUpfrontDisplay })
+                          )}
+                        </div>
+                      </>
+                    )}
+                    <div className="text-[10px] text-slate-500 mt-0.5">{t('firstMonthNote')}</div>
+                    {!canLease && (
+                      <div className="text-[10px] text-amber-400 mt-0.5">{t('leaseRangeNote', { min: LEASE_MIN, max: LEASE_MAX })}</div>
                     )}
                   </div>
-                )}
-              </>
+                </label>
+              </div>
+            </div>
+
+            {/* Payment Method */}
+            <div>
+              <div className="text-xs uppercase tracking-widest text-slate-400 mb-2.5 font-medium">{t('paymentMethod')}</div>
+              <div className="space-y-3">
+                <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                  <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethodWithDraft('stripe')} className="accent-cyan-400" />
+                  <div className="flex-1">
+                    <div className="font-medium flex items-center gap-x-2">{t('card')} <span className="text-[10px] px-2 py-px bg-slate-800 rounded">{t('cardTag')}</span></div>
+                    <div className="text-xs text-slate-400">{t('cardDesc')}</div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                  <input 
+                    type="radio" 
+                    name="payment" 
+                    value="sepa" 
+                    checked={paymentMethod === 'sepa'} 
+                    onChange={() => setPaymentMethodWithDraft('sepa')} 
+                    className="accent-cyan-400"
+                    disabled={ (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) }
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium">{t('sepa')}</div>
+                    <div className="text-xs text-slate-400">
+                      {t('sepaDesc')}
+                      { ( (financing === 'lease' && isOverSepaLimit(leaseMonthlyDisplay)) || (financing === 'full' && isOverSepaLimit(hwGross)) ) && (
+                        <span className="text-amber-400 ml-1">(max {tc('common.price', { amount: 10000 })} — choose card or reduce order)</span>
+                      )}
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950">
+                  <input 
+                    type="radio" 
+                    name="payment" 
+                    value="invoice" 
+                    checked={paymentMethod === 'invoice'} 
+                    disabled={!canUseInvoice}
+                    onChange={() => {
+                      if (canUseInvoice) setPaymentMethodWithDraft('invoice');
+                      else setPaymentMethodWithDraft('stripe');
+                    }} 
+                    className="accent-cyan-400" 
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium">{t('invoice')}</div>
+                    <div className="text-xs text-slate-400">{t('invoiceDesc')}</div>
+                    {!canPbi && (
+                      <div className="text-[10px] text-amber-400 mt-0.5">{t('invoiceRangeNote', { min: PBI_MIN, max: PBI_MAX })}</div>
+                    )}
+                    {canPbi && !canInvoicePolicy && (
+                      <div className="text-[10px] text-amber-400 mt-0.5">{t('invoicePolicyNote')}</div>
+                    )}
+
+                    {/* When the user chooses Pay by Invoice for the hardware/upfront but the order has recurring services,
+                        they must pick (inside this box) how the *recurring* part is paid: card or SEPA.
+                        The backend will create the Net-30 invoice for hardware and a mode:'setup' Checkout for the
+                        recurring PM so that service subs are automatic (charge_automatically) instead of send_invoice. */}
+                    {cartHasRecurring && paymentMethod === 'invoice' && (
+                      <div className="mt-3 rounded-xl bg-slate-950 p-3 border border-slate-700/60">
+                        <div className="text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-medium">
+                          {t('recurringPaymentForServices')}
+                        </div>
+                        <div className="space-y-2">
+                          <label className="flex items-start gap-x-2.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="recurringPayment"
+                              value="stripe"
+                              checked={recurringPaymentMethod === 'stripe'}
+                              onChange={() => setRecurringPaymentMethodWithDraft('stripe')}
+                              className="accent-cyan-400 mt-0.5"
+                            />
+                            <div className="text-sm leading-tight">
+                              <span className="font-medium">{t('recurringCard')}</span>{' '}
+                              <span className="text-[10px] px-1.5 py-px bg-slate-800 rounded align-baseline">{t('recurringCardTag')}</span>
+                            </div>
+                          </label>
+                          <label className="flex items-start gap-x-2.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="recurringPayment"
+                              value="sepa"
+                              checked={recurringPaymentMethod === 'sepa'}
+                              onChange={() => setRecurringPaymentMethodWithDraft('sepa')}
+                              disabled={isOverSepaLimit(svcGross)}
+                              className="accent-cyan-400 mt-0.5"
+                            />
+                            <div className="text-sm leading-tight">
+                              <div className="font-medium">{t('recurringSepa')}</div>
+                              <div className="text-xs text-slate-400 mt-0.5">{t('recurringSepaDesc')}</div>
+                              {isOverSepaLimit(svcGross) && (
+                                <div className="text-amber-400 text-[10px] mt-0.5">(max {tc('common.price', { amount: 10000 })} — choose card)</div>
+                              )}
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+            </div>
+            </>
             )}
           </div>
-          {step === 1 ? (
-            <button
-              onClick={handleNextStep}
-              disabled={isSubmitting}
-              className="shrink-0 px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {t('nextBtn')}
-            </button>
-          ) : (
-            <div className="shrink-0 flex flex-col items-stretch gap-2 w-[148px]">
-              <button
-                onClick={handlePreviousStep}
-                disabled={isSubmitting}
-                className="px-4 py-2 border border-slate-600 text-slate-200 font-medium rounded-3xl text-xs hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {t('previousBtn')}
-              </button>
-              <button
-                onClick={handleCompleteOrder}
-                disabled={isSubmitting || vatBlocksCheckout}
-                className="px-4 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {t('completeBtn')}
-              </button>
+
+          <div className={`bg-slate-950 px-7 py-5 border-t border-slate-800 flex justify-between items-center ${isSubmitting ? 'pointer-events-none' : ''}`}>
+            <div className="min-w-0 flex-1 pr-4">
+              {step === 1 ? (
+                <>
+                  <VatPriceLine
+                    label={tcart('hardwareTotal')}
+                    amount={hwGross}
+                    net={hwNet}
+                    vat={hwVat}
+                    showBreakdown={showVatBreakdown}
+                    className="mb-1"
+                  />
+                  {cartHasRecurring && (
+                    <RecurringServicesSummary
+                      lines={recurringLines}
+                      showPmNote
+                      grossAmount={grossRecurring}
+                      className="mt-1"
+                      nameClassName="text-slate-400"
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  <VatPriceLine
+                    label={
+                      isLease
+                        ? t('monthlyTotalLabel', { months: leaseMonths })
+                        : t('totalToPay')
+                    }
+                    amount={isLease ? leaseMonthlyDisplay : hwGross}
+                    net={isLease ? leaseNetDetails.monthlyTotal : hwNet}
+                    vat={isLease ? leaseMonthlyVatDisplay : hwVat}
+                    showBreakdown={showVatBreakdown}
+                    variant="summary"
+                  />
+
+                  {cartHasRecurring && (
+                    <RecurringServicesSummary
+                      lines={recurringLines}
+                      variant="schedule"
+                      showPmNote
+                      grossAmount={grossRecurring}
+                      className="text-[10px] text-emerald-400 mt-0.5"
+                      nameClassName="text-emerald-400/90"
+                    />
+                  )}
+
+                  {isLease && <div className="text-[10px] text-slate-500">{t('firstMonthNote')}</div>}
+
+                  {isLease && (
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-700/70 text-[10px] text-amber-400">
+                      {showVatBreakdown ? (
+                        t('oneTimeUpfrontDueTodayWithVat', {
+                          amount: leaseUpfrontDisplay,
+                          breakdown: t('vatBreakdown', {
+                            net: leaseNetDetails.upfrontAmount,
+                            vat: leaseUpfrontVatDisplay
+                          })
+                        })
+                      ) : (
+                        t('upfrontDueToday', { amount: leaseUpfrontDisplay })
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-          )}
+            {step === 1 ? (
+              <button
+                onClick={handleNextStep}
+                disabled={isSubmitting}
+                className="shrink-0 px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {t('nextBtn')}
+              </button>
+            ) : (
+              <div className="shrink-0 flex flex-col items-stretch gap-2 w-[148px]">
+                <button
+                  onClick={handlePreviousStep}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 border border-slate-600 text-slate-200 font-medium rounded-3xl text-xs hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {t('previousBtn')}
+                </button>
+                <button
+                  onClick={handleCompleteOrder}
+                  disabled={isSubmitting || vatBlocksCheckout}
+                  className="px-4 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {t('completeBtn')}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
