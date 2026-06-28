@@ -6,7 +6,13 @@
  *
  * The official VIES checkVat SOAP service is called directly (no third-party dependency).
  * Client preview uses format-only checks in lib/vat.ts; VIES is server-only.
- */
+ *
+ * Handles transient VIES errors gracefully, including the frequent MS_MAX_CONCURRENT_REQ
+ * (and GLOBAL_MAX_CONCURRENT_REQ) which occurs especially for FR VAT numbers during
+ * peak traffic on the French national VIES component. Provides clear user-facing
+ * guidance to retry later. No async/batch alternative implemented here as we validate
+ * single numbers at checkout time (batch is better suited for bulk/offline use).
+ */ 
 
 import { validateVatNumber, isEuCountry } from './vat';
 
@@ -57,7 +63,7 @@ function extractXmlTag(xml: string, tag: string): string | undefined {
 }
 
 function isViesServiceFault(xml: string): boolean {
-  return /faultstring|Fault|MS_UNAVAILABLE|SERVICE_UNAVAILABLE|TIMEOUT|GLOBAL_MAX_CONCURRENT_REQ/i.test(xml);
+  return /faultstring|Fault|MS_UNAVAILABLE|SERVICE_UNAVAILABLE|TIMEOUT|GLOBAL_MAX_CONCURRENT_REQ|MS_MAX_CONCURRENT_REQ/i.test(xml);
 }
 
 /**
@@ -108,11 +114,21 @@ export async function validateVatWithVies(
     const xml = await response.text();
 
     if (!response.ok || isViesServiceFault(xml)) {
-      const fault = extractXmlTag(xml, 'faultstring');
+      const fault = extractXmlTag(xml, 'faultstring') || extractXmlTag(xml, 'Fault') || '';
+      let reason = fault || 'VIES service is temporarily unavailable';
+
+      if (/MS_MAX_CONCURRENT_REQ|GLOBAL_MAX_CONCURRENT_REQ/i.test(fault || xml)) {
+        reason =
+          'VIES service is currently overloaded (maximum number of concurrent requests reached). ' +
+          'This error (MS_MAX_CONCURRENT_REQ) occurs frequently, especially for French (FR) VAT numbers ' +
+          'due to high traffic on the national system. Please try again in a few minutes. ' +
+          'You can also validate manually via the official VIES portal or batch tool if needed.';
+      }
+
       return {
         isValid: false,
         unavailable: true,
-        reason: fault || 'VIES service is temporarily unavailable',
+        reason,
       };
     }
 
