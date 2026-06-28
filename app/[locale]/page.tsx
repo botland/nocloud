@@ -147,7 +147,7 @@ export default function LocaleHome() {
         }
         return item;
       })
-    });
+    );
   };
 
   const openCheckout = () => {
@@ -174,7 +174,7 @@ export default function LocaleHome() {
   const handleOrderComplete = () => {
     setCart([]);
     setCheckoutDraft(null);
-    setIsCheckoutOpen(false);
+    closeCheckout();
   };
 
   return (
@@ -237,8 +237,7 @@ export default function LocaleHome() {
             </button>
           </Container>
         </div>
-      )
-      }
+      )}
 
       {/* Hero */}
       <Container className="pt-16 pb-14">
@@ -292,7 +291,7 @@ export default function LocaleHome() {
         </Container>
       </div>
 
-      {/* Services - restored with dynamic resolveMinServicePrice */}
+      {/* Services */}
       <div id="services" className="bg-slate-900 border-y border-slate-800 py-16">
         <Container>
           <div className="max-w-xl mb-9">
