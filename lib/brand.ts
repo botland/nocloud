@@ -29,3 +29,15 @@ export function getBrandEmail(localPart: 'orders' | 'no-reply' | 'sales' | 'supp
 
 // Convenience for storage keys (uses the lowercase slug).
 export const STORAGE_PREFIX = BRAND_SLUG;
+
+// ============================================================
+// Invariant legal / company details (used in /legal and /privacy pages)
+// These values are NOT translated. Declared centrally here for easy
+// white-labeling / re-branding (e.g. future nocloud.ai or notier.com).
+// en.json references them via {placeholders} so translations stay clean.
+export const COMPANY_LEGAL_NAME = 'OwnEdge OÜ';
+export const REGISTRY_NUMBER = '12345678';
+export const VAT_NUMBER = 'EE123456789';
+export const COMPANY_ADDRESS = 'Tallinn, Harju County, Estonia';
+export const MANAGING_DIRECTOR = 'Alexandre Bureau';
+export const LEGAL_CONTACT_EMAIL = 'hello@ownedge.eu';
