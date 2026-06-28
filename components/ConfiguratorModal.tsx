@@ -153,153 +153,153 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
           <button onClick={onClose} className="text-2xl text-slate-400 hover:text-white">×</button>
         </div>
         
-        <div className="p-7 overflow-y-auto flex-1">
-          <div className="flex justify-between items-baseline mb-6">
-            <div className="text-sm text-slate-400">{t('baseAppliance')}</div>
-            <PromoPrice
-              amount={hardwareUnit}
-              listAmount={hardwareListUnit > hardwareUnit ? hardwareListUnit : undefined}
-              untilDate={hwResolved.badge?.until}
-              mode="oneTime"
-              size="lg"
-            />
-          </div>
-          
-          <div className="mb-7">
-            <div className="uppercase text-xs tracking-widest text-slate-400 mb-3 font-medium">{t('keySpecs')}</div>
-            <div className="text-sm">
-              {/* Static rows (inference, models, formFactor) */}
-              {staticRows.map((row, idx) => (
-                <div key={`static-${idx}`} className="flex justify-between py-[7px] border-b border-slate-800">
-                  <span className="text-slate-400">{t(`specs.${row.key}`)}</span>
-                  <span className="font-medium">{row.value}</span>
-                </div>
-              ))}
-
-              {/* In-place editable spec rows using <select> populated from the central TIER_SPEC_OPTIONS.
-                  This is "edit the spec inplace" — no separate upgrades section. The same data + calculate
-                  functions are the single logical component for options and pricing. */}
-              {upgradableKeys.map((key) => {
-                const opts = getSpecOptions(slug, key);
-                const chosen = customization[key];
-                const currentValue = chosen?.value ?? (opts.find(o => o.price === 0)?.value ?? opts[0]?.value);
-                const labelKey = key; // 'ram' | 'vram' | 'disk' — translated below
-                return (
-                  <div key={key} className="flex items-center justify-between py-[7px] border-b border-slate-800 last:border-none">
-                    <span className="text-slate-400">{t(`specs.${labelKey}`)}</span>
-                    <select
-                      value={currentValue}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        const match = opts.find((o) => o.value === val);
-                        if (match) {
-                          setCustomization((prev) => ({
-                            ...prev,
-                            [key]: { value: match.value, label: match.label },
-                          }));
-                        }
-                      }}
-                      className="bg-slate-950 border border-slate-700 rounded-2xl px-3 py-1 text-sm focus:outline-none focus:border-cyan-500 tabular-nums"
-                    >
-                      {opts.map((opt) => {
-                        const suffix = opt.price > 0
-                          ? ` (+${tc('common.price', { amount: opt.price })})`
-                          : ` (${t('included')})`;
-                        return (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}{suffix}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                );
-              })}
-            </div>
-            {hardwareExtra > 0 && (
-              <div className="mt-2 text-xs text-emerald-400 text-right">
-                + {tc('common.price', { amount: hardwareExtra })} hardware upgrades
-              </div>
-            )}
-          </div>
-          
-          {/* Quantity Selector */}
-          <div className="mb-6">
-            <div className="uppercase text-xs tracking-widest text-slate-400 mb-2 font-medium">{t('quantity')}</div>
-            <div className="flex items-center gap-x-4">
-              <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-9 h-9 flex items-center justify-center border border-slate-700 rounded-xl hover:bg-slate-800">−</button>
-              <div className="font-mono text-xl w-8 text-center">{quantity}</div>
-              <button onClick={() => setQuantity(quantity + 1)} className="w-9 h-9 flex items-center justify-center border border-slate-700 rounded-xl hover:bg-slate-800">+</button>
-              <span className="text-sm text-slate-400 ml-2">{applianceLabel}</span>
-            </div>
-          </div>
-
-          <div>
-            <div className="uppercase text-xs tracking-widest text-slate-400 mb-3 font-medium">{t('optionalServices')}</div>
-            <div className="space-y-3">
-              <label className={`relative flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors overflow-visible ${managedResolved.badge ? 'mt-4' : ''}`}>
-                {managedResolved.badge && <PromoBadge badge={managedResolved.badge} />}
-                <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} className={`accent-cyan-400 shrink-0 ${managedResolved.badge ? 'mt-5' : 'mt-1'}`} />
-                <div className={`flex-1 min-w-0 ${managedResolved.badge ? 'pt-5 pr-1' : ''}`}>
-                  <div className="flex justify-between items-start gap-3">
-                    <span className="font-medium">{t('managedCare')}</span>
-                    <PromoPrice
-                      amount={managedResolved.net}
-                      listAmount={managedResolved.list > managedResolved.net ? managedResolved.list : undefined}
-                      untilDate={managedResolved.launchFreeUntil}
-                      untilKind="launch_free"
-                      suffix={tc('common.perMonth')}
-                      size="sm"
-                      className="text-emerald-400 shrink-0 max-w-[58%]"
-                    />
-                  </div>
-                  <div className="text-xs text-slate-400">{t('managedCareNote')}</div>
-                </div>
-              </label>
-              <label className={`relative flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors overflow-visible ${backupResolved.badge ? 'mt-4' : ''}`}>
-                {backupResolved.badge && <PromoBadge badge={backupResolved.badge} />}
-                <input type="checkbox" checked={backup} onChange={e => setBackup(e.target.checked)} className={`accent-cyan-400 shrink-0 ${backupResolved.badge ? 'mt-5' : 'mt-1'}`} />
-                <div className={`flex-1 min-w-0 ${backupResolved.badge ? 'pt-5 pr-1' : ''}`}>
-                  <div className="flex justify-between items-start gap-3">
-                    <span className="font-medium">{t('secureVaultBackup')}</span>
-                    <PromoPrice
-                      amount={backupResolved.net}
-                      listAmount={backupResolved.list > backupResolved.net ? backupResolved.list : undefined}
-                      untilDate={backupResolved.promoEndsAt}
-                      untilKind="promotion"
-                      suffix={tc('common.perMonth')}
-                      size="sm"
-                      className="text-sky-400 shrink-0 max-w-[58%]"
-                    />
-                  </div>
-                  <div className="text-xs text-slate-400">{t('secureVaultBackupNote')}</div>
-                </div>
-              </label>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex items-center justify-between flex-shrink-0">
-          <div>
-            <div className="text-xs text-slate-400">{t('totalToday')}</div>
-            <div className="text-3xl font-semibold tabular-nums tracking-tighter">{tc('common.price', { amount: totalPrice })}</div>
-            {selectedServices.length > 0 && (
-              <RecurringServicesSummary
-                lines={selectedServices.map((svc) => ({
-                  id: svc.key || svc.name,
-                  name: svc.name,
-                  price: svc.price,
-                  listPrice: svc.listPrice,
-                  launchFreeUntil: svc.launchFreeUntil,
-                  promoEndsAt: svc.promoEndsAt,
-                }))}
-                className="mt-2 max-w-md"
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-7">
+            <div className="flex justify-between items-baseline mb-6">
+              <div className="text-sm text-slate-400">{t('baseAppliance')}</div>
+              <PromoPrice
+                amount={hardwareUnit}
+                listAmount={hardwareListUnit > hardwareUnit ? hardwareListUnit : undefined}
+                untilDate={hwResolved.badge?.until}
+                mode="oneTime"
+                size="lg"
               />
-            )}
+            </div>
+            
+            <div className="mb-7">
+              <div className="uppercase text-xs tracking-widest text-slate-400 mb-3 font-medium">{t('keySpecs')}</div>
+              <div className="text-sm">
+                {/* Static rows (inference, models, formFactor) */}
+                {staticRows.map((row, idx) => (
+                  <div key={`static-${idx}`} className="flex justify-between py-[7px] border-b border-slate-800">
+                    <span className="text-slate-400">{t(`specs.${row.key}`)}</span>
+                    <span className="font-medium">{row.value}</span>
+                  </div>
+                ))}
+
+                {/* In-place editable spec rows using <select> populated from the central TIER_SPEC_OPTIONS. */}
+                {upgradableKeys.map((key) => {
+                  const opts = getSpecOptions(slug, key);
+                  const chosen = customization[key];
+                  const currentValue = chosen?.value ?? (opts.find(o => o.price === 0)?.value ?? opts[0]?.value);
+                  const labelKey = key;
+                  return (
+                    <div key={key} className="flex items-center justify-between py-[7px] border-b border-slate-800 last:border-none">
+                      <span className="text-slate-400">{t(`specs.${labelKey}`)}</span>
+                      <select
+                        value={currentValue}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const match = opts.find((o) => o.value === val);
+                          if (match) {
+                            setCustomization((prev) => ({
+                              ...prev,
+                              [key]: { value: match.value, label: match.label },
+                            }));
+                          }
+                        }}
+                        className="bg-slate-950 border border-slate-700 rounded-2xl px-3 py-1 text-sm focus:outline-none focus:border-cyan-500 tabular-nums"
+                      >
+                        {opts.map((opt) => {
+                          const suffix = opt.price > 0
+                            ? ` (+${tc('common.price', { amount: opt.price })})`
+                            : ` (${t('included')})`;
+                          return (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}{suffix}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+              {hardwareExtra > 0 && (
+                <div className="mt-2 text-xs text-emerald-400 text-right">
+                  + {tc('common.price', { amount: hardwareExtra })} hardware upgrades
+                </div>
+              )}
+            </div>
+            
+            {/* Quantity Selector */}
+            <div className="mb-6">
+              <div className="uppercase text-xs tracking-widest text-slate-400 mb-2 font-medium">{t('quantity')}</div>
+              <div className="flex items-center gap-x-4">
+                <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-9 h-9 flex items-center justify-center border border-slate-700 rounded-xl hover:bg-slate-800">−</button>
+                <div className="font-mono text-xl w-8 text-center">{quantity}</div>
+                <button onClick={() => setQuantity(quantity + 1)} className="w-9 h-9 flex items-center justify-center border border-slate-700 rounded-xl hover:bg-slate-800">+</button>
+                <span className="text-sm text-slate-400 ml-2">{applianceLabel}</span>
+              </div>
+            </div>
+
+            <div>
+              <div className="uppercase text-xs tracking-widest text-slate-400 mb-3 font-medium">{t('optionalServices')}</div>
+              <div className="space-y-3">
+                <label className={`relative flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors overflow-visible ${managedResolved.badge ? 'mt-4' : ''}`}>
+                  {managedResolved.badge && <PromoBadge badge={managedResolved.badge} />}
+                  <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} className={`accent-cyan-400 shrink-0 ${managedResolved.badge ? 'mt-5' : 'mt-1'}`} />
+                  <div className={`flex-1 min-w-0 ${managedResolved.badge ? 'pt-5 pr-1' : ''}`}>
+                    <div className="flex justify-between items-start gap-3">
+                      <span className="font-medium">{t('managedCare')}</span>
+                      <PromoPrice
+                        amount={managedResolved.net}
+                        listAmount={managedResolved.list > managedResolved.net ? managedResolved.list : undefined}
+                        untilDate={managedResolved.launchFreeUntil}
+                        untilKind="launch_free"
+                        suffix={tc('common.perMonth')}
+                        size="sm"
+                        className="text-emerald-400 shrink-0 max-w-[58%]"
+                      />
+                    </div>
+                    <div className="text-xs text-slate-400">{t('managedCareNote')}</div>
+                  </div>
+                </label>
+                <label className={`relative flex gap-x-3 p-4 border border-slate-700 rounded-2xl cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-slate-950/60 transition-colors overflow-visible ${backupResolved.badge ? 'mt-4' : ''}`}>
+                  {backupResolved.badge && <PromoBadge badge={backupResolved.badge} />}
+                  <input type="checkbox" checked={backup} onChange={e => setBackup(e.target.checked)} className={`accent-cyan-400 shrink-0 ${backupResolved.badge ? 'mt-5' : 'mt-1'}`} />
+                  <div className={`flex-1 min-w-0 ${backupResolved.badge ? 'pt-5 pr-1' : ''}`}>
+                    <div className="flex justify-between items-start gap-3">
+                      <span className="font-medium">{t('secureVaultBackup')}</span>
+                      <PromoPrice
+                        amount={backupResolved.net}
+                        listAmount={backupResolved.list > backupResolved.net ? backupResolved.list : undefined}
+                        untilDate={backupResolved.promoEndsAt}
+                        untilKind="promotion"
+                        suffix={tc('common.perMonth')}
+                        size="sm"
+                        className="text-sky-400 shrink-0 max-w-[58%]"
+                      />
+                    </div>
+                    <div className="text-xs text-slate-400">{t('secureVaultBackupNote')}</div>
+                  </div>
+                </label>
+              </div>
+            </div>
           </div>
-          <button onClick={handleAddToCart} className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-bold rounded-3xl text-sm">
-            {isEditing ? t('updateCart') : t('addToCart')}
-          </button>
+          
+          <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-slate-400">{t('totalToday')}</div>
+              <div className="text-3xl font-semibold tabular-nums tracking-tighter">{tc('common.price', { amount: totalPrice })}</div>
+              {selectedServices.length > 0 && (
+                <RecurringServicesSummary
+                  lines={selectedServices.map((svc) => ({
+                    id: svc.key || svc.name,
+                    name: svc.name,
+                    price: svc.price,
+                    listPrice: svc.listPrice,
+                    launchFreeUntil: svc.launchFreeUntil,
+                    promoEndsAt: svc.promoEndsAt,
+                  }))}
+                  className="mt-2 max-w-md"
+                />
+              )}
+            </div>
+            <button onClick={handleAddToCart} className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-bold rounded-3xl text-sm">
+              {isEditing ? t('updateCart') : t('addToCart')}
+            </button>
+          </div>
         </div>
       </div>
     </div>
