@@ -12,15 +12,17 @@ interface Props {
   className?: string;
 }
 
-function formatUntilDate(iso: string, locale: string): string {
+// Deterministic month formatting to avoid hydration mismatches
+// between server (Node) and client (different browsers/OS locales)
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatUntilDate(iso: string): string {
   try {
     const d = new Date(`${iso}T00:00:00.000Z`);
-    return d.toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-GB', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      timeZone: 'UTC',
-    });
+    const day = d.getUTCDate();
+    const month = SHORT_MONTHS[d.getUTCMonth()];
+    const year = d.getUTCFullYear();
+    return `${day} ${month} ${year}`;
   } catch {
     return iso;
   }
@@ -47,8 +49,8 @@ function PromoBadgePill({
   const label = tp(labelKey);
   const until = badge.until
     ? isLaunch
-      ? tp('managedCareLaunchFreeUntil', { date: formatUntilDate(badge.until, locale) })
-      : tp('hardwarePromoUntil', { date: formatUntilDate(badge.until, locale) })
+      ? tp('managedCareLaunchFreeUntil', { date: formatUntilDate(badge.until) })
+      : tp('hardwarePromoUntil', { date: formatUntilDate(badge.until) })
     : null;
 
   const pillClass =
