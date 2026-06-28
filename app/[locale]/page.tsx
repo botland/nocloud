@@ -271,7 +271,7 @@ export default function LocaleHome() {
           <div className="mt-8 flex items-center gap-x-8 text-sm">
             <div className="text-slate-400">{t('hero.trusted')}</div>
           </div>
-        </Container>
+        </div>
       </Container>
 
       {/* Products */}
