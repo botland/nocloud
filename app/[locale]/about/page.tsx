@@ -3,7 +3,10 @@
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Container from '@/components/Container';
-import { BRAND_DISPLAY } from '@/lib/brand';
+import {
+  BRAND_DISPLAY,
+  MANAGING_DIRECTOR,
+} from '@/lib/brand';
 
 export default function AboutPage() {
   const locale = useLocale();
@@ -38,7 +41,7 @@ export default function AboutPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-white mb-3">{t('founderTitle')}</h2>
+            <h2 className="text-xl font-semibold text-white mb-3">{t('founderTitle', { director: MANAGING_DIRECTOR })}</h2>
             <p>{t('founderP1')}</p>
             <p className="mt-4">{t('founderP2')}</p>
             <p className="mt-4">{t('founderP3')}</p>
@@ -65,7 +68,7 @@ export default function AboutPage() {
         <div className="mt-16 pt-8 border-t border-slate-800 text-xs text-slate-500">
           {t('copyright', { year: new Date().getFullYear(), brand: BRAND_DISPLAY })}
         </div>
-      </div>
+      </Container>
     </div>
   );
 }
