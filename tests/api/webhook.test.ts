@@ -88,7 +88,8 @@ describe('api/webhook/stripe (functional contract + resilience)', () => {
       products: { create: vi.fn() },
       subscriptions: { create: vi.fn(), update: vi.fn(), retrieve: vi.fn(), list: vi.fn() },
       invoices: { retrieve: vi.fn(), update: vi.fn() },
-      checkout: { sessions: { retrieve: vi.fn() } },
+      checkout: { sessions: { retrieve: vi.fn(), update: vi.fn() } },
+      billingPortal: { sessions: { create: vi.fn() } },
     }
     mockResendInstance = { emails: { send: vi.fn() } }
 
@@ -125,6 +126,10 @@ describe('api/webhook/stripe (functional contract + resilience)', () => {
     stripeMocks.checkout.sessions.retrieve.mockResolvedValue({
       id: 'cs_test_123',
       payment_intent: 'pi_test_from_expand',
+    })
+    stripeMocks.checkout.sessions.update.mockResolvedValue({})
+    stripeMocks.billingPortal.sessions.create.mockResolvedValue({
+      url: 'https://billing.stripe.com/portal/test',
     })
 
     mockResendInstance.emails.send.mockResolvedValue({ id: 'em_1' })
@@ -279,6 +284,63 @@ describe('api/webhook/stripe (functional contract + resilience)', () => {
     expect(stripeMocks.customers.update).toHaveBeenCalled() // re-set before retry
     expect(stripeMocks.subscriptions.create).toHaveBeenCalledTimes(2) // first fail + retry
   })
+
+  it('invoice.payment_failed on service sub: sets dunning metadata, sends portal emails, does not switch to send_invoice', async () => {
+    stripeMocks.subscriptions.retrieve.mockResolvedValueOnce({
+      id: 'sub_svc_1',
+      customer: 'cus_abc',
+      collection_method: 'charge_automatically',
+      metadata: {
+        line_type: 'recurring_service',
+        service: 'Managed Care',
+        host_serial_number: 'NC-STUDIO-ABC',
+        customer_email: 'buyer@example.com',
+        locale: 'en',
+      },
+    });
+    stripeMocks.subscriptions.update.mockResolvedValueOnce({
+      id: 'sub_svc_1',
+      metadata: { dunning_stage: 'failed', first_payment_failed_at: '123' },
+    });
+    stripeMocks.paymentIntents.retrieve.mockResolvedValueOnce({
+      last_payment_error: { code: 'card_declined' },
+    });
+
+    const event = {
+      id: 'evt_fail',
+      type: 'invoice.payment_failed',
+      data: {
+        object: {
+          id: 'in_fail',
+          subscription: 'sub_svc_1',
+          customer_email: 'buyer@example.com',
+          payment_intent: 'pi_fail',
+        },
+      },
+    };
+
+    const res = await POST(makeWebhookRequest(JSON.stringify(event)));
+    expect(res.status).toBe(200);
+
+    expect(stripeMocks.billingPortal.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ customer: 'cus_abc' }),
+    );
+    expect(stripeMocks.subscriptions.update).toHaveBeenCalledWith(
+      'sub_svc_1',
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          first_payment_failed_at: expect.any(String),
+          dunning_stage: 'failed',
+        }),
+      }),
+    );
+    expect(mockResendInstance.emails.send).toHaveBeenCalled();
+    // Must NOT switch collection method to send_invoice
+    expect(stripeMocks.subscriptions.update).not.toHaveBeenCalledWith(
+      'sub_svc_1',
+      expect.objectContaining({ collection_method: 'send_invoice' }),
+    );
+  });
 
   it('non-lease invoice.paid with subscription early-returns after retrieve (no lease attach)', async () => {
     stripeMocks.subscriptions.retrieve.mockResolvedValueOnce({ id: 'sub_svc', metadata: { financing: 'full' } })

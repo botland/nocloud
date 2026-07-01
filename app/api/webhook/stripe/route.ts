@@ -11,7 +11,15 @@ import {
   sendOrderConfirmationCustomerEmail,
   sendAdminOrderNotificationEmail,
   sendInvoicePaidCustomerEmail,
+  sendRecurringPaymentFailedEmail,
+  sendAdminRecurringPaymentFailureEmail,
 } from '@/lib/emails';
+import { mapStripeErrorToMessage } from '@/lib/stripe-errors';
+import { createPaymentMethodUpdateUrl } from '@/lib/stripe-billing-portal';
+import {
+  isServiceSubscription,
+  processSubscriptionDunning,
+} from '@/lib/recurring-dunning';
 import { extractPaymentMethodFromSession, setDefaultPaymentMethodOnCustomerAndSubs } from '@/lib/stripe-pm';
 import { handleSubscriptionTrialInvoice } from '@/lib/stripe-invoices';
 import { BRAND_NAME } from '@/lib/brand';
@@ -191,6 +199,16 @@ export async function POST(request: NextRequest) {
         vatAmount: vatAmountMeta,
         grossTotal,
       });
+    }
+
+    if (isPreorder && paymentSucceeded) {
+      try {
+        await stripe.checkout.sessions.update(session.id, {
+          metadata: { preorder_status: 'deposit_paid' },
+        });
+      } catch (metaErr) {
+        console.warn('Could not update preorder deposit session status', metaErr);
+      }
     }
 
     if (isPreorder && session.customer && paymentSucceeded) {
@@ -663,6 +681,87 @@ export async function POST(request: NextRequest) {
     });
 
     console.log(`Lease order paid (invoice): ${orderId} (sub ${sub.id})`);
+  }
+
+  if (event.type === 'invoice.payment_failed') {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subId = typeof invoice.subscription === 'string'
+      ? invoice.subscription
+      : (invoice.subscription as Stripe.Subscription | null | undefined)?.id;
+
+    if (subId) {
+      try {
+        const sub = await stripe.subscriptions.retrieve(subId);
+        if (isServiceSubscription(sub) && sub.collection_method === 'charge_automatically') {
+          const meta = sub.metadata || {};
+          const locale = (meta.locale as string) || 'en';
+          const isFirstFailure = !meta.first_payment_failed_at;
+
+          let failureReason = mapStripeErrorToMessage({ code: 'payment_failed' }, locale);
+          try {
+            const piId = typeof invoice.payment_intent === 'string'
+              ? invoice.payment_intent
+              : (invoice.payment_intent as Stripe.PaymentIntent | null)?.id;
+            if (piId) {
+              const pi = await stripe.paymentIntents.retrieve(piId);
+              if (pi.last_payment_error) {
+                failureReason = mapStripeErrorToMessage(pi.last_payment_error, locale);
+              }
+            }
+          } catch {
+            // keep default reason
+          }
+
+          const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
+          let customerEmail = meta.customer_email || invoice.customer_email || '';
+          if (!customerEmail && customerId) {
+            try {
+              const customer = await stripe.customers.retrieve(customerId);
+              if (!customer.deleted) {
+                customerEmail = (customer as Stripe.Customer).email || '';
+              }
+            } catch {
+              // proceed
+            }
+          }
+
+          const nowUnix = Math.floor(Date.now() / 1000);
+          const patch: Record<string, string> = {
+            last_payment_failure_reason: failureReason,
+          };
+          if (isFirstFailure) {
+            patch.first_payment_failed_at = String(nowUnix);
+            patch.dunning_stage = 'failed';
+          }
+
+          const updated = await stripe.subscriptions.update(subId, { metadata: patch });
+
+          if (customerId) {
+            const portalUrl = await createPaymentMethodUpdateUrl(stripe, customerId);
+            const emailCtx = {
+              customerEmail,
+              serviceName: meta.service || 'Service',
+              hostSerialNumber: meta.host_serial_number || meta.serial_number,
+              failureReason,
+              portalUrl,
+              locale,
+              subscriptionId: subId,
+            };
+
+            if (isFirstFailure) {
+              if (customerEmail) {
+                await sendRecurringPaymentFailedEmail(emailCtx);
+              }
+              await sendAdminRecurringPaymentFailureEmail(emailCtx);
+            }
+
+            await processSubscriptionDunning(stripe, updated, { nowUnix });
+          }
+        }
+      } catch (dunningErr) {
+        console.error('invoice.payment_failed dunning handler error', dunningErr);
+      }
+    }
   }
 
   if (event.type === 'payment_intent.succeeded') {

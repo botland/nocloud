@@ -256,7 +256,9 @@
     "recurringScheduleThenFreeUntil": "puis gratuit jusqu'au {date}",
     "recurringScheduleThenOngoing": "puis {price}{suffix}",
     "recurringScheduleNote": "Total mensuel indicatif. Les périodes promotionnelles et tarifs standards sont affichés avant le paiement ; les conditions définitives figurent sur votre confirmation de commande.",
-    "preorderHardwareDiscount": "-{percent} % précommande"
+    "preorderHardwareDiscount": "-{percent} % précommande",
+    "launch_free": "Offre de lancement",
+    "best_value": "Meilleur rapport qualité-prix"
   },
   "error": {
     "canceledTitle": "Paiement annulé",
@@ -341,7 +343,53 @@
       "Améliorer nos services et notre site web"
     ],
     "legalBasisTitle": "Base légale du traitement",
-    "legalBasisText": "Nous traitons vos données sur la base de l'exécution d'un contrat, de nos intérêts légitimes et du respect d'obligations légales, conformément au RGPD.",
+    "legalBasisText": "Nous traitons vos données personnelles sur la base d'une ou plusieurs des bases légales suivantes :",
+    "legalBasisList": [
+      "Exécution d'un contrat (lorsque vous passez commande)",
+      "Intérêt légitime (amélioration de nos services, marketing, prévention de la fraude)",
+      "Obligation légale (fiscalité, comptabilité, exigences réglementaires)",
+      "Votre consentement (communications marketing et certains cookies)"
+    ],
+    "howWeUseDataTitle": "Comment nous utilisons vos informations",
+    "howWeUseDataText": "Nous utilisons les informations collectées aux fins suivantes :",
+    "howWeUseDataList": [
+      "Traiter et exécuter vos commandes",
+      "Fournir un support client et gérer votre compte",
+      "Améliorer notre site web, nos produits et nos services",
+      "Vous envoyer des mises à jour importantes, factures et communications liées au service",
+      "Respecter nos obligations légales (y compris fiscalité et lutte contre le blanchiment)",
+      "Détecter et prévenir la fraude"
+    ],
+    "dataSharingTitle": "Partage des données et tiers",
+    "dataSharingText": "Nous pouvons partager vos informations avec des tiers de confiance, notamment :",
+    "dataSharingList": [
+      "Processeurs de paiement (ex. Stripe)",
+      "Fournisseurs d'hébergement et d'infrastructure",
+      "Conseils professionnels (comptables, avocats)",
+      "Autorités publiques lorsque la loi l'exige"
+    ],
+    "dataSharingNote": "Nous ne vendons pas vos données personnelles à des tiers.",
+    "dataRetentionTitle": "Conservation des données",
+    "dataRetentionText": "Nous conservons vos données personnelles uniquement le temps nécessaire aux finalités décrites dans cette politique, ou selon les exigences légales (par ex. les documents comptables et fiscaux sont généralement conservés 7 ans).",
+    "yourRightsTitle": "Vos droits au titre du RGPD",
+    "yourRightsText": "Selon votre localisation, vous pouvez disposer des droits suivants concernant vos données personnelles :",
+    "yourRightsList": [
+      "Droit d'accès à vos données personnelles",
+      "Droit de rectification des données inexactes",
+      "Droit à l'effacement (« droit à l'oubli »)",
+      "Droit à la limitation du traitement",
+      "Droit à la portabilité des données",
+      "Droit d'opposition au traitement",
+      "Droit de retirer votre consentement à tout moment"
+    ],
+    "yourRightsContact": "Pour exercer l'un de ces droits, contactez-nous à {contactEmail}.",
+    "dataSecurityTitle": "Sécurité des données",
+    "dataSecurityText": "Nous mettons en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos données personnelles contre l'accès, la modification, la divulgation ou la destruction non autorisés. Cependant, aucune méthode de transmission sur Internet n'est totalement sécurisée.",
+    "internationalTransfersTitle": "Transferts internationaux de données",
+    "internationalTransfersText": "Dans la mesure du possible, nous traitons et stockons vos données au sein de l'Espace économique européen (EEE). Si nous transférons des données hors de l'EEE, nous veillons à ce que des garanties appropriées soient en place (telles que les clauses contractuelles types).",
+    "contactTitle": "Nous contacter",
+    "contactText": "Si vous avez des questions sur cette politique de confidentialité ou sur la manière dont nous traitons vos données personnelles, contactez-nous à :",
+    "contactEmail": "{contactEmail}",
     "sharingTitle": "Partage des données",
     "sharingText": "Nous ne vendons pas vos données personnelles. Nous pouvons les partager avec des prestataires de services de confiance (par ex. processeurs de paiement) uniquement dans la mesure nécessaire à la fourniture de nos services.",
     "retentionTitle": "Conservation des données",

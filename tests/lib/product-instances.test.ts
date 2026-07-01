@@ -9,6 +9,7 @@ import {
   serviceSubscriptionProductInfo,
   buildHardwareCheckoutLineItems,
   buildLeaseUpfrontCheckoutLineItems,
+  hardwareForMetadata,
   leaseUpfrontNetPerUnit,
 } from '@/lib/product-instances'
 import { HARDWARE_PRICES, PRICING_VERSION, SERVICE_PRICES_BY_TIER, UPFRONT_PERCENT } from '@/lib/pricing'
@@ -127,6 +128,16 @@ describe('lib/product-instances', () => {
     const restored = parseServicesFromMetadata(JSON.stringify(compact), PRICING_VERSION)
     expect(restored[0].promoEndsAt).toBe('2026-08-31')
     expect(restored[0].promotionIds).toEqual(['studio-vault-2026'])
+  })
+
+  it('hardwareForMetadata includes serialNumber for session metadata', () => {
+    const instances = resolveHardwareInstances(
+      [{ quantity: 1, product: { slug: 'studio', name: 'Studio' }, services: [] }],
+      PRICING_VERSION,
+    )
+    const meta = hardwareForMetadata(instances)
+    expect(meta[0].serialNumber).toMatch(/^NC-STUDIO-/)
+    expect(meta[0].productLineId).toBe(`Studio@${PRICING_VERSION}`)
   })
 
   it('buildHardwareCheckoutLineItems attaches product_line_id and serial_number metadata', () => {

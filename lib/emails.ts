@@ -451,3 +451,223 @@ export async function sendInvoicePaidCustomerEmail(params: {
     console.error('Failed to send invoice paid email', e);
   }
 }
+
+export interface BalancePaymentRequiredParams {
+  to: string;
+  invoiceId: string;
+  hostedInvoiceUrl: string;
+  balanceAmount: string;
+  currency?: string;
+  failureReason: string;
+  hardwareStr?: string;
+  companyName?: string;
+  locale?: string;
+  depositSessionId?: string;
+}
+
+/**
+ * Customer email when balance auto-charge fails and a Net-30 invoice is sent (Tier 2).
+ */
+export async function sendBalancePaymentRequiredEmail(params: BalancePaymentRequiredParams) {
+  const resend = getResendClient();
+  if (!resend || !params.to) return;
+
+  const {
+    invoiceId,
+    hostedInvoiceUrl,
+    balanceAmount,
+    currency = 'EUR',
+    failureReason,
+    hardwareStr,
+    companyName,
+    locale = 'en',
+    depositSessionId,
+  } = params;
+  const isFr = locale === 'fr';
+  const shortId = invoiceId.slice(-8);
+
+  const subj = isFr
+    ? `Solde à régler — ${BRAND_DISPLAY} #${shortId}`
+    : `Balance payment required — ${BRAND_DISPLAY} #${shortId}`;
+
+  const body = isFr
+    ? `Le prélèvement automatique du solde n'a pas pu être effectué. Veuillez régler le solde de ${balanceAmount} ${currency} via le lien de facture ci-dessous.`
+    : `We could not charge the remaining balance automatically. Please pay ${balanceAmount} ${currency} using the invoice link below.`;
+
+  try {
+    await resend.emails.send({
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
+      to: params.to,
+      subject: subj,
+      html: `
+        <h1 style="color: #0ea5e9;">${isFr ? 'Solde de précommande à régler' : 'Pre-order balance due'}</h1>
+        <p>${body}</p>
+        <p><strong>${isFr ? 'Motif' : 'Reason'}:</strong> ${failureReason}</p>
+        ${hardwareStr ? `<p><strong>${isFr ? 'Appareil(s)' : 'Appliance(s)'}:</strong> ${hardwareStr}</p>` : ''}
+        ${companyName ? `<p><strong>${isFr ? 'Société' : 'Company'}:</strong> ${companyName}</p>` : ''}
+        <p><strong>${isFr ? 'Montant du solde' : 'Balance amount'}:</strong> ${balanceAmount} ${currency}</p>
+        <p><a href="${hostedInvoiceUrl}" style="color:#0ea5e9;">${isFr ? 'Payer la facture' : 'Pay invoice'}</a></p>
+        <p>Invoice ID: ${invoiceId}</p>
+        ${depositSessionId ? `<p>Deposit session: ${depositSessionId}</p>` : ''}
+      `,
+    });
+  } catch (e) {
+    console.error('Failed to send balance payment required email', e);
+  }
+}
+
+export interface RecurringDunningEmailParams {
+  customerEmail: string;
+  serviceName: string;
+  hostSerialNumber?: string;
+  failureReason: string;
+  portalUrl: string;
+  locale?: string;
+  subscriptionId: string;
+  cancelDays?: number;
+}
+
+export async function sendRecurringPaymentFailedEmail(params: RecurringDunningEmailParams) {
+  const resend = getResendClient();
+  if (!resend || !params.customerEmail) return;
+
+  const { serviceName, hostSerialNumber, failureReason, portalUrl, locale = 'en', subscriptionId } = params;
+  const isFr = locale === 'fr';
+  const snLine = hostSerialNumber
+    ? (isFr ? ` (appareil S/N ${hostSerialNumber})` : ` (appliance S/N ${hostSerialNumber})`)
+    : '';
+
+  try {
+    await resend.emails.send({
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
+      to: params.customerEmail,
+      subject: isFr
+        ? `Échec du paiement récurrent — ${serviceName}`
+        : `Recurring payment failed — ${serviceName}`,
+      html: `
+        <h1 style="color: #0ea5e9;">${isFr ? 'Paiement de service échoué' : 'Service payment failed'}</h1>
+        <p>${isFr ? 'Le paiement mensuel pour' : 'Your monthly payment for'} <strong>${serviceName}</strong>${snLine} ${isFr ? 'a échoué.' : 'failed.'}</p>
+        <p><strong>${isFr ? 'Motif' : 'Reason'}:</strong> ${failureReason}</p>
+        <p>${isFr ? 'Veuillez mettre à jour votre moyen de paiement via le portail sécurisé Stripe :' : 'Please update your payment method via the secure Stripe portal:'}</p>
+        <p><a href="${portalUrl}" style="color:#0ea5e9;">${isFr ? 'Mettre à jour le moyen de paiement' : 'Update payment method'}</a></p>
+        <p>Subscription: ${subscriptionId}</p>
+      `,
+    });
+  } catch (e) {
+    console.error('Failed to send recurring payment failed email', e);
+  }
+}
+
+export async function sendRecurringPaymentWarningEmail(params: RecurringDunningEmailParams) {
+  const resend = getResendClient();
+  if (!resend || !params.customerEmail) return;
+
+  const { serviceName, hostSerialNumber, failureReason, portalUrl, locale = 'en', subscriptionId, cancelDays = 14 } = params;
+  const isFr = locale === 'fr';
+  const snLine = hostSerialNumber
+    ? (isFr ? ` (appareil S/N ${hostSerialNumber})` : ` (appliance S/N ${hostSerialNumber})`)
+    : '';
+
+  try {
+    await resend.emails.send({
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
+      to: params.customerEmail,
+      subject: isFr
+        ? `Rappel — mettez à jour votre moyen de paiement (${serviceName})`
+        : `Reminder — update your payment method (${serviceName})`,
+      html: `
+        <h1 style="color: #f59e0b;">${isFr ? 'Action requise' : 'Action required'}</h1>
+        <p>${isFr ? 'Votre paiement récurrent pour' : 'Your recurring payment for'} <strong>${serviceName}</strong>${snLine} ${isFr ? 'reste en échec.' : 'is still failing.'}</p>
+        <p><strong>${isFr ? 'Motif' : 'Reason'}:</strong> ${failureReason}</p>
+        <p>${isFr
+          ? `Si le moyen de paiement n'est pas mis à jour, l'abonnement sera annulé dans environ ${cancelDays} jours après le premier échec.`
+          : `If your payment method is not updated, this subscription will be cancelled approximately ${cancelDays} days after the first failure.`}</p>
+        <p><a href="${portalUrl}" style="color:#0ea5e9;">${isFr ? 'Mettre à jour le moyen de paiement' : 'Update payment method'}</a></p>
+        <p>Subscription: ${subscriptionId}</p>
+      `,
+    });
+  } catch (e) {
+    console.error('Failed to send recurring payment warning email', e);
+  }
+}
+
+export async function sendRecurringPaymentCancelledEmail(params: RecurringDunningEmailParams) {
+  const resend = getResendClient();
+  if (!resend || !params.customerEmail) return;
+
+  const { serviceName, hostSerialNumber, locale = 'en', subscriptionId } = params;
+  const isFr = locale === 'fr';
+  const snLine = hostSerialNumber
+    ? (isFr ? ` pour l'appareil S/N ${hostSerialNumber}` : ` for appliance S/N ${hostSerialNumber}`)
+    : '';
+
+  try {
+    await resend.emails.send({
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
+      to: params.customerEmail,
+      subject: isFr
+        ? `Abonnement annulé — ${serviceName}`
+        : `Subscription cancelled — ${serviceName}`,
+      html: `
+        <h1>${isFr ? 'Abonnement annulé' : 'Subscription cancelled'}</h1>
+        <p>${isFr ? 'Votre abonnement' : 'Your subscription to'} <strong>${serviceName}</strong>${snLine} ${isFr ? 'a été annulé suite à des échecs de paiement répétés.' : 'has been cancelled due to repeated payment failures.'}</p>
+        <p>${isFr ? 'Contactez-nous pour réactiver les services sur cet appareil.' : 'Contact us to re-subscribe services for this appliance.'}</p>
+        <p>Subscription: ${subscriptionId}</p>
+      `,
+    });
+  } catch (e) {
+    console.error('Failed to send recurring payment cancelled email', e);
+  }
+}
+
+export async function sendAdminRecurringPaymentFailureEmail(params: RecurringDunningEmailParams) {
+  const resend = getResendClient();
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (!resend || !adminEmail) return;
+
+  const { serviceName, hostSerialNumber, failureReason, portalUrl, customerEmail, subscriptionId } = params;
+
+  try {
+    await resend.emails.send({
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
+      to: adminEmail,
+      subject: `Recurring payment failed — ${serviceName} (${subscriptionId.slice(-8)})`,
+      html: `
+        <p>Recurring service payment failed (commerce-mode agnostic — applies to preorder and live orders).</p>
+        <p><strong>Customer:</strong> ${customerEmail || 'N/A'}</p>
+        <p><strong>Service:</strong> ${serviceName}</p>
+        ${hostSerialNumber ? `<p><strong>Appliance S/N:</strong> ${hostSerialNumber}</p>` : ''}
+        <p><strong>Reason:</strong> ${failureReason}</p>
+        <p><strong>Portal link sent:</strong> <a href="${portalUrl}">${portalUrl}</a></p>
+        <p><strong>Subscription:</strong> ${subscriptionId}</p>
+      `,
+    });
+  } catch (e) {
+    console.error('Failed to send admin recurring failure email', e);
+  }
+}
+
+export async function sendAdminRecurringPaymentCancelledEmail(params: RecurringDunningEmailParams) {
+  const resend = getResendClient();
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (!resend || !adminEmail) return;
+
+  const { serviceName, hostSerialNumber, customerEmail, subscriptionId } = params;
+
+  try {
+    await resend.emails.send({
+      from: `${getBrandEmail('orders')} <${getBrandEmail('no-reply')}>`,
+      to: adminEmail,
+      subject: `Recurring subscription cancelled — ${serviceName} (${subscriptionId.slice(-8)})`,
+      html: `
+        <p>Service subscription cancelled after dunning period elapsed.</p>
+        <p><strong>Customer:</strong> ${customerEmail || 'N/A'}</p>
+        <p><strong>Service:</strong> ${serviceName}</p>
+        ${hostSerialNumber ? `<p><strong>Appliance S/N:</strong> ${hostSerialNumber}</p>` : ''}
+        <p><strong>Subscription:</strong> ${subscriptionId}</p>
+      `,
+    });
+  } catch (e) {
+    console.error('Failed to send admin recurring cancellation email', e);
+  }
+}

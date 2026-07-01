@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { BRAND_NAME } from '@/lib/brand';
 import { extractPaymentMethodFromSession } from '@/lib/stripe-pm';
+import { mapStripeErrorToMessage, extractStripeErrorCode } from '@/lib/stripe-errors';
+import { buildOrderDisplayFromMetadata } from '@/lib/order-display';
+import {
+  sendBalancePaymentRequiredEmail,
+  sendAdminOrderNotificationEmail,
+} from '@/lib/emails';
+import { checkRateLimit, rateLimitKeyFromRequest } from '@/lib/admin-rate-limit';
 
 function requireAdmin(request: NextRequest): { authorized: boolean; error?: string } {
   const key = process.env.ADMIN_API_KEY;
@@ -16,7 +23,61 @@ function requireAdmin(request: NextRequest): { authorized: boolean; error?: stri
   return { authorized: false, error: 'Invalid admin credentials' };
 }
 
+function balanceInvoiceDescription(meta: Record<string, string>): string {
+  const { hardwareStr } = buildOrderDisplayFromMetadata(meta);
+  const hwPart = hardwareStr && hardwareStr !== 'Standard' ? ` — ${hardwareStr}` : '';
+  return `${BRAND_NAME} pre-order balance (hardware total locked at deposit)${hwPart}`;
+}
+
+async function createAndFinalizeBalanceInvoice(
+  stripe: Stripe,
+  customerId: string,
+  balanceGross: number,
+  balanceMeta: Record<string, string>,
+  meta: Record<string, string>,
+) {
+  const invoice = await stripe.invoices.create({
+    customer: customerId,
+    collection_method: 'send_invoice',
+    days_until_due: 30,
+    auto_advance: true,
+    metadata: balanceMeta,
+  });
+
+  await stripe.invoiceItems.create({
+    customer: customerId,
+    invoice: invoice.id,
+    amount: Math.round(balanceGross * 100),
+    currency: 'eur',
+    description: balanceInvoiceDescription(meta),
+  });
+
+  await stripe.invoices.finalizeInvoice(invoice.id);
+  return stripe.invoices.retrieve(invoice.id);
+}
+
+async function updateDepositSessionStatus(
+  stripe: Stripe,
+  depositSessionId: string,
+  patch: Record<string, string>,
+) {
+  try {
+    await stripe.checkout.sessions.update(depositSessionId, { metadata: patch });
+  } catch (err) {
+    console.warn('Could not update deposit session metadata', depositSessionId, err);
+  }
+}
+
 export async function POST(request: NextRequest) {
+  const rateKey = rateLimitKeyFromRequest(request, 'preorder-fulfill');
+  const rate = checkRateLimit(rateKey);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded', retryAfterMs: rate.retryAfterMs },
+      { status: 429 },
+    );
+  }
+
   const adminCheck = requireAdmin(request);
   if (!adminCheck.authorized) {
     return NextResponse.json({ error: adminCheck.error || 'Unauthorized' }, { status: 401 });
@@ -42,7 +103,7 @@ export async function POST(request: NextRequest) {
     }
 
     const session = await stripe.checkout.sessions.retrieve(depositSessionId, {
-      expand: ['payment_intent.payment_method'],
+      expand: ['payment_intent.payment_method', 'customer'],
     });
 
     const meta = session.metadata || {};
@@ -50,9 +111,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not a pre-order session' }, { status: 400 });
     }
 
-    // Idempotency: check if balance already processed
     const currentStatus = meta.preorder_status || '';
-    if (currentStatus.includes('balance_charge') || currentStatus.includes('balance_invoice') || currentStatus.includes('fulfilled')) {
+    if (
+      currentStatus.includes('balance_paid') ||
+      currentStatus.includes('fulfilled')
+    ) {
       return NextResponse.json({
         success: true,
         alreadyFulfilled: true,
@@ -61,12 +124,21 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (currentStatus === 'balance_invoice_sent' && action === 'charge') {
+      return NextResponse.json({
+        success: true,
+        alreadyFulfilled: true,
+        message: 'Balance invoice already sent for this pre-order',
+        preorderStatus: currentStatus,
+        invoiceId: meta.balance_invoice_id,
+      });
+    }
+
     const balanceNet = parseFloat(meta.quoted_balance_due || '0');
     if (!balanceNet || balanceNet <= 0) {
       return NextResponse.json({ error: 'No balance due on this pre-order' }, { status: 400 });
     }
 
-    // Basic validation that deposit was paid
     if (session.payment_status !== 'paid') {
       return NextResponse.json({ error: 'Deposit session not paid yet' }, { status: 400 });
     }
@@ -85,6 +157,18 @@ export async function POST(request: NextRequest) {
       ? Math.round((balanceNet * (1 + vatRate)) * 100) / 100
       : balanceNet;
 
+    const pricingVersion = meta.pricing_version || meta.pricingVersion || 'unknown';
+    const orderLocale = (meta.locale as string) || 'en';
+    const display = buildOrderDisplayFromMetadata(meta, pricingVersion);
+
+    const customerEmail =
+      session.customer_details?.email ||
+      meta.customer_email ||
+      (typeof session.customer === 'object' && session.customer && !('deleted' in session.customer)
+        ? session.customer.email
+        : undefined) ||
+      '';
+
     const balanceMeta: Record<string, string> = {
       ...Object.fromEntries(
         Object.entries(meta).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]),
@@ -95,38 +179,91 @@ export async function POST(request: NextRequest) {
     };
 
     if (action === 'invoice') {
-      const invoice = await stripe.invoices.create({
-        customer: customerId,
-        collection_method: 'send_invoice',
-        days_until_due: 30,
-        auto_advance: true,
-        metadata: balanceMeta,
-      });
+      const finalized = await createAndFinalizeBalanceInvoice(
+        stripe,
+        customerId,
+        balanceGross,
+        balanceMeta,
+        meta as Record<string, string>,
+      );
 
-      await stripe.invoiceItems.create({
-        customer: customerId,
-        invoice: invoice.id,
-        amount: Math.round(balanceGross * 100),
-        currency: 'eur',
-        description: `${BRAND_NAME} pre-order balance (hardware total locked at deposit)`,
+      await updateDepositSessionStatus(stripe, depositSessionId, {
+        preorder_status: 'balance_invoice_sent',
+        balance_invoice_id: finalized.id,
       });
-
-      await stripe.invoices.finalizeInvoice(invoice.id);
 
       return NextResponse.json({
         success: true,
         method: 'invoice',
-        invoiceId: invoice.id,
+        invoiceId: finalized.id,
+        hostedInvoiceUrl: finalized.hosted_invoice_url,
         balanceGross,
       });
     }
 
     const paymentMethod = await extractPaymentMethodFromSession(stripe, session);
     if (!paymentMethod) {
+      const finalized = await createAndFinalizeBalanceInvoice(
+        stripe,
+        customerId,
+        balanceGross,
+        { ...balanceMeta, preorder_status: 'balance_invoice_sent' },
+        meta as Record<string, string>,
+      );
+
+      const reason = mapStripeErrorToMessage({ code: 'charge_failed' }, orderLocale);
+
+      if (customerEmail && finalized.hosted_invoice_url) {
+        await sendBalancePaymentRequiredEmail({
+          to: customerEmail,
+          invoiceId: finalized.id,
+          hostedInvoiceUrl: finalized.hosted_invoice_url,
+          balanceAmount: balanceGross.toFixed(2),
+          failureReason: reason,
+          hardwareStr: display.hardwareStr,
+          companyName: meta.company_name || meta.companyName,
+          locale: orderLocale,
+          depositSessionId,
+        });
+      }
+
+      if (process.env.ADMIN_EMAIL) {
+        await sendAdminOrderNotificationEmail({
+          orderId: depositSessionId,
+          amount: balanceGross.toFixed(2),
+          currency: 'EUR',
+          financing: 'full',
+          servicesStr: display.servicesStr,
+          hardwareStr: display.hardwareStr,
+          companyName: meta.company_name || 'N/A',
+          vatNumber: meta.vat_number || 'N/A',
+          poNumber: meta.po_number || 'N/A',
+          pricingVersion,
+          locale: orderLocale,
+          customerEmail,
+          orderType: 'preorder',
+          preorderStatus: 'balance_invoice_sent',
+          balanceDue: meta.quoted_balance_due,
+          quotedTotal: meta.quoted_hardware_total,
+          fulfillmentAction: 'no_pm_fallback_to_invoice',
+          invoiceId: finalized.id,
+        });
+      }
+
+      await updateDepositSessionStatus(stripe, depositSessionId, {
+        preorder_status: 'balance_invoice_sent',
+        balance_invoice_id: finalized.id,
+      });
+
       return NextResponse.json({
-        error: 'No saved payment method. Use action=invoice for Pay-by-Invoice fallback.',
-        fallback: 'invoice',
-      }, { status: 422 });
+        success: true,
+        method: 'invoice',
+        fallback: true,
+        reason: 'no_payment_method',
+        invoiceId: finalized.id,
+        hostedInvoiceUrl: finalized.hosted_invoice_url,
+        balanceGross,
+      });
     }
 
     try {
@@ -139,10 +276,15 @@ export async function POST(request: NextRequest) {
           off_session: true,
           confirm: true,
           metadata: balanceMeta,
-          description: `${BRAND_NAME} pre-order balance`,
+          description: balanceInvoiceDescription(meta as Record<string, string>),
         },
         { idempotencyKey: `preorder-balance-${depositSessionId}` },
       );
+
+      await updateDepositSessionStatus(stripe, depositSessionId, {
+        preorder_status: 'balance_charge_pending',
+        balance_payment_intent_id: pi.id,
+      });
 
       return NextResponse.json({
         success: true,
@@ -151,13 +293,70 @@ export async function POST(request: NextRequest) {
         status: pi.status,
         balanceGross,
       });
-    } catch (chargeErr: any) {
-      const code = chargeErr?.code || chargeErr?.decline_code || 'charge_failed';
+    } catch (chargeErr: unknown) {
+      const code = extractStripeErrorCode(chargeErr);
+      const reason = mapStripeErrorToMessage(chargeErr, orderLocale);
+
+      const finalized = await createAndFinalizeBalanceInvoice(
+        stripe,
+        customerId,
+        balanceGross,
+        { ...balanceMeta, preorder_status: 'balance_invoice_sent', charge_failure_code: code },
+        meta as Record<string, string>,
+      );
+
+      if (customerEmail && finalized.hosted_invoice_url) {
+        await sendBalancePaymentRequiredEmail({
+          to: customerEmail,
+          invoiceId: finalized.id,
+          hostedInvoiceUrl: finalized.hosted_invoice_url,
+          balanceAmount: balanceGross.toFixed(2),
+          failureReason: reason,
+          hardwareStr: display.hardwareStr,
+          companyName: meta.company_name || meta.companyName,
+          locale: orderLocale,
+          depositSessionId,
+        });
+      }
+
+      if (process.env.ADMIN_EMAIL) {
+        await sendAdminOrderNotificationEmail({
+          orderId: depositSessionId,
+          amount: balanceGross.toFixed(2),
+          currency: 'EUR',
+          financing: 'full',
+          servicesStr: display.servicesStr,
+          hardwareStr: display.hardwareStr,
+          companyName: meta.company_name || 'N/A',
+          vatNumber: meta.vat_number || 'N/A',
+          poNumber: meta.po_number || 'N/A',
+          pricingVersion,
+          locale: orderLocale,
+          customerEmail,
+          orderType: 'preorder',
+          preorderStatus: 'balance_invoice_sent',
+          balanceDue: meta.quoted_balance_due,
+          quotedTotal: meta.quoted_hardware_total,
+          fulfillmentAction: 'charge_failed_fallback_to_invoice',
+          invoiceId: finalized.id,
+        });
+      }
+
+      await updateDepositSessionStatus(stripe, depositSessionId, {
+        preorder_status: 'balance_invoice_sent',
+        balance_invoice_id: finalized.id,
+        charge_failure_code: code,
+      });
+
       return NextResponse.json({
-        error: chargeErr?.message || 'Off-session charge failed',
+        success: true,
+        method: 'invoice',
+        fallback: true,
         code,
-        fallback: 'invoice',
-      }, { status: 422 });
+        invoiceId: finalized.id,
+        hostedInvoiceUrl: finalized.hosted_invoice_url,
+        balanceGross,
+      });
     }
   } catch (err: any) {
     console.error('Preorder fulfill error', err);

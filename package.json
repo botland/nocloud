@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 8080",
     "build": "next build",
-    "build:prod": "node scripts/verify-prod-env.mjs && next build",
+    "build:prod": "node scripts/validate-locales.mjs && node scripts/verify-prod-env.mjs && next build",
+    "validate-locales": "node scripts/validate-locales.mjs",
     "start": "next start",
     "deploy": "rm -rf .next && git pull && npm run build:prod && pm2 restart nocloud",
     "lint": "echo 'Lint is not configured (no .eslintrc.* present). Use \"npm run build\" or \"npx tsc --noEmit\" for checks.'",

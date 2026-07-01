@@ -268,6 +268,17 @@ export function serviceSubscriptionMetadata(
 }
 
 /** Per-unit metadata for Stripe line items / invoice items (not session-level metadata). */
+/** Compact hardware payload for Stripe session/invoice metadata (includes S/N). */
+export function hardwareForMetadata(instances: HardwareInstance[]) {
+  return instances.map((inst) => ({
+    name: inst.name,
+    config: inst.config,
+    serialNumber: inst.serialNumber,
+    productLineId: inst.productLineId,
+    extraCost: inst.extraCost,
+  }));
+}
+
 export function hardwareLineItemMetadata(inst: HardwareInstance): Record<string, string> {
   return {
     product_line_id: inst.productLineId,

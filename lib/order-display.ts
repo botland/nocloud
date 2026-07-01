@@ -29,10 +29,14 @@ export function buildOrderDisplayFromMetadata(
     if (metadata.hardware) {
       const hw = typeof metadata.hardware === 'string' ? JSON.parse(metadata.hardware) : metadata.hardware;
       if (Array.isArray(hw) && hw.length > 0) {
-        hardwareStr = hw.map((h: { name?: string; config?: string }) => {
+        hardwareStr = hw.map((h: { name?: string; config?: string; serialNumber?: string }) => {
           const base = h.name || '';
-          const cfg = h.config && h.config !== 'Standard' ? ` (${h.config})` : '';
-          return `${base}${cfg}`;
+          const sn = h.serialNumber ? `S/N ${h.serialNumber}` : '';
+          const cfg = h.config && h.config !== 'Standard' ? h.config : '';
+          if (sn) {
+            return cfg ? `${base} (${sn}, ${cfg})` : `${base} (${sn})`;
+          }
+          return cfg ? `${base} (${cfg})` : base;
         }).join(', ');
       }
     }

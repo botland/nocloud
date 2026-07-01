@@ -37,6 +37,7 @@ import {
   formatHardwareLineDescription,
   formatLeaseUpfrontLineDescription,
   hardwareLineItemMetadata,
+  hardwareForMetadata,
   leaseUpfrontNetPerUnit,
 } from '@/lib/product-instances';
 import { createRecurringServiceSubscription } from '@/lib/create-service-subscriptions';
@@ -90,6 +91,7 @@ export async function POST(request: NextRequest) {
     const { hardwareTotal, servicesMonthly, resolvedServicesForMeta, resolvedHardwareForMeta = [] } = resolvePricesAndServices(items || []);
     const { hardwareInstances, serviceInstances } = resolveOrderLineInstances(items || [], PRICING_VERSION);
     const compactServices = compactServicesForMetadata(serviceInstances);
+    const hardwareMeta = hardwareForMetadata(hardwareInstances);
 
     if (DEBUG_PAYMENTS) {
       console.log('[PAYMENT DEBUG] checkout received payload', {
@@ -386,7 +388,7 @@ export async function POST(request: NextRequest) {
         ...addressMetaFields,
         financing: 'full',
         services: compactServices,
-        hardware: resolvedHardwareForMeta,
+        hardware: hardwareMeta,
         customer_email: email || 'N/A',
         pricingVersion: PRICING_VERSION,
         locale,
@@ -533,7 +535,7 @@ export async function POST(request: NextRequest) {
             ...addressMetaFields,
             financing: 'lease',
             services: compactServices,
-            hardware: resolvedHardwareForMeta,
+            hardware: hardwareMeta,
             pricingVersion: PRICING_VERSION,
             locale,
             orderPlacedAt,
@@ -604,7 +606,7 @@ export async function POST(request: NextRequest) {
               ...addressMetaFields,
               financing: 'lease',
               services: compactServices,
-            hardware: resolvedHardwareForMeta,
+            hardware: hardwareMeta,
               pricingVersion: PRICING_VERSION,
               locale,
               orderPlacedAt,
@@ -675,7 +677,7 @@ export async function POST(request: NextRequest) {
             ...addressMetaFields,
             financing: 'lease',
             services: compactServices,
-            hardware: resolvedHardwareForMeta,
+            hardware: hardwareMeta,
             customer_email: email || 'N/A',
             pricingVersion: PRICING_VERSION,
             locale,
@@ -773,7 +775,7 @@ export async function POST(request: NextRequest) {
             ...addressMetaFields,
             financing: 'lease',
             services: compactServices,
-            hardware: resolvedHardwareForMeta,
+            hardware: hardwareMeta,
             pricingVersion: PRICING_VERSION,
             locale,
             orderPlacedAt,
@@ -841,7 +843,7 @@ export async function POST(request: NextRequest) {
           ...addressMetaFields,
           financing: 'lease',
           services: compactServices,
-          hardware: resolvedHardwareForMeta,
+          hardware: hardwareMeta,
           customer_email: email || 'N/A',
           pricingVersion: PRICING_VERSION,
           locale,
@@ -928,7 +930,7 @@ export async function POST(request: NextRequest) {
           ...addressMetaFields,
           financing,
           services: compactServices,
-          hardware: resolvedHardwareForMeta,
+          hardware: hardwareMeta,
           customer_email: email || 'N/A',
           pricingVersion: PRICING_VERSION,
           locale,
@@ -1000,7 +1002,7 @@ export async function POST(request: NextRequest) {
           ...addressMetaFields,
           financing,
           services: compactServices,
-          hardware: resolvedHardwareForMeta,
+          hardware: hardwareMeta,
           pricingVersion: PRICING_VERSION,
           locale,
           orderPlacedAt,
@@ -1115,7 +1117,7 @@ export async function POST(request: NextRequest) {
       ...addressMetaFields,
       financing,
       services: compactServices,
-      hardware: resolvedHardwareForMeta,
+      hardware: hardwareMeta,
       pricingVersion: PRICING_VERSION,
       locale,
       orderPlacedAt,
