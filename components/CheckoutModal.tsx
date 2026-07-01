@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { calculateLease, isOverSepaLimit, isLeaseAllowed, isPbiAllowed, isInvoiceAllowed, LEASE_MIN, LEASE_MAX, PBI_MIN, PBI_MAX, computeTotalPreorderDeposit, computePreorderQuote } from '@/lib/pricing';
 import { isPreorderMode } from '@/lib/commerce-mode';
@@ -28,6 +28,10 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const t = useTranslations('checkout');
   const tcart = useTranslations('cart');
   const tc = useTranslations();
+
+  // VIES retry configuration (can be overridden via .env)
+  const VIES_RETRY_INTERVAL_MS =
+    Number(process.env.NEXT_PUBLIC_VIES_RETRY_INTERVAL_MS) || 30000;
 
   // Initialize from persisted draft if present (e.g. user filled form, went to Stripe, canceled).
   const [company, setCompany] = useState(initialData?.company || '');
@@ -86,6 +90,58 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   const setVatInclusiveWithDraft = (v: boolean) => { setVatInclusive(v); updateDraft({ vatInclusive: v }); };
   const setEmailWithDraft = (v: string) => { setEmail(v); updateDraft({ email: v }); };
 
+  const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Refs to always have the latest VAT/country values inside the retry interval
+  // (prevents stale closures even if React batches updates)
+  const latestVatRef = useRef(vat);
+  const latestCountryRef = useRef(country);
+
+  useEffect(() => {
+    latestVatRef.current = vat;
+    latestCountryRef.current = country;
+  }, [vat, country]);
+
+  const runViesValidation = async (currentVat: string, currentCountry: string) => {
+    const trimmed = currentVat.trim();
+    if (!trimmed) return;
+
+    setViesStatus('checking');
+    setViesMessage('');
+    try {
+      const res = await fetch('/api/vat/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vatNumber: trimmed, country: currentCountry }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.valid) {
+        setViesStatus('valid');
+        setViesMessage(data.name ? t('viesValidWithName', { name: data.name }) : t('viesValid'));
+        if (retryIntervalRef.current) {
+          clearInterval(retryIntervalRef.current);
+          retryIntervalRef.current = null;
+        }
+      } else if (res.status === 503 || data.unavailable) {
+        setViesStatus('unavailable');
+        if (data.reason && /MS_MAX_CONCURRENT_REQ|GLOBAL_MAX_CONCURRENT_REQ/i.test(data.reason)) {
+          setViesMessage(t('concurrentReq'));
+        } else {
+          setViesMessage(data.reason || t('viesUnavailable'));
+        }
+      } else {
+        setViesStatus('invalid');
+        setViesMessage(data.reason || t('viesInvalid'));
+        if (retryIntervalRef.current) {
+          clearInterval(retryIntervalRef.current);
+          retryIntervalRef.current = null;
+        }
+      }
+    } catch {
+      setViesStatus('unavailable');
+      setViesMessage(t('viesUnavailable'));
+    }
+  };
 
   const preorderMode = isPreorderMode();
   const hardwareTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -115,37 +171,51 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
     if (!trimmed) {
       setViesStatus('idle');
       setViesMessage('');
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+        retryIntervalRef.current = null;
+      }
       return;
     }
 
-    const timer = setTimeout(async () => {
-      setViesStatus('checking');
-      setViesMessage('');
-      try {
-        const res = await fetch('/api/vat/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vatNumber: trimmed, country }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (data.valid) {
-          setViesStatus('valid');
-          setViesMessage(data.name ? t('viesValidWithName', { name: data.name }) : t('viesValid'));
-        } else if (res.status === 503 || data.unavailable) {
-          setViesStatus('unavailable');
-          setViesMessage(data.reason || t('viesUnavailable'));
-        } else {
-          setViesStatus('invalid');
-          setViesMessage(data.reason || t('viesInvalid'));
-        }
-      } catch {
-        setViesStatus('unavailable');
-        setViesMessage(t('viesUnavailable'));
-      }
+    const timer = setTimeout(() => {
+      runViesValidation(trimmed, country);
     }, 700);
 
     return () => clearTimeout(timer);
   }, [vat, country, t]);
+
+  // Auto-retry every VIES_RETRY_INTERVAL_MS for MS_MAX_CONCURRENT_REQ / GLOBAL_MAX_CONCURRENT_REQ
+  // Uses refs for latest values to avoid any stale closure issues.
+  useEffect(() => {
+    if (retryIntervalRef.current) {
+      clearInterval(retryIntervalRef.current);
+      retryIntervalRef.current = null;
+    }
+
+    const isConcurrentError =
+      viesStatus === 'unavailable' &&
+      /MS_MAX_CONCURRENT_REQ|GLOBAL_MAX_CONCURRENT_REQ/i.test(viesMessage);
+
+    if (!isConcurrentError) {
+      return;
+    }
+
+    retryIntervalRef.current = setInterval(() => {
+      const trimmed = latestVatRef.current.trim();
+      const currentCountry = latestCountryRef.current;
+      if (trimmed) {
+        runViesValidation(trimmed, currentCountry);
+      }
+    }, VIES_RETRY_INTERVAL_MS);
+
+    return () => {
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+        retryIntervalRef.current = null;
+      }
+    };
+  }, [viesStatus, viesMessage, vat, country]);
 
   // VAT treatment (pure, client+server identical). Drives whether we can legally show the
   // "I wish to be billed VAT-inclusive" checkbox and what the live gross preview should be.
@@ -267,7 +337,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
   };
 
   const handleNextStep = () => {
-    if (isSubmitting) return;
+    if (isSubmitting || vatBlocksCheckout) return;
     if (step === 1 && validateStep1()) setStep(showTermsStep ? 2 : 3);
     else if (step === 2 && validateStep2()) setStep(3);
   };
@@ -450,8 +520,8 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
       throw new Error('No checkout URL returned');
     } catch (e: any) {
       console.error('Checkout error', e);
-      const msg = e?.message || 'Please try again or contact support.';
-      alert(`Unable to start payment: ${msg}`);
+      const msg = e?.message || t('error.unableToStartPaymentFallback');
+      alert(t('error.unableToStartPayment', { message: msg }));
       setIsSubmitting(false);
     }
   };
@@ -553,8 +623,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                 value={address} 
                 onChange={e => setAddressWithDraft(e.target.value)}
                 type="text" placeholder={t('streetPlaceholder')} 
-                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" 
-              />
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
               <div className="grid grid-cols-2 gap-3">
                 <input value={city} onChange={e => setCityWithDraft(e.target.value)} type="text" placeholder={t('cityPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
                 <input value={postal} onChange={e => setPostalWithDraft(e.target.value)} type="text" placeholder={t('postalPlaceholder')} className="bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm" />
@@ -768,7 +837,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                   name="payment" 
                   value="sepa" 
                   checked={paymentMethod === 'sepa'} 
-                  onChange={() => setPaymentMethodWithDraft('sepa')} 
+                  onChange={() => setPaymentMethodWithDraft('sepa')}
                   className="accent-cyan-400"
                   disabled={ preorderMode
                     ? isOverSepaLimit(preorderDeposit)
@@ -834,6 +903,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
                             <span className="text-[10px] px-1.5 py-px bg-slate-800 rounded align-baseline">{t('recurringCardTag')}</span>
                           </div>
                         </label>
+
                         <label className="flex items-start gap-x-2.5 cursor-pointer">
                           <input
                             type="radio"
@@ -978,7 +1048,7 @@ export default function CheckoutModal({ cart, onClose, onOrderComplete, initialD
               )}
               <button
                 onClick={handleNextStep}
-                disabled={isSubmitting}
+                disabled={isSubmitting || vatBlocksCheckout}
                 className="px-9 py-[14px] bg-white text-slate-950 font-bold rounded-3xl text-sm hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {t('nextBtn')}
