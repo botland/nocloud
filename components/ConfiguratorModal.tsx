@@ -161,8 +161,9 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
           <button onClick={onClose} className="text-2xl text-slate-400 hover:text-white">×</button>
         </div>
         
-        <div className="p-7 overflow-y-auto flex-1">
-          <div className="flex justify-between items-baseline mb-6">
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-7">
+            <div className="flex justify-between items-baseline mb-6">
             <div className="text-sm text-slate-400">{t('baseAppliance')}</div>
             <PromoPrice
               amount={baseResolved.net}
@@ -285,9 +286,9 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
               </label>
             </div>
           </div>
-        </div>
-        
-        <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex items-center justify-between flex-shrink-0">
+          </div>
+          
+          <div className="bg-slate-950 px-7 py-5 border-t border-slate-800 flex items-center justify-between">
           <div>
             <div className="text-xs text-slate-400">{t('totalToday')}</div>
             <div className="text-3xl font-semibold tabular-nums tracking-tighter">{tc('common.price', { amount: totalPrice })}</div>
@@ -308,6 +309,7 @@ export default function ConfiguratorModal({ product, onClose, onAddToCart, editi
           <button onClick={handleAddToCart} className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-bold rounded-3xl text-sm">
             {isEditing ? t('updateCart') : t('addToCart')}
           </button>
+          </div>
         </div>
       </div>
     </div>

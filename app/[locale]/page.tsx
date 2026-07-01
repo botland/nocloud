@@ -91,14 +91,12 @@ export default function LocaleHome() {
 
   const products: Product[] = baseProducts.map((base) => {
     const resolved = resolveHardwarePrice(base.slug);
-    const minService = resolveMinServicePrice(base.slug);
 
     return {
       ...base,
       price: resolved.net,
       listPrice: resolved.list > resolved.net ? resolved.list : undefined,
       promotionBadge: resolved.badge,
-      minServicePrice: minService,
       name: t(`products.items.${base.slug}.name`),
       tier: t(`products.items.${base.slug}.tier`),
       description: t(`products.items.${base.slug}.description`),

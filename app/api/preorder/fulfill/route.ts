@@ -130,18 +130,19 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const pi = await stripe.paymentIntents.create({
-        amount: Math.round(balanceGross * 100),
-        currency: 'eur',
-        customer: customerId,
-        payment_method: paymentMethod,
-        off_session: true,
-        confirm: true,
-        metadata: balanceMeta,
-        description: `${BRAND_NAME} pre-order balance`,
-        // Idempotency key helps prevent duplicate charges
-        idempotency_key: `preorder-balance-${depositSessionId}`,
-      });
+      const pi = await stripe.paymentIntents.create(
+        {
+          amount: Math.round(balanceGross * 100),
+          currency: 'eur',
+          customer: customerId,
+          payment_method: paymentMethod,
+          off_session: true,
+          confirm: true,
+          metadata: balanceMeta,
+          description: `${BRAND_NAME} pre-order balance`,
+        },
+        { idempotencyKey: `preorder-balance-${depositSessionId}` },
+      );
 
       return NextResponse.json({
         success: true,

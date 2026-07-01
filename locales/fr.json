@@ -1,13 +1,13 @@
 {
   "hero": {
     "badge": "Livraison en Europe • Garantie 3 ans • Mode B2B",
-    "badgePreorder": "Livraison en Europe dès l'expédition • Garantie 3 ans • Mode B2B",
     "title1": "IA Générative Privée.",
     "title2": "Votre infrastructure. Vos règles.",
     "subtitle": "Appareils haute performance pour les organisations européennes. Entièrement privé. Pas de cloud. Conçu pour le B2B.",
     "cta1": "Parcourir les appareils",
     "cta2": "Demander un devis personnalisé",
-    "trusted": "Fait confiance par plus de 240 équipes européennes"
+    "trusted": "Fait confiance par plus de 240 équipes européennes",
+    "badgePreorder": "Livraison en Europe dès l'expédition • Garantie 3 ans • Mode B2B"
   },
   "nav": {
     "products": "Produits",
@@ -20,9 +20,6 @@
     "title": "Choisissez votre niveau de performance",
     "from": "à partir de",
     "configure": "Configurer & Acheter",
-    "preorder": "Précommander",
-    "preorderDepositLabel": "Acompte",
-    "preorderDepositExclVat": "HT",
     "items": {
       "edge": {
         "name": "Edge",
@@ -46,7 +43,10 @@
       "1": "Équipes • Agences • Scale-ups",
       "2": "Entreprise • Labs de recherche"
     },
-    "blurb": "Tous les appareils incluent notre moteur d'inférence privé et sont préchargés avec les principaux modèles open-source."
+    "blurb": "Tous les appareils incluent notre moteur d'inférence privé et sont préchargés avec les principaux modèles open-source.",
+    "preorder": "Précommander",
+    "preorderDepositLabel": "Acompte",
+    "preorderDepositExclVat": "HT"
   },
   "services": {
     "tag": "SERVICES OPTIONNELS",
@@ -84,13 +84,13 @@
     "copyright": "© {year} {brand} — Infrastructure IA générative privée pour l'Europe",
     "legal": "Mentions légales",
     "privacy": "Confidentialité (RGPD)",
-    "support": "Support"
+    "support": "Support",
+    "about": "À propos"
   },
   "canceledTitle": "Paiement annulé",
   "canceledMessage": "Votre commande a été annulée. Votre panier est toujours là — n'hésitez pas à réessayer.",
   "configurator": {
     "baseAppliance": "Appareil de base",
-    "hardwareUpgrades": "options matériel",
     "keySpecs": "CARACTÉRISTIQUES CLÉS",
     "quantity": "QUANTITÉ",
     "appliance": "appareil",
@@ -114,7 +114,8 @@
     "managedCare": "Maintenance Gérée",
     "managedCareNote": "Gestion à distance, mises à jour & support prioritaire",
     "secureVaultBackup": "Sauvegarde SecureVault",
-    "secureVaultBackupNote": "Sauvegardes chiffrées quotidiennes + restauration"
+    "secureVaultBackupNote": "Sauvegardes chiffrées quotidiennes + restauration",
+    "hardwareUpgrades": "options matériel"
   },
   "cart": {
     "yourOrder": "Votre commande",
@@ -140,7 +141,6 @@
     "deliveryAddress": "ADRESSE DE LIVRAISON",
     "deliveryDifferentLabel": "L'adresse de livraison est différente de l'adresse de facturation",
     "stepInfo": "Informations",
-    "stepTerms": "Conditions",
     "stepPayment": "Paiement",
     "nextBtn": "Suivant",
     "previousBtn": "Précédent",
@@ -157,13 +157,6 @@
     "invoice": "Payer par facture (B2B)",
     "invoiceDesc": "Net 30 • Courant pour les entreprises européennes",
     "totalToPay": "Total à payer aujourd'hui",
-    "preorderDepositToday": "Acompte dû aujourd'hui",
-    "preorderDueLaterTitle": "Dû à la livraison",
-    "preorderBalanceAtShip": "Solde matériel",
-    "preorderCompleteBtn": "Payer l'acompte",
-    "preorderNoticeTitle": "Précommande — acompte uniquement",
-    "preorderNoticeBody": "Vous payez un acompte de {deposit} € aujourd'hui (crédité sur votre commande). Le solde de {balance} € sera prélevé lorsque votre appareil sera prêt à expédier. La facturation des services commence à la livraison.",
-    "preorderVatNote": "TVA à {rate} % incluse (acompte HT {depositNet} € + {depositVat} € de TVA). Les montants correspondent au total payé si la facturation TTC est sélectionnée.",
     "completeBtn": "Finaliser la commande",
     "validation": "Veuillez renseigner le nom de l'entreprise, l'adresse e-mail, l'adresse et la ville",
     "validationDelivery": "Veuillez renseigner l'adresse et la ville de livraison",
@@ -215,7 +208,16 @@
     "viesValidWithName": "TVA vérifiée : {name}",
     "viesInvalid": "Le numéro de TVA n'a pas pu être vérifié via VIES",
     "viesUnavailable": "La vérification VIES est temporairement indisponible — réessayez dans un instant",
-    "viesStillChecking": "Veuillez attendre la fin de la vérification TVA avant de continuer."
+    "viesStillChecking": "Veuillez attendre la fin de la vérification TVA avant de continuer.",
+    "concurrentReq": "Le service VIES est actuellement surchargé (nombre maximum de requêtes simultanées atteint). Cette erreur (MS_MAX_CONCURRENT_REQ) survient fréquemment, surtout pour les numéros de TVA français (FR) en raison du trafic élevé sur le système national. Veuillez réessayer dans quelques minutes. Vous pouvez également valider manuellement via le portail VIES officiel ou l'outil batch si nécessaire.",
+    "stepTerms": "Conditions",
+    "preorderDepositToday": "Acompte dû aujourd'hui",
+    "preorderDueLaterTitle": "Dû à la livraison",
+    "preorderBalanceAtShip": "Solde matériel",
+    "preorderCompleteBtn": "Payer l'acompte",
+    "preorderNoticeTitle": "Précommande — acompte uniquement",
+    "preorderNoticeBody": "Vous payez un acompte de {deposit} € aujourd'hui (crédité sur votre commande). Le solde de {balance} € sera prélevé lorsque votre appareil sera prêt à expédier. La facturation des services commence à la livraison.",
+    "preorderVatNote": "TVA à {rate} % incluse (acompte HT {depositNet} € + {depositVat} € de TVA). Les montants correspondent au total payé si la facturation TTC est sélectionnée."
   },
   "success": {
     "title": "Merci pour votre commande !",
@@ -239,7 +241,6 @@
     "freePrice": "Gratuit",
     "managedCareLaunchFree": "Offre de lancement",
     "managedCareLaunchFreeUntil": "Gratuit jusqu'au {date}",
-    "preorderHardwareDiscount": "-{percent} % précommande",
     "launchEdge": "Tarif lancement",
     "vaultStudio": "Promo Vault",
     "recurringPromoUntil": "{promo}{suffix} jusqu'au {date}",
@@ -254,6 +255,103 @@
     "recurringScheduleFreeUntil": "Gratuit jusqu'au {date}",
     "recurringScheduleThenFreeUntil": "puis gratuit jusqu'au {date}",
     "recurringScheduleThenOngoing": "puis {price}{suffix}",
-    "recurringScheduleNote": "Total mensuel indicatif. Les périodes promotionnelles et tarifs standards sont affichés avant le paiement ; les conditions définitives figurent sur votre confirmation de commande."
+    "recurringScheduleNote": "Total mensuel indicatif. Les périodes promotionnelles et tarifs standards sont affichés avant le paiement ; les conditions définitives figurent sur votre confirmation de commande.",
+    "preorderHardwareDiscount": "-{percent} % précommande"
+  },
+  "error": {
+    "canceledTitle": "Paiement annulé",
+    "canceledMessage": "Votre commande a été annulée. Votre panier est toujours disponible — n'hésitez pas à réessayer.",
+    "unableToStartPayment": "Impossible de démarrer le paiement : {message}",
+    "unableToStartPaymentFallback": "Veuillez réessayer ou contacter le support."
+  },
+  "alert": {
+    "viesUnavailable": "La vérification VIES est temporairement indisponible — veuillez réessayer sous peu",
+    "viesStillChecking": "Veuillez attendre la fin de la vérification TVA avant de continuer."
+  },
+  "about": {
+    "title": "Notre histoire",
+    "subtitle": "Appliances IA privées haute performance, conçues par des ingénieurs qui ont passé leur carrière à faire évoluer certains des plus grands systèmes informatiques au monde.",
+    "back": "Retour à l'accueil",
+    "missionTitle": "Pourquoi nous existons",
+    "missionText": "L'IA générative va tout changer. Mais les modèles les plus importants et les données les plus sensibles ne devraient pas avoir à vivre dans le cloud de quelqu'un d'autre. Nous construisons des appliances qui donnent aux organisations européennes sérieuses la puissance de clusters HPC géants avec une propriété, une confidentialité et un contrôle complets.",
+    "founderTitle": "Conçu par {director}",
+    "founderP1": "Avec plus de vingt ans à construire des systèmes distribués complexes — des plateformes Java à grande échelle et le leadership d'équipes à l'architecture d'un nouveau moteur de recherche web distribué et de systèmes de trading haute fréquence utilisant C++ et l'apprentissage automatique — la performance à l'échelle a toujours été au cœur du travail.",
+    "founderP2": "Il aide actuellement à concevoir et exploiter certains des plus grands clusters HPC de la planète pour un acteur majeur de l'industrie. En parallèle, il est convaincu que l'IA générative va fondamentalement transformer chaque secteur — et que les modèles et données les plus importants ne devraient pas avoir à vivre dans le cloud de quelqu'un d'autre.",
+    "founderP3": "Cette conviction est la raison pour laquelle nous avons construit ces appliances. Nos modèles Edge, Studio et Forge apportent des performances d'inférence de niveau HPC dans des systèmes clés en main que vous pouvez déployer dans votre propre infrastructure en quelques minutes. Les services optionnels Managed Care et SecureVault Backup permettent à votre équipe de se concentrer sur les modèles et les résultats plutôt que sur les opérations.",
+    "whyTitle": "Ce que nous croyons",
+    "whyText": "La commodité du cloud a un prix : les données quittent votre contrôle, la latence tue les cas d'usage en temps réel, les coûts deviennent imprévisibles et la souveraineté européenne réelle est difficile à atteindre.",
+    "whyList": [
+      "Souveraineté totale des données — vos modèles et données ne quittent jamais vos locaux",
+      "Coûts prévisibles — achat unique du matériel, pas de factures par token ou à l'usage",
+      "Latence ultra-faible — inférence en périphérie ou dans votre datacenter",
+      "Résidence des données européenne par conception",
+      "Performance HPC simplifiée — la puissance de clusters géants dans des appliances que vous possédez"
+    ],
+    "cta": "Explorer les appliances",
+    "copyright": "© {year} {brand}. Tous droits réservés."
+  },
+  "legal": {
+    "title": "Mentions légales",
+    "updated": "Dernière mise à jour : Juin 2026",
+    "back": "Retour à l'accueil",
+    "companyInfoTitle": "Informations sur l'entreprise",
+    "companyName": "{companyName}",
+    "regNumber": "Numéro d'immatriculation : {regNumber}",
+    "vatNumber": "Numéro de TVA : {vatNumber}",
+    "address": "Adresse : {address}",
+    "director": "Directeur général : {director}",
+    "contactLabel": "Contact",
+    "contactEmail": "{contactEmail}",
+    "operatorTitle": "Exploitant du site web",
+    "operatorText": "Ce site web est exploité par {companyName}, une société à responsabilité limitée constituée en Estonie.",
+    "liabilityTitle": "Limitation de responsabilité",
+    "liabilityText1": "Les informations fournies sur ce site web le sont à titre informatif général uniquement.",
+    "liabilityText2": "Dans la mesure maximale permise par la loi, {companyName} ne saurait être tenu responsable de tout dommage direct, indirect, accessoire, spécial, consécutif ou punitif résultant de l'utilisation de ce site web ou de l'impossibilité de l'utiliser.",
+    "liabilityText3": "Rien dans ces mentions légales n'exclut ou ne limite notre responsabilité en cas de décès ou de blessure corporelle causés par notre négligence, ou en cas de fraude ou de fausse déclaration frauduleuse.",
+    "intellectualPropertyTitle": "Propriété intellectuelle",
+    "intellectualPropertyText": "Tout le contenu de ce site web, y compris mais sans s'y limiter les textes, graphiques, logos, images et logiciels, est la propriété de {companyName} ou de ses fournisseurs de contenu et est protégé par le droit d'auteur et d'autres lois sur la propriété intellectuelle.",
+    "governingLawTitle": "Droit applicable et juridiction",
+    "governingLawText": "Ces mentions légales sont régies et interprétées conformément aux lois de la République d'Estonie. Tout litige sera soumis à la compétence exclusive des tribunaux d'Estonie.",
+    "disputeResolutionTitle": "Règlement des litiges",
+    "disputeResolutionText": "Nous vous encourageons à nous contacter d'abord pour résoudre tout problème à l'amiable.",
+    "copyright": "© {year} {brand}. Tous droits réservés."
+  },
+  "privacy": {
+    "title": "Politique de confidentialité",
+    "updated": "Dernière mise à jour : Juin 2026",
+    "back": "Retour à l'accueil",
+    "introductionTitle": "Introduction",
+    "introductionText": "{companyName} (« nous », « notre » ou « nos ») s'engage à protéger votre vie privée. Cette politique de confidentialité explique comment nous collectons, utilisons, divulguons et protégeons vos informations lorsque vous visitez notre site web ou utilisez nos services.",
+    "dataControllerTitle": "Responsable du traitement",
+    "dataControllerText": "Le responsable du traitement de vos données personnelles est {companyName}, enregistré en Estonie. Vous pouvez nous contacter à {contactEmail}.",
+    "dataWeCollectTitle": "Informations que nous collectons",
+    "dataWeCollectText": "Nous pouvons collecter les types d'informations suivants :",
+    "dataWeCollectList": [
+      "Informations de contact (nom, adresse e-mail, numéro de téléphone)",
+      "Informations d'entreprise (nom de l'entreprise, numéro de TVA, adresse de facturation)",
+      "Informations de commande et de paiement",
+      "Données techniques (adresse IP, type de navigateur, pages visitées)"
+    ],
+    "useTitle": "Comment nous utilisons vos informations",
+    "useText": "Nous utilisons vos informations pour :",
+    "useList": [
+      "Traiter et exécuter vos commandes",
+      "Fournir un support client",
+      "Respecter nos obligations légales",
+      "Améliorer nos services et notre site web"
+    ],
+    "legalBasisTitle": "Base légale du traitement",
+    "legalBasisText": "Nous traitons vos données sur la base de l'exécution d'un contrat, de nos intérêts légitimes et du respect d'obligations légales, conformément au RGPD.",
+    "sharingTitle": "Partage des données",
+    "sharingText": "Nous ne vendons pas vos données personnelles. Nous pouvons les partager avec des prestataires de services de confiance (par ex. processeurs de paiement) uniquement dans la mesure nécessaire à la fourniture de nos services.",
+    "retentionTitle": "Conservation des données",
+    "retentionText": "Nous conservons vos données aussi longtemps que nécessaire pour les finalités décrites dans cette politique, sauf si une période de conservation plus longue est requise par la loi.",
+    "rightsTitle": "Vos droits",
+    "rightsText": "Conformément au RGPD, vous avez le droit d'accéder, de rectifier, de supprimer, de limiter le traitement, de vous opposer au traitement et à la portabilité des données. Contactez-nous à {contactEmail}.",
+    "cookiesTitle": "Cookies",
+    "cookiesText": "Ce site web utilise uniquement des cookies essentiels nécessaires à son fonctionnement.",
+    "changesTitle": "Modifications de cette politique",
+    "changesText": "Nous pouvons mettre à jour cette politique de temps à autre. La dernière version sera toujours disponible sur cette page.",
+    "copyright": "© {year} {brand}. Tous droits réservés."
   }
 }
